@@ -9,7 +9,7 @@ using System.Security.Cryptography;
 namespace Legacy.Maliev.AuthService.Infrastructure;
 
 /// <summary>Issues RS256 access tokens whose private key is supplied only at runtime.</summary>
-public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IDisposable
+public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTokenIssuer, IDisposable
 {
     private readonly JwtOptions options;
     private readonly RSA rsa;
@@ -44,15 +44,34 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IDisposable
             claims.Add(new("legacy_database_id", identity.DatabaseId.Value.ToString()));
         }
 
+        return Issue(claims, now);
+    }
+
+    /// <inheritdoc />
+    public IssuedAccessToken IssueService(string clientId, IReadOnlyList<string> permissions, DateTimeOffset now)
+    {
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, $"service:{clientId}"),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
+            new(JwtRegisteredClaimNames.Name, clientId),
+            new("identity_kind", "service"),
+        };
+        claims.AddRange(permissions.Select(permission => new Claim("permissions", permission)));
+        return Issue(claims, now);
+    }
+
+    private IssuedAccessToken Issue(IEnumerable<Claim> claims, DateTimeOffset now)
+    {
         var key = new RsaSecurityKey(rsa) { KeyId = options.KeyId };
         var token = new JwtSecurityToken(
             options.Issuer,
             options.Audience,
             claims,
-            notBefore: now.UtcDateTime,
-            expires: now.AddSeconds(options.AccessTokenLifetimeSeconds).UtcDateTime,
-            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.RsaSha256));
-
+            now.UtcDateTime,
+            now.AddSeconds(options.AccessTokenLifetimeSeconds).UtcDateTime,
+            new SigningCredentials(key, SecurityAlgorithms.RsaSha256));
         return new(new JwtSecurityTokenHandler().WriteToken(token), options.AccessTokenLifetimeSeconds);
     }
 
