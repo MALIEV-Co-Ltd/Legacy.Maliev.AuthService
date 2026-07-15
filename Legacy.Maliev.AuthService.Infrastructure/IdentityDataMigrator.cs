@@ -176,7 +176,7 @@ public static class IdentityDataMigrator
             }
 
             AppendValue(row.LockoutEnabled);
-            AppendValue(row.LockoutEnd?.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture));
+            AppendValue(NormalizePostgresTimestamp(row.LockoutEnd));
             AppendValue(row.AccessFailedCount);
             Count++;
         }
@@ -194,6 +194,19 @@ public static class IdentityDataMigrator
             };
             var framed = text is null ? "-1:" : $"{text.Length}:{text}";
             hash.AppendData(Encoding.UTF8.GetBytes(framed));
+        }
+
+        private static string? NormalizePostgresTimestamp(DateTimeOffset? value)
+        {
+            if (value is null)
+            {
+                return null;
+            }
+
+            var utcTicks = value.Value.UtcTicks;
+            var postgresTicks = utcTicks - (utcTicks % TimeSpan.TicksPerMicrosecond);
+            return new DateTimeOffset(postgresTicks, TimeSpan.Zero)
+                .ToString("O", CultureInfo.InvariantCulture);
         }
     }
 
