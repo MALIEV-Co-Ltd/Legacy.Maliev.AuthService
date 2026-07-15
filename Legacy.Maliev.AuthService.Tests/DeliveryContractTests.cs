@@ -86,6 +86,42 @@ public sealed class DeliveryContractTests
         Assert.DoesNotContain("kubectl apply", workflow, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void DeploymentContract_ListsTheExactLegacyWebServicePermissions()
+    {
+        var deploymentContract = File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), "deploy", "README.md"));
+        var permissionParagraph = System.Text.RegularExpressions.Regex.Match(
+            deploymentContract,
+            "numbered permission entries for only (?<permissions>.+?)\\. Web receives",
+            System.Text.RegularExpressions.RegexOptions.Singleline);
+        Assert.True(permissionParagraph.Success, "The legacy-web permission contract paragraph was not found.");
+
+        var permissions = System.Text.RegularExpressions.Regex.Matches(
+                permissionParagraph.Groups["permissions"].Value,
+                "`([^`]+)`")
+            .Select(match => match.Groups[1].Value)
+            .ToArray();
+
+        Assert.Equal(
+            [
+                "legacy-auth.customer-self-service",
+                "legacy-customer.customers.create",
+                "legacy-customer.customers.delete",
+                "legacy-customer.customers.read",
+                "legacy-customer.customers.update",
+                "legacy-customer.addresses.create",
+                "legacy-customer.addresses.update",
+                "legacy-contact.messages.create",
+                "legacy.quotation-requests.create",
+                "legacy.quotation-files.write",
+                "legacy-file.uploads.create",
+                "legacy-file.uploads.delete",
+                "legacy.notifications.send",
+            ],
+            permissions);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
