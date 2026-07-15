@@ -3,6 +3,17 @@ namespace Legacy.Maliev.AuthService.Tests;
 public sealed class DeliveryContractTests
 {
     [Fact]
+    public void DockerContext_ExcludesBuildAndRepositoryArtifacts()
+    {
+        var dockerIgnore = File.ReadAllText(Path.Combine(FindRepositoryRoot(), ".dockerignore"));
+
+        Assert.Contains(".git", dockerIgnore, StringComparison.Ordinal);
+        Assert.Contains("**/bin", dockerIgnore, StringComparison.Ordinal);
+        Assert.Contains("**/obj", dockerIgnore, StringComparison.Ordinal);
+        Assert.Contains("**/TestResults", dockerIgnore, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void KubernetesResources_AreConfinedToLegacyNamespaceAndDoNotProvisionInfrastructure()
     {
         var root = FindRepositoryRoot();
