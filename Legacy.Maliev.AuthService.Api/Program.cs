@@ -1,5 +1,7 @@
 using Legacy.Maliev.AuthService.Infrastructure;
 using Maliev.Aspire.ServiceDefaults;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Options;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,6 +17,13 @@ builder.AddStandardOpenApi(
 builder.Services.AddProblemDetails();
 builder.Services.AddControllers();
 builder.Services.AddLegacyAuthInfrastructure(builder.Configuration);
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
+builder.Services.AddSingleton<IConfigureOptions<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>, LegacyJwtBearerConfiguration>();
+builder.Services.AddAuthorizationBuilder().AddPolicy("LegacyEmployee", policy =>
+{
+    policy.RequireAuthenticatedUser();
+    policy.RequireClaim("identity_kind", "employee");
+});
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -34,6 +43,8 @@ var app = builder.Build();
 app.UseStandardMiddleware();
 app.UseCors();
 app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapDefaultEndpoints("auth");
 app.MapControllers();
 app.MapApiDocumentation(servicePrefix: "auth");
