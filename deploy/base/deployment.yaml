@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: legacy-maliev-auth-service
+  namespace: maliev-legacy
+  labels:
+    app.kubernetes.io/name: legacy-maliev-auth-service
+    app.kubernetes.io/part-of: maliev-legacy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: legacy-maliev-auth-service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: legacy-maliev-auth-service
+        app.kubernetes.io/part-of: maliev-legacy
+    spec:
+      serviceAccountName: legacy-maliev-auth
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: auth
+          image: legacy-maliev-auth-service
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - secretRef:
+                name: legacy-maliev-auth-runtime
+          readinessProbe:
+            httpGet:
+              path: /auth/readiness
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /auth/liveness
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 96Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+
