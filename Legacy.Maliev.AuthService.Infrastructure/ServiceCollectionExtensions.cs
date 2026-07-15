@@ -27,6 +27,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ILegacyIdentityReader>(provider => provider.GetRequiredService<LegacyIdentityReader>());
         services.AddScoped<IRefreshSessionStore, PostgresRefreshSessionStore>();
         services.AddScoped<ICustomerIdentityAdminService, CustomerIdentityAdminService>();
+        services.AddScoped<IEmployeeIdentityAdminService, EmployeeIdentityAdminService>();
         services.AddSingleton<IAccessTokenIssuer, RsaAccessTokenIssuer>();
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<AuthenticationService>();
