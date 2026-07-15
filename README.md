@@ -33,8 +33,35 @@ replacement, and security-stamp rotation. Hashed confirmation and recovery
 tokens are stored in isolated PostgreSQL alongside refresh-session state.
 
 Identity administration uses `/auth/v1/customer-identities/{databaseId}` and
-`/auth/v1/employee-identities/{databaseId}`. Both operate against the unchanged
-SQL Server schemas; only refresh-session state uses the isolated PostgreSQL database.
+`/auth/v1/employee-identities/{databaseId}`. During the copy window, both operate
+against the unchanged SQL Server schemas; only refresh-session state uses the
+isolated PostgreSQL database. Setting `IdentityStorage:Provider` to `PostgreSql`
+switches both identity readers after the validated copy and shadow-login gate.
+
+## SQL Server to PostgreSQL identity copy
+
+`Legacy.Maliev.AuthService.IdentityMigration` performs the one-way identity copy.
+The SQL Server connection is rejected unless it contains
+`ApplicationIntent=ReadOnly`. The tool never writes to the source, preserves IDs,
+password hashes, confirmation state, lockout state, stamps, and legacy business
+fields, then compares row counts and a deterministic SHA-256 semantic fingerprint
+inside the destination transaction. A mismatch rolls the copy back.
+
+Run customer and employee databases separately, initially with `--mode copy` and
+then with `--mode validate` during the shadow comparison window. Supply connection
+strings through `IDENTITY_SOURCE_CONNECTION_STRING` and
+`IDENTITY_TARGET_CONNECTION_STRING`; command-line values are supported for local
+testing but must not be used in CI logs or shell history. PostgreSQL migrations are
+isolated per identity context and do not modify the legacy SQL Server schema.
+The SQL login used for this job must also have database-level `SELECT` permission
+only; `ApplicationIntent` is an additional fail-closed guard, not a substitute for
+least-privilege SQL permissions.
+
+```powershell
+$env:IDENTITY_MIGRATION_KIND = 'customer'
+$env:IDENTITY_MIGRATION_MODE = 'validate'
+dotnet run --project Legacy.Maliev.AuthService.IdentityMigration -c Release
+```
 
 Trusted BFF customer self-service uses JSON `POST` operations under
 `/auth/v1/customer-self-service` and requires

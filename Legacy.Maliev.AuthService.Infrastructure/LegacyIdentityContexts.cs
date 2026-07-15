@@ -77,8 +77,11 @@ public abstract class LegacyIdentityDbContext(DbContextOptions options) : DbCont
         user.Property(x => x.NormalizedUserName).HasMaxLength(256);
         user.Property(x => x.Email).HasMaxLength(256);
         user.Property(x => x.NormalizedEmail).HasMaxLength(256);
-        user.HasIndex(x => x.NormalizedUserName);
-        user.HasIndex(x => x.NormalizedEmail);
+        user.HasIndex(x => x.NormalizedUserName)
+            .IsUnique()
+            .HasDatabaseName("UserNameIndex");
+        user.HasIndex(x => x.NormalizedEmail)
+            .HasDatabaseName("EmailIndex");
         if (this is EmployeeIdentityDbContext)
         {
             user.Ignore(x => x.FaxNumber);

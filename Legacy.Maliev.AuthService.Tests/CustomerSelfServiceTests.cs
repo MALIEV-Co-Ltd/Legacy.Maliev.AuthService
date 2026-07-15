@@ -12,7 +12,8 @@ using System.Reflection;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
-public sealed class CustomerSelfServiceTests
+[Collection(PostgresCollection.Name)]
+public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
 {
     [Fact]
     public void Controller_UsesAuthenticatedJsonPostsAndNeverPlacesPasswordOrTokenInRoutes()
@@ -30,7 +31,7 @@ public sealed class CustomerSelfServiceTests
     [Fact]
     public async Task Register_NewCustomer_PersistsCompatiblePasswordHashWithoutReturningSecurityMaterial()
     {
-        await using var fixture = new Fixture();
+        await using var fixture = await Fixture.CreateAsync(postgres);
 
         var result = await fixture.Service.RegisterAsync(
             new RegisterCustomerIdentityRequest(42, "customer@example.com", "correct-password"), default);
@@ -46,7 +47,7 @@ public sealed class CustomerSelfServiceTests
     [Fact]
     public async Task RequestConfirmation_KnownIdentity_ReturnsOpaqueTokenButStoresOnlyHash()
     {
-        await using var fixture = new Fixture(); await fixture.SeedCustomerAsync();
+        await using var fixture = await Fixture.CreateAsync(postgres); await fixture.SeedCustomerAsync();
 
         var challenge = await fixture.Service.RequestEmailConfirmationAsync(new CustomerActionRequest("customer@example.com"), default);
 
@@ -60,7 +61,7 @@ public sealed class CustomerSelfServiceTests
     [Fact]
     public async Task CompletePasswordReset_ValidToken_ChangesPasswordAndRejectsReplay()
     {
-        await using var fixture = new Fixture(); await fixture.SeedCustomerAsync();
+        await using var fixture = await Fixture.CreateAsync(postgres); await fixture.SeedCustomerAsync();
         var challenge = await fixture.Service.RequestPasswordResetAsync(new CustomerActionRequest("customer@example.com"), default);
 
         var first = await fixture.Service.CompletePasswordResetAsync(new CompletePasswordResetRequest("customer@example.com", challenge.Token!, "new-password"), default);
@@ -74,7 +75,7 @@ public sealed class CustomerSelfServiceTests
     [Fact]
     public async Task RequestPasswordReset_SecondChallengeSupersedesFirstChallenge()
     {
-        await using var fixture = new Fixture();
+        await using var fixture = await Fixture.CreateAsync(postgres);
         await fixture.SeedCustomerAsync();
         var first = await fixture.Service.RequestPasswordResetAsync(
             new CustomerActionRequest("customer@example.com"), default);
@@ -94,7 +95,7 @@ public sealed class CustomerSelfServiceTests
     public async Task ConfirmEmail_ExpiredToken_IsRejectedWithoutChangingIdentity()
     {
         var clock = new FakeTimeProvider(new DateTimeOffset(2026, 7, 15, 0, 0, 0, TimeSpan.Zero));
-        await using var fixture = new Fixture(clock); await fixture.SeedCustomerAsync();
+        await using var fixture = await Fixture.CreateAsync(postgres, clock); await fixture.SeedCustomerAsync();
         var challenge = await fixture.Service.RequestEmailConfirmationAsync(new CustomerActionRequest("customer@example.com"), default);
         clock.Advance(TimeSpan.FromHours(25));
 
@@ -105,10 +106,13 @@ public sealed class CustomerSelfServiceTests
 
     private sealed class Fixture : IAsyncDisposable
     {
-        public Fixture(TimeProvider? timeProvider = null)
+        private Fixture(
+            CustomerIdentityDbContext customers,
+            RefreshSessionDbContext state,
+            TimeProvider? timeProvider)
         {
-            Customers = new(new DbContextOptionsBuilder<CustomerIdentityDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
-            State = new(new DbContextOptionsBuilder<RefreshSessionDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+            Customers = customers;
+            State = state;
             Hasher = new PasswordHasher<LegacyIdentityRow>();
             Service = new CustomerSelfService(Customers, State, Hasher, timeProvider ?? TimeProvider.System);
         }
@@ -116,6 +120,11 @@ public sealed class CustomerSelfServiceTests
         public RefreshSessionDbContext State { get; }
         public PasswordHasher<LegacyIdentityRow> Hasher { get; }
         public CustomerSelfService Service { get; }
+        public static async Task<Fixture> CreateAsync(PostgresFixture postgres, TimeProvider? timeProvider = null) =>
+            new(
+                await postgres.CreateCustomerContextAsync(),
+                await postgres.CreateStateContextAsync(),
+                timeProvider);
         public async Task SeedCustomerAsync()
         {
             var row = new LegacyIdentityRow { Id = "customer-id", DatabaseID = 42, UserName = "customer@example.com", NormalizedUserName = "CUSTOMER@EXAMPLE.COM", Email = "customer@example.com", NormalizedEmail = "CUSTOMER@EXAMPLE.COM", SecurityStamp = Guid.NewGuid().ToString(), ConcurrencyStamp = Guid.NewGuid().ToString(), LockoutEnabled = true };
