@@ -48,7 +48,7 @@ public sealed class IdentityDataMigratorTests : IAsyncLifetime
                 FaxNumber = "02-000-0000",
                 MobileNumber = "081-000-0000",
                 LockoutEnabled = true,
-                LockoutEnd = DateTimeOffset.Parse("2026-07-15T00:00:00+00:00"),
+                LockoutEnd = DateTimeOffset.Parse("2026-07-15T00:00:00+00:00").AddTicks(9),
                 AccessFailedCount = 2
             }
         };
@@ -63,7 +63,10 @@ public sealed class IdentityDataMigratorTests : IAsyncLifetime
         Assert.Equal(rows[0].PasswordHash, copied.PasswordHash);
         Assert.Equal(rows[0].DatabaseID, copied.DatabaseID);
         Assert.Equal(rows[0].FaxNumber, copied.FaxNumber);
-        Assert.Equal(rows[0].LockoutEnd, copied.LockoutEnd);
+        var sourceLockoutEnd = Assert.IsType<DateTimeOffset>(rows[0].LockoutEnd);
+        Assert.Equal(
+            sourceLockoutEnd.AddTicks(-(sourceLockoutEnd.Ticks % 10)),
+            copied.LockoutEnd);
     }
 
     [Fact]
