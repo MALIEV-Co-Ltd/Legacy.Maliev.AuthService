@@ -8,8 +8,11 @@ updates:
     directory: /Legacy.Maliev.AuthService.Api
     schedule:
       interval: weekly
+  - package-ecosystem: docker
+    directory: /Legacy.Maliev.AuthService.IdentityMigration
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-

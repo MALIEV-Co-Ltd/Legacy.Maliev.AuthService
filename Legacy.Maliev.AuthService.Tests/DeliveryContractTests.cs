@@ -67,6 +67,23 @@ public sealed class DeliveryContractTests
         Assert.Contains("USER $APP_UID", dockerfile, StringComparison.Ordinal);
         Assert.Contains("checkout 085f24b8b6b19c5a8e932b229d93421b03bcd032", dockerfile, StringComparison.Ordinal);
         Assert.Contains("checkout c533c12a8154f5cf7c4fbc9734e82a62705ac60f", dockerfile, StringComparison.Ordinal);
+
+        var migrationDockerfile = File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), "Legacy.Maliev.AuthService.IdentityMigration", "Dockerfile"));
+        Assert.Contains("dotnet/sdk:10.0-alpine", migrationDockerfile, StringComparison.Ordinal);
+        Assert.Contains("dotnet/runtime:10.0-alpine", migrationDockerfile, StringComparison.Ordinal);
+        Assert.Contains("USER $APP_UID", migrationDockerfile, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void IdentityMigrationImage_IsProtectedBySameDeploymentGate()
+    {
+        var workflow = File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), ".github", "workflows", "publish-identity-migration.yml"));
+
+        Assert.Contains("vars.LEGACY_DEPLOY_ENABLED == 'true'", workflow, StringComparison.Ordinal);
+        Assert.Contains("legacy-maliev-auth-identity-migration", workflow, StringComparison.Ordinal);
+        Assert.DoesNotContain("kubectl apply", workflow, StringComparison.OrdinalIgnoreCase);
     }
 
     private static string FindRepositoryRoot()
