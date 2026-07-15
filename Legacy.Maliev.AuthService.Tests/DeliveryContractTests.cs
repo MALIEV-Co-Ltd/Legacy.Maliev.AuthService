@@ -117,6 +117,7 @@ public sealed class DeliveryContractTests
                 "legacy-customer.companies.delete",
                 "legacy.customer-orders.read",
                 "legacy.customer-orders.cancel",
+                "legacy.customer-quotations.read",
                 "legacy-contact.messages.create",
                 "legacy.quotation-requests.create",
                 "legacy.quotation-files.write",
