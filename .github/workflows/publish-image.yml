@@ -1,0 +1,30 @@
+name: Publish immutable image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deployment-gate:
+    if: vars.LEGACY_DEPLOY_ENABLED != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record planned-only state
+        run: echo "Deployment remains gated until the full migration, capacity, secret, WIF, GitOps and staging gates pass."
+
+  publish:
+    if: vars.LEGACY_DEPLOY_ENABLED == 'true'
+    uses: MALIEV-Co-Ltd/Legacy.Maliev.Workflows/.github/workflows/publish-image.yml@6017816fa67f369d785ed30794f002cfd6299af7
+    with:
+      image: ${{ vars.LEGACY_ARTIFACT_REGISTRY }}/legacy-maliev-auth-service
+      dockerfile: Legacy.Maliev.AuthService.Api/Dockerfile
+      context: .
+      environment: legacy-production
+      workload-identity-provider: ${{ vars.LEGACY_WORKLOAD_IDENTITY_PROVIDER }}
+      service-account: ${{ vars.LEGACY_AUTH_PUBLISHER_SERVICE_ACCOUNT }}
+
