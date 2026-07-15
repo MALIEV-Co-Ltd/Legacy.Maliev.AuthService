@@ -23,6 +23,13 @@ public interface IAccessTokenIssuer
     IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now);
 }
 
+/// <summary>Issues least-privilege tokens for configured machine identities.</summary>
+public interface IServiceAccessTokenIssuer
+{
+    /// <summary>Issues a short-lived service token containing only the configured permissions.</summary>
+    IssuedAccessToken IssueService(string clientId, IReadOnlyList<string> permissions, DateTimeOffset now);
+}
+
 /// <summary>An issued access token and its lifetime.</summary>
 public sealed record IssuedAccessToken(string Value, int ExpiresInSeconds);
 

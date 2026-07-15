@@ -32,7 +32,7 @@ public sealed class AuthenticationControllerContractTests
             new NoopIssuer(),
             new NoopStore(),
             new FakeTimeProvider(new DateTimeOffset(2026, 7, 15, 0, 0, 0, TimeSpan.Zero)));
-        var controller = new AuthenticationController(service);
+        var controller = new AuthenticationController(service, null!);
 
         var result = await controller.Login(
             new LoginRequest("missing@maliev.com", "incorrect", IdentityKind.Customer), default);

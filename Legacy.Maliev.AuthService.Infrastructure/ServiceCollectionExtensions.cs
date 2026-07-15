@@ -29,13 +29,17 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICustomerIdentityAdminService, CustomerIdentityAdminService>();
         services.AddScoped<IEmployeeIdentityAdminService, EmployeeIdentityAdminService>();
         services.AddSingleton<IAccessTokenIssuer, RsaAccessTokenIssuer>();
+        services.AddSingleton<IServiceAccessTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<AuthenticationService>();
+        services.AddScoped<ServiceAuthenticationService>();
 
         services.AddOptions<JwtOptions>()
             .Bind(configuration.GetSection(JwtOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+        services.AddOptions<ServiceClientOptions>()
+            .Bind(configuration.GetSection(ServiceClientOptions.SectionName));
 
         return services;
     }

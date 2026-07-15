@@ -1,4 +1,5 @@
 using Legacy.Maliev.AuthService.Application;
+using Legacy.Maliev.AuthService.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 
@@ -8,8 +9,18 @@ namespace Legacy.Maliev.AuthService.Api.Controllers;
 [ApiController]
 [Route("auth/v1")]
 [Produces("application/json")]
-public sealed class AuthenticationController(AuthenticationService authenticationService) : ControllerBase
+public sealed class AuthenticationController(AuthenticationService authenticationService, ServiceAuthenticationService serviceAuthenticationService) : ControllerBase
 {
+    /// <summary>Authenticates a configured machine identity without creating a refresh session.</summary>
+    [HttpPost("service/login")]
+    [EnableRateLimiting("login")]
+    [ProducesResponseType<ServiceTokenResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<ServiceTokenResponse>> ServiceLogin(ServiceLoginRequest request)
+    {
+        var result = await serviceAuthenticationService.LoginAsync(request);
+        return result.Succeeded ? Ok(result.Token) : Unauthorized(AuthenticationProblem());
+    }
     /// <summary>Authenticates against one unchanged legacy identity database.</summary>
     [HttpPost("login")]
     [EnableRateLimiting("login")]
