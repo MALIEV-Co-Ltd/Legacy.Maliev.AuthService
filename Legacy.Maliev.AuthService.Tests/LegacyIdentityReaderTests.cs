@@ -31,6 +31,7 @@ public sealed class LegacyIdentityReaderTests
         await using var contexts = await ContextPair.CreateAsync();
         var user = CreateUser("legacy-id", "customer@example.com", "correct-password");
         user.DatabaseID = 42;
+        user.EmailConfirmed = true;
         contexts.Customer.Users.Add(user);
         await contexts.Customer.SaveChangesAsync();
         var reader = contexts.CreateReader();
@@ -57,6 +58,37 @@ public sealed class LegacyIdentityReaderTests
 
         var result = await reader.ValidateAsync(
             "locked@maliev.com", "correct-password", IdentityKind.Employee, default);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task Validate_UnconfirmedCustomer_IsRejectedEvenWithCorrectPassword()
+    {
+        await using var contexts = await ContextPair.CreateAsync();
+        var user = CreateUser("legacy-id", "unconfirmed@example.com", "correct-password");
+        user.EmailConfirmed = false;
+        contexts.Customer.Users.Add(user);
+        await contexts.Customer.SaveChangesAsync();
+        var reader = contexts.CreateReader();
+
+        var result = await reader.ValidateAsync(
+            "unconfirmed@example.com", "correct-password", IdentityKind.Customer, default);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task FindActive_UnconfirmedCustomer_IsRejectedForRefreshValidation()
+    {
+        await using var contexts = await ContextPair.CreateAsync();
+        var user = CreateUser("legacy-id", "unconfirmed@example.com", "correct-password");
+        user.EmailConfirmed = false;
+        contexts.Customer.Users.Add(user);
+        await contexts.Customer.SaveChangesAsync();
+        var reader = contexts.CreateReader();
+
+        var result = await reader.FindActiveAsync("legacy-id", IdentityKind.Customer, default);
 
         Assert.Null(result);
     }
