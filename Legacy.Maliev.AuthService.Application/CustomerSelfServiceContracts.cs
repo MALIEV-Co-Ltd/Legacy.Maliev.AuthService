@@ -22,3 +22,11 @@ public sealed record CompletePasswordResetRequest(
     [Required, EmailAddress, StringLength(320)] string Email,
     [Required, StringLength(256, MinimumLength = 32)] string Token,
     [Required, StringLength(1024, MinimumLength = 6)] string Password);
+/// <summary>Changes the authenticated customer's email after verifying the current password.</summary>
+public sealed record ChangeCustomerEmailRequest(
+    [Required, StringLength(1024)] string CurrentPassword,
+    [Required, EmailAddress, StringLength(320)] string NewEmail);
+/// <summary>Changes the authenticated customer's password after verifying the current password.</summary>
+public sealed record ChangeCustomerPasswordRequest(
+    [Required, StringLength(1024)] string CurrentPassword,
+    [Required, StringLength(1024, MinimumLength = 6)] string NewPassword);

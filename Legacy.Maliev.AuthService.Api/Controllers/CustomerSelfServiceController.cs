@@ -4,6 +4,9 @@ using Legacy.Maliev.AuthService.Infrastructure;
 using Maliev.Aspire.ServiceDefaults.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
 
 namespace Legacy.Maliev.AuthService.Api.Controllers;
 
@@ -43,5 +46,43 @@ public sealed class CustomerSelfServiceController(CustomerSelfService service) :
     [RequirePermission(CustomerSelfServicePermissions.Use)]
     public async Task<IActionResult> CompletePasswordReset(CompletePasswordResetRequest request, CancellationToken cancellationToken) => await service.CompletePasswordResetAsync(request, cancellationToken) ? NoContent() : BadRequest(InvalidAction());
 
+    /// <summary>Changes the authenticated customer's email and creates a one-time confirmation challenge.</summary>
+    [HttpPost("email/change")]
+    [Authorize(Policy = "LegacyCustomer")]
+    [EnableRateLimiting("credential-change")]
+    public async Task<ActionResult<CustomerActionChallenge>> ChangeEmail(
+        ChangeCustomerEmailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var identityId = User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+        if (string.IsNullOrWhiteSpace(identityId))
+        {
+            return Unauthorized();
+        }
+
+        var result = await service.ChangeEmailAsync(identityId, request, cancellationToken);
+        return result is null ? BadRequest(InvalidCredentialChange()) : Ok(result);
+    }
+
+    /// <summary>Changes the authenticated customer's password and revokes all refresh sessions.</summary>
+    [HttpPost("password/change")]
+    [Authorize(Policy = "LegacyCustomer")]
+    [EnableRateLimiting("credential-change")]
+    public async Task<IActionResult> ChangePassword(
+        ChangeCustomerPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var identityId = User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+        if (string.IsNullOrWhiteSpace(identityId))
+        {
+            return Unauthorized();
+        }
+
+        return await service.ChangePasswordAsync(identityId, request, cancellationToken)
+            ? NoContent()
+            : BadRequest(InvalidCredentialChange());
+    }
+
     private static ProblemDetails InvalidAction() => new() { Status = StatusCodes.Status400BadRequest, Title = "Identity action failed", Detail = "The identity action is invalid or expired." };
+    private static ProblemDetails InvalidCredentialChange() => new() { Status = StatusCodes.Status400BadRequest, Title = "Credential change failed", Detail = "The current password or requested account value is invalid." };
 }

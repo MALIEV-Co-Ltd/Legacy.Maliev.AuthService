@@ -23,6 +23,10 @@ builder.Services.AddAuthorizationBuilder().AddPolicy("LegacyEmployee", policy =>
 {
     policy.RequireAuthenticatedUser();
     policy.RequireClaim("identity_kind", "employee");
+}).AddPolicy("LegacyCustomer", policy =>
+{
+    policy.RequireAuthenticatedUser();
+    policy.RequireClaim("identity_kind", "customer");
 });
 builder.Services.AddRateLimiter(options =>
 {
@@ -33,6 +37,17 @@ builder.Services.AddRateLimiter(options =>
         {
             PermitLimit = 10,
             Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        }));
+    options.AddPolicy("credential-change", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.User.FindFirst("sub")?.Value
+            ?? context.Connection.RemoteIpAddress?.ToString()
+            ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 5,
+            Window = TimeSpan.FromMinutes(5),
             QueueLimit = 0,
             AutoReplenishment = true,
         }));

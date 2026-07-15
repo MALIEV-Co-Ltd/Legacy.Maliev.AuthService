@@ -87,6 +87,81 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         return true;
     }
 
+    /// <summary>Changes an authenticated customer's email after current-password verification.</summary>
+    public async Task<CustomerActionChallenge?> ChangeEmailAsync(
+        string identityId,
+        ChangeCustomerEmailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var row = await customers.Users.SingleOrDefaultAsync(
+            value => value.Id == identityId,
+            cancellationToken);
+        if (row?.PasswordHash is null)
+        {
+            return null;
+        }
+
+        var verification = passwordHasher.VerifyHashedPassword(row, row.PasswordHash, request.CurrentPassword);
+        if (verification == PasswordVerificationResult.Failed)
+        {
+            return null;
+        }
+
+        var email = request.NewEmail.Trim();
+        var normalized = email.ToUpperInvariant();
+        if (await customers.Users.AnyAsync(
+            value => value.Id != identityId
+                && (value.NormalizedEmail == normalized || value.NormalizedUserName == normalized),
+            cancellationToken))
+        {
+            return null;
+        }
+
+        var challenge = await CreateChallengeForIdentityAsync(
+            row.Id,
+            EmailConfirmation,
+            cancellationToken);
+        row.Email = email;
+        row.NormalizedEmail = normalized;
+        row.UserName = email;
+        row.NormalizedUserName = normalized;
+        row.EmailConfirmed = false;
+        if (verification == PasswordVerificationResult.SuccessRehashNeeded)
+        {
+            row.PasswordHash = passwordHasher.HashPassword(row, request.CurrentPassword);
+        }
+
+        RotateSecurityStamp(row);
+        await customers.SaveChangesAsync(cancellationToken);
+        await RevokeRefreshSessionsAsync(row.Id, cancellationToken);
+        return challenge;
+    }
+
+    /// <summary>Changes an authenticated customer's password and revokes all refresh sessions.</summary>
+    public async Task<bool> ChangePasswordAsync(
+        string identityId,
+        ChangeCustomerPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var row = await customers.Users.SingleOrDefaultAsync(
+            value => value.Id == identityId,
+            cancellationToken);
+        if (row?.PasswordHash is null
+            || passwordHasher.VerifyHashedPassword(row, row.PasswordHash, request.CurrentPassword)
+                == PasswordVerificationResult.Failed)
+        {
+            return false;
+        }
+
+        row.PasswordHash = passwordHasher.HashPassword(row, request.NewPassword);
+        row.AccessFailedCount = 0;
+        row.LockoutEnd = null;
+        RotateSecurityStamp(row);
+        await customers.SaveChangesAsync(cancellationToken);
+        await RevokeRefreshSessionsAsync(row.Id, cancellationToken);
+        return true;
+    }
+
     private async Task<CustomerActionChallenge> CreateChallengeAsync(string email, string purpose, bool requireUnconfirmed, CancellationToken cancellationToken)
     {
         var row = await FindAsync(email, cancellationToken);
@@ -95,13 +170,21 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
             return new(true, null);
         }
 
+        return await CreateChallengeForIdentityAsync(row.Id, purpose, cancellationToken);
+    }
+
+    private async Task<CustomerActionChallenge> CreateChallengeForIdentityAsync(
+        string identityId,
+        string purpose,
+        CancellationToken cancellationToken)
+    {
         var token = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
         var now = timeProvider.GetUtcNow();
-        await SupersedeActiveChallengesAsync(row.Id, purpose, now, cancellationToken);
+        await SupersedeActiveChallengesAsync(identityId, purpose, now, cancellationToken);
         state.IdentityActionTokens.Add(new()
         {
             Id = Guid.NewGuid(),
-            IdentityId = row.Id,
+            IdentityId = identityId,
             Purpose = purpose,
             TokenHash = Hash(token),
             CreatedAt = now,
@@ -109,6 +192,28 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         });
         await state.SaveChangesAsync(cancellationToken);
         return new(true, token);
+    }
+
+    private async Task RevokeRefreshSessionsAsync(string identityId, CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow();
+        var active = state.RefreshSessions.Where(value =>
+            value.IdentityId == identityId
+            && value.RevokedAt == null);
+        if (state.Database.IsRelational())
+        {
+            await active.ExecuteUpdateAsync(
+                setters => setters.SetProperty(value => value.RevokedAt, now),
+                cancellationToken);
+            return;
+        }
+
+        foreach (var session in await active.ToListAsync(cancellationToken))
+        {
+            session.RevokedAt = now;
+        }
+
+        await state.SaveChangesAsync(cancellationToken);
     }
 
     private async Task SupersedeActiveChallengesAsync(
