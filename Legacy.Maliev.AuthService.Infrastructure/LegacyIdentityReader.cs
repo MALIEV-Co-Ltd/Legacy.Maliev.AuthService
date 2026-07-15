@@ -24,7 +24,7 @@ public sealed class LegacyIdentityReader(
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.NormalizedUserName == normalized, cancellationToken);
 
-        if (!IsActive(user) || string.IsNullOrEmpty(user!.PasswordHash))
+        if (!IsActive(user, kind) || string.IsNullOrEmpty(user!.PasswordHash))
         {
             DummyPasswordVerification(password);
             return null;
@@ -45,14 +45,16 @@ public sealed class LegacyIdentityReader(
         var user = await Users(kind)
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == identityId, cancellationToken);
-        return IsActive(user) ? Project(user!, kind) : null;
+        return IsActive(user, kind) ? Project(user!, kind) : null;
     }
 
     private IQueryable<LegacyIdentityRow> Users(IdentityKind kind) =>
         kind == IdentityKind.Customer ? customerContext.Users : employeeContext.Users;
 
-    private bool IsActive(LegacyIdentityRow? user) =>
-        user is not null && (!user.LockoutEnabled || user.LockoutEnd is null || user.LockoutEnd <= timeProvider.GetUtcNow());
+    private bool IsActive(LegacyIdentityRow? user, IdentityKind kind) =>
+        user is not null
+        && (kind != IdentityKind.Customer || user.EmailConfirmed)
+        && (!user.LockoutEnabled || user.LockoutEnd is null || user.LockoutEnd <= timeProvider.GetUtcNow());
 
     private void DummyPasswordVerification(string password)
     {
