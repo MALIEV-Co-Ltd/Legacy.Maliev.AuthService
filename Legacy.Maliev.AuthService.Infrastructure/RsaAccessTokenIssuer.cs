@@ -1,0 +1,61 @@
+using Legacy.Maliev.AuthService.Application;
+using Legacy.Maliev.AuthService.Domain;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+
+namespace Legacy.Maliev.AuthService.Infrastructure;
+
+/// <summary>Issues RS256 access tokens whose private key is supplied only at runtime.</summary>
+public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IDisposable
+{
+    private readonly JwtOptions options;
+    private readonly RSA rsa;
+
+    /// <summary>Initializes and validates the runtime signing key.</summary>
+    public RsaAccessTokenIssuer(IOptions<JwtOptions> options)
+    {
+        this.options = options.Value;
+        rsa = RSA.Create();
+        rsa.ImportFromPem(this.options.PrivateKeyPem);
+    }
+
+    /// <inheritdoc />
+    public IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now)
+    {
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, identity.Id),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
+            new(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
+            new(JwtRegisteredClaimNames.Name, identity.UserName),
+            new("identity_kind", identity.Kind.ToString().ToLowerInvariant()),
+        };
+
+        if (!string.IsNullOrWhiteSpace(identity.Email))
+        {
+            claims.Add(new(JwtRegisteredClaimNames.Email, identity.Email));
+        }
+
+        if (identity.DatabaseId is not null)
+        {
+            claims.Add(new("legacy_database_id", identity.DatabaseId.Value.ToString()));
+        }
+
+        var key = new RsaSecurityKey(rsa) { KeyId = options.KeyId };
+        var token = new JwtSecurityToken(
+            options.Issuer,
+            options.Audience,
+            claims,
+            notBefore: now.UtcDateTime,
+            expires: now.AddSeconds(options.AccessTokenLifetimeSeconds).UtcDateTime,
+            signingCredentials: new SigningCredentials(key, SecurityAlgorithms.RsaSha256));
+
+        return new(new JwtSecurityTokenHandler().WriteToken(token), options.AccessTokenLifetimeSeconds);
+    }
+
+    /// <inheritdoc />
+    public void Dispose() => rsa.Dispose();
+}

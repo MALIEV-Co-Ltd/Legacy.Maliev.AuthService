@@ -50,7 +50,11 @@ public sealed class AuthenticationServiceTests
     {
         var store = new RecordingStore
         {
-            RotationResult = new RefreshRotationResult(RefreshRotationStatus.Succeeded, Identity()),
+            RotationResult = new RefreshRotationResult(
+                RefreshRotationStatus.Succeeded,
+                Identity().Id,
+                Identity().Kind,
+                Identity().SecurityStamp),
         };
         var service = CreateService(new StubValidator(null), store);
 
@@ -68,7 +72,7 @@ public sealed class AuthenticationServiceTests
     [InlineData(RefreshRotationStatus.Reused)]
     public async Task Refresh_InvalidOrReusedToken_ReturnsSamePublicFailure(RefreshRotationStatus status)
     {
-        var store = new RecordingStore { RotationResult = new RefreshRotationResult(status, null) };
+        var store = new RecordingStore { RotationResult = new RefreshRotationResult(status, null, null, null) };
         var service = CreateService(new StubValidator(null), store);
 
         var result = await service.RefreshAsync(new RefreshRequest(new string('r', 64)), default);
@@ -92,7 +96,7 @@ public sealed class AuthenticationServiceTests
     }
 
     private static AuthenticationService CreateService(StubValidator validator, RecordingStore store) =>
-        new(validator, new StubTokenIssuer(), store, new FakeTimeProvider(Now));
+        new(validator, new StubIdentityReader(Identity()), new StubTokenIssuer(), store, new FakeTimeProvider(Now));
 
     private static LegacyIdentity Identity() =>
         new("legacy-user-id", "user@maliev.com", "user@maliev.com", IdentityKind.Customer, 42, "stamp");
@@ -120,6 +124,14 @@ public sealed class AuthenticationServiceTests
         public IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now) => new("signed.jwt", 900);
     }
 
+    private sealed class StubIdentityReader(LegacyIdentity? identity) : ILegacyIdentityReader
+    {
+        public Task<LegacyIdentity?> FindActiveAsync(
+            string identityId,
+            IdentityKind kind,
+            CancellationToken cancellationToken) => Task.FromResult(identity);
+    }
+
     private sealed class RecordingStore : IRefreshSessionStore
     {
         public RefreshSession? Created { get; private set; }
@@ -131,7 +143,7 @@ public sealed class AuthenticationServiceTests
         public DateTimeOffset? RevokedAt { get; private set; }
 
         public RefreshRotationResult RotationResult { get; init; } =
-            new(RefreshRotationStatus.Invalid, null);
+            new(RefreshRotationStatus.Invalid, null, null, null);
 
         public Task CreateAsync(RefreshSession session, CancellationToken cancellationToken)
         {

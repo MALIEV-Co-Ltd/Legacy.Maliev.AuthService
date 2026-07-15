@@ -15,6 +15,9 @@ public sealed class RefreshSession
     /// <summary>Gets or sets the identity database kind.</summary>
     public IdentityKind IdentityKind { get; set; }
 
+    /// <summary>Gets or sets the identity security stamp captured at session creation.</summary>
+    public string? SecurityStamp { get; set; }
+
     /// <summary>Gets or sets the SHA-256 token hash.</summary>
     public required string TokenHash { get; set; }
 

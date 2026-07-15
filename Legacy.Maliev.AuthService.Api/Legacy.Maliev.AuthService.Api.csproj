@@ -1,10 +1,17 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <SharedLibraryVersion Condition="'$(SharedLibraryVersion)' == ''">1.0.*-*</SharedLibraryVersion>
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="..\Legacy.Maliev.AuthService.Application\Legacy.Maliev.AuthService.Application.csproj" />
     <ProjectReference Include="..\Legacy.Maliev.AuthService.Infrastructure\Legacy.Maliev.AuthService.Infrastructure.csproj" />
   </ItemGroup>
+  <ItemGroup Condition="'$(GITHUB_ACTIONS)' != 'true' Or '$(UseLocalMalievDependencies)' == 'true'">
+    <ProjectReference Include="$(MalievWorkspaceRoot)\Maliev.Aspire\Maliev.Aspire.ServiceDefaults\Maliev.Aspire.ServiceDefaults.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(GITHUB_ACTIONS)' == 'true' And '$(UseLocalMalievDependencies)' != 'true'">
+    <PackageReference Include="Maliev.Aspire.ServiceDefaults" Version="$(SharedLibraryVersion)" />
+  </ItemGroup>
 </Project>
-

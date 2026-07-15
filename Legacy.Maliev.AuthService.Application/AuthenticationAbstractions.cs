@@ -9,6 +9,13 @@ public interface ILegacyCredentialValidator
     Task<LegacyIdentity?> ValidateAsync(string userName, string password, IdentityKind kind, CancellationToken cancellationToken);
 }
 
+/// <summary>Reads an identity after refresh rotation so current security state is rechecked.</summary>
+public interface ILegacyIdentityReader
+{
+    /// <summary>Finds a non-locked identity by its legacy identifier and database kind.</summary>
+    Task<LegacyIdentity?> FindActiveAsync(string identityId, IdentityKind kind, CancellationToken cancellationToken);
+}
+
 /// <summary>Issues asymmetric short-lived access tokens.</summary>
 public interface IAccessTokenIssuer
 {
@@ -46,4 +53,8 @@ public enum RefreshRotationStatus
 }
 
 /// <summary>Refresh rotation outcome with the authenticated identity when successful.</summary>
-public sealed record RefreshRotationResult(RefreshRotationStatus Status, LegacyIdentity? Identity);
+public sealed record RefreshRotationResult(
+    RefreshRotationStatus Status,
+    string? IdentityId,
+    IdentityKind? IdentityKind,
+    string? SecurityStamp);

@@ -7,6 +7,7 @@ namespace Legacy.Maliev.AuthService.Application;
 /// <summary>Coordinates credential validation, short-lived access tokens and rotating refresh sessions.</summary>
 public sealed class AuthenticationService(
     ILegacyCredentialValidator credentialValidator,
+    ILegacyIdentityReader identityReader,
     IAccessTokenIssuer accessTokenIssuer,
     IRefreshSessionStore refreshSessionStore,
     TimeProvider timeProvider)
@@ -49,13 +50,23 @@ public sealed class AuthenticationService(
         };
 
         var rotation = await refreshSessionStore.RotateAsync(Hash(request.RefreshToken), replacement, cancellationToken);
-        if (rotation.Status != RefreshRotationStatus.Succeeded || rotation.Identity is null)
+        if (rotation.Status != RefreshRotationStatus.Succeeded ||
+            rotation.IdentityId is null ||
+            rotation.IdentityKind is null)
         {
             return AuthenticationResult.Failed();
         }
 
+        var identity = await identityReader.FindActiveAsync(
+            rotation.IdentityId, rotation.IdentityKind.Value, cancellationToken);
+        if (identity is null || !string.Equals(identity.SecurityStamp, rotation.SecurityStamp, StringComparison.Ordinal))
+        {
+            await refreshSessionStore.RevokeFamilyAsync(replacement.TokenHash, now, cancellationToken);
+            return AuthenticationResult.Failed();
+        }
+
         return AuthenticationResult.Success(
-            CreateTokenResponse(rotation.Identity, replacementToken, replacement.ExpiresAt, now));
+            CreateTokenResponse(identity, replacementToken, replacement.ExpiresAt, now));
     }
 
     /// <summary>Revokes the complete refresh-token family without revealing token validity.</summary>
@@ -82,6 +93,7 @@ public sealed class AuthenticationService(
             FamilyId = familyId,
             IdentityId = identity.Id,
             IdentityKind = identity.Kind,
+            SecurityStamp = identity.SecurityStamp,
             TokenHash = tokenHash,
             CreatedAt = now,
             ExpiresAt = now.Add(RefreshLifetime),
