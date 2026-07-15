@@ -9,12 +9,13 @@ using System.Reflection;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
-public sealed class CustomerIdentityAdminTests
+[Collection(PostgresCollection.Name)]
+public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
 {
     [Fact]
     public async Task Create_PersistsCompatiblePasswordHashAndReturnsNoSecurityMaterial()
     {
-        await using var context = CreateContext();
+        await using var context = await postgres.CreateCustomerContextAsync();
         var hasher = new PasswordHasher<LegacyIdentityRow>();
         var service = new CustomerIdentityAdminService(context, hasher);
 
@@ -47,7 +48,7 @@ public sealed class CustomerIdentityAdminTests
     [Fact]
     public async Task Update_ChangesSecurityStampSoExistingRefreshFamiliesBecomeInvalid()
     {
-        await using var context = CreateContext();
+        await using var context = await postgres.CreateCustomerContextAsync();
         var service = new CustomerIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>());
         await service.CreateAsync(
             42,
@@ -83,20 +84,16 @@ public sealed class CustomerIdentityAdminTests
     }
 
     [Fact]
-    public void CustomerIdentityContexts_HaveNoMigrationsInAuthRepository()
+    public void CustomerIdentityContext_HasIsolatedPostgresMigration()
     {
         var infrastructure = Path.Combine(FindRoot(), "Legacy.Maliev.AuthService.Infrastructure");
-        var migrations = Directory.GetFiles(Path.Combine(infrastructure, "Migrations"), "*.cs");
+        var migrations = Directory.GetFiles(
+            Path.Combine(infrastructure, "Migrations", "CustomerIdentityPostgres"), "*.cs");
         var combined = string.Join('\n', migrations.Select(File.ReadAllText));
 
-        Assert.DoesNotContain(nameof(CustomerIdentityDbContext), combined, StringComparison.Ordinal);
-        Assert.DoesNotContain("AspNetUsers", combined, StringComparison.Ordinal);
+        Assert.Contains(nameof(CustomerIdentityDbContext), combined, StringComparison.Ordinal);
+        Assert.Contains("AspNetUsers", combined, StringComparison.Ordinal);
     }
-
-    private static CustomerIdentityDbContext CreateContext() => new(
-        new DbContextOptionsBuilder<CustomerIdentityDbContext>()
-            .UseInMemoryDatabase($"customer-admin-{Guid.NewGuid()}")
-            .Options);
 
     private static string FindRoot()
     {

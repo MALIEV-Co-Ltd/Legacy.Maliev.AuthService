@@ -14,10 +14,27 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        services.AddDbContext<CustomerIdentityDbContext>(options =>
-            options.UseSqlServer(configuration.GetConnectionString("CustomerIdentity")));
-        services.AddDbContext<EmployeeIdentityDbContext>(options =>
-            options.UseSqlServer(configuration.GetConnectionString("EmployeeIdentity")));
+        var identityProvider = configuration["IdentityStorage:Provider"] ?? "SqlServer";
+        if (string.Equals(identityProvider, "PostgreSql", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddDbContext<CustomerIdentityDbContext>(options =>
+                options.UseNpgsql(configuration.GetConnectionString("CustomerIdentity")));
+            services.AddDbContext<EmployeeIdentityDbContext>(options =>
+                options.UseNpgsql(configuration.GetConnectionString("EmployeeIdentity")));
+        }
+        else if (string.Equals(identityProvider, "SqlServer", StringComparison.OrdinalIgnoreCase))
+        {
+            services.AddDbContext<CustomerIdentityDbContext>(options =>
+                options.UseSqlServer(configuration.GetConnectionString("CustomerIdentity")));
+            services.AddDbContext<EmployeeIdentityDbContext>(options =>
+                options.UseSqlServer(configuration.GetConnectionString("EmployeeIdentity")));
+        }
+        else
+        {
+            throw new InvalidOperationException(
+                "IdentityStorage:Provider must be either 'SqlServer' or 'PostgreSql'.");
+        }
+
         services.AddDbContext<RefreshSessionDbContext>(options =>
             options.UseNpgsql(configuration.GetConnectionString("RefreshSessions")));
 

@@ -6,14 +6,15 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
-public sealed class LegacyIdentityReaderTests
+[Collection(PostgresCollection.Name)]
+public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 15, 0, 0, 0, TimeSpan.Zero);
 
     [Fact]
     public async Task Validate_ExistingIdentityIdUsedAsPassword_IsRejected()
     {
-        await using var contexts = await ContextPair.CreateAsync();
+        await using var contexts = await ContextPair.CreateAsync(postgres);
         var user = CreateUser("legacy-id", "employee@maliev.com", "real-password");
         contexts.Employee.Users.Add(user);
         await contexts.Employee.SaveChangesAsync();
@@ -28,7 +29,7 @@ public sealed class LegacyIdentityReaderTests
     [Fact]
     public async Task Validate_CorrectAspNetIdentityPassword_ReturnsProjectedIdentity()
     {
-        await using var contexts = await ContextPair.CreateAsync();
+        await using var contexts = await ContextPair.CreateAsync(postgres);
         var user = CreateUser("legacy-id", "customer@example.com", "correct-password");
         user.DatabaseID = 42;
         user.EmailConfirmed = true;
@@ -48,7 +49,7 @@ public sealed class LegacyIdentityReaderTests
     [Fact]
     public async Task Validate_LockedIdentity_IsRejectedEvenWithCorrectPassword()
     {
-        await using var contexts = await ContextPair.CreateAsync();
+        await using var contexts = await ContextPair.CreateAsync(postgres);
         var user = CreateUser("legacy-id", "locked@maliev.com", "correct-password");
         user.LockoutEnabled = true;
         user.LockoutEnd = Now.AddMinutes(10);
@@ -65,7 +66,7 @@ public sealed class LegacyIdentityReaderTests
     [Fact]
     public async Task Validate_UnconfirmedCustomer_IsRejectedEvenWithCorrectPassword()
     {
-        await using var contexts = await ContextPair.CreateAsync();
+        await using var contexts = await ContextPair.CreateAsync(postgres);
         var user = CreateUser("legacy-id", "unconfirmed@example.com", "correct-password");
         user.EmailConfirmed = false;
         contexts.Customer.Users.Add(user);
@@ -81,7 +82,7 @@ public sealed class LegacyIdentityReaderTests
     [Fact]
     public async Task FindActive_UnconfirmedCustomer_IsRejectedForRefreshValidation()
     {
-        await using var contexts = await ContextPair.CreateAsync();
+        await using var contexts = await ContextPair.CreateAsync(postgres);
         var user = CreateUser("legacy-id", "unconfirmed@example.com", "correct-password");
         user.EmailConfirmed = false;
         contexts.Customer.Users.Add(user);
@@ -96,7 +97,7 @@ public sealed class LegacyIdentityReaderTests
     [Fact]
     public async Task ContextModels_MapCustomerOnlyColumnsOnlyInCustomerDatabase()
     {
-        await using var contexts = await ContextPair.CreateAsync();
+        await using var contexts = await ContextPair.CreateAsync(postgres);
 
         var customer = contexts.Customer.Model.FindEntityType(typeof(LegacyIdentityRow));
         var employee = contexts.Employee.Model.FindEntityType(typeof(LegacyIdentityRow));
@@ -133,17 +134,10 @@ public sealed class LegacyIdentityReaderTests
 
         public EmployeeIdentityDbContext Employee { get; }
 
-        public static async Task<ContextPair> CreateAsync()
+        public static async Task<ContextPair> CreateAsync(PostgresFixture postgres)
         {
-            var suffix = Guid.NewGuid().ToString();
-            var customer = new CustomerIdentityDbContext(
-                new DbContextOptionsBuilder<CustomerIdentityDbContext>()
-                    .UseInMemoryDatabase($"customer-{suffix}").Options);
-            var employee = new EmployeeIdentityDbContext(
-                new DbContextOptionsBuilder<EmployeeIdentityDbContext>()
-                    .UseInMemoryDatabase($"employee-{suffix}").Options);
-            await customer.Database.EnsureCreatedAsync();
-            await employee.Database.EnsureCreatedAsync();
+            var customer = await postgres.CreateCustomerContextAsync();
+            var employee = await postgres.CreateEmployeeContextAsync();
             return new(customer, employee);
         }
 
