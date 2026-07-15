@@ -4,6 +4,6 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <MalievWorkspaceRoot Condition="'$(MalievWorkspaceRoot)' == ''">$(MSBuildThisFileDirectory)..</MalievWorkspaceRoot>
   </PropertyGroup>
 </Project>
-
