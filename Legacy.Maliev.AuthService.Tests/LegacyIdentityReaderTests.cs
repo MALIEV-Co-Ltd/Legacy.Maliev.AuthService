@@ -61,6 +61,20 @@ public sealed class LegacyIdentityReaderTests
         Assert.Null(result);
     }
 
+    [Fact]
+    public async Task ContextModels_MapCustomerOnlyColumnsOnlyInCustomerDatabase()
+    {
+        await using var contexts = await ContextPair.CreateAsync();
+
+        var customer = contexts.Customer.Model.FindEntityType(typeof(LegacyIdentityRow));
+        var employee = contexts.Employee.Model.FindEntityType(typeof(LegacyIdentityRow));
+
+        Assert.NotNull(customer?.FindProperty(nameof(LegacyIdentityRow.FaxNumber)));
+        Assert.NotNull(customer?.FindProperty(nameof(LegacyIdentityRow.MobileNumber)));
+        Assert.Null(employee?.FindProperty(nameof(LegacyIdentityRow.FaxNumber)));
+        Assert.Null(employee?.FindProperty(nameof(LegacyIdentityRow.MobileNumber)));
+    }
+
     private static LegacyIdentityRow CreateUser(string id, string email, string password)
     {
         var user = new LegacyIdentityRow
