@@ -5,15 +5,15 @@ namespace Legacy.Maliev.AuthService.Application;
 
 /// <summary>Credentials submitted to the modern legacy login boundary.</summary>
 public sealed record LoginRequest(
-    [property: Required, EmailAddress, StringLength(320)] string UserName,
-    [property: Required, StringLength(1024, MinimumLength = 1)] string Password,
+    [Required, EmailAddress, StringLength(320)] string UserName,
+    [Required, StringLength(1024, MinimumLength = 1)] string Password,
     IdentityKind IdentityKind);
 
 /// <summary>A single-use refresh token request.</summary>
-public sealed record RefreshRequest([property: Required, StringLength(256, MinimumLength = 32)] string RefreshToken);
+public sealed record RefreshRequest([Required, StringLength(256, MinimumLength = 32)] string RefreshToken);
 
 /// <summary>A refresh-session revocation request.</summary>
-public sealed record RevokeRequest([property: Required, StringLength(256, MinimumLength = 32)] string RefreshToken);
+public sealed record RevokeRequest([Required, StringLength(256, MinimumLength = 32)] string RefreshToken);
 
 /// <summary>A short-lived access token and rotating refresh token.</summary>
 public sealed record TokenResponse(

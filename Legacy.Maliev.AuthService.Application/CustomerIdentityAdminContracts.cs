@@ -4,20 +4,20 @@ namespace Legacy.Maliev.AuthService.Application;
 
 /// <summary>Creates a customer identity using a password carried only in JSON.</summary>
 public sealed record CreateCustomerIdentityRequest(
-    [property: Required, EmailAddress, StringLength(320)] string UserName,
-    [property: Required, EmailAddress, StringLength(320)] string Email,
-    [property: Required, StringLength(1024, MinimumLength = 6)] string Password,
+    [Required, EmailAddress, StringLength(320)] string UserName,
+    [Required, EmailAddress, StringLength(320)] string Email,
+    [Required, StringLength(1024, MinimumLength = 6)] string Password,
     bool EmailConfirmed,
-    [property: Phone, StringLength(64)] string? PhoneNumber,
+    [Phone, StringLength(64)] string? PhoneNumber,
     string? FaxNumber,
     string? MobileNumber);
 
 /// <summary>Updates non-secret fields of an existing customer identity.</summary>
 public sealed record UpdateCustomerIdentityRequest(
-    [property: Required, EmailAddress, StringLength(320)] string UserName,
-    [property: Required, EmailAddress, StringLength(320)] string Email,
+    [Required, EmailAddress, StringLength(320)] string UserName,
+    [Required, EmailAddress, StringLength(320)] string Email,
     bool EmailConfirmed,
-    [property: Phone, StringLength(64)] string? PhoneNumber,
+    [Phone, StringLength(64)] string? PhoneNumber,
     bool PhoneNumberConfirmed,
     bool TwoFactorEnabled,
     DateTimeOffset? LockoutEnd,
