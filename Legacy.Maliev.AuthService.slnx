@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="Legacy.Maliev.AuthService.Api/Legacy.Maliev.AuthService.Api.csproj" />
+  <Project Path="Legacy.Maliev.AuthService.Application/Legacy.Maliev.AuthService.Application.csproj" />
+  <Project Path="Legacy.Maliev.AuthService.Domain/Legacy.Maliev.AuthService.Domain.csproj" />
+  <Project Path="Legacy.Maliev.AuthService.Infrastructure/Legacy.Maliev.AuthService.Infrastructure.csproj" />
+  <Project Path="Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj" />
+</Solution>
+

@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+.vs/
+.idea/
+TestResults/
+*.user
+*.suo
+*.pfx
+*.pem
+*.key
+.env
+

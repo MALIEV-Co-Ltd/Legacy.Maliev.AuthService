@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Legacy.Maliev.AuthService.Application\Legacy.Maliev.AuthService.Application.csproj" />
+    <ProjectReference Include="..\Legacy.Maliev.AuthService.Infrastructure\Legacy.Maliev.AuthService.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
+
