@@ -18,6 +18,8 @@ public sealed class RequestRecordValidationTests
             typeof(CustomerActionRequest),
             typeof(CompleteCustomerActionRequest),
             typeof(CompletePasswordResetRequest),
+            typeof(ChangeCustomerEmailRequest),
+            typeof(ChangeCustomerPasswordRequest),
             typeof(CreateCustomerIdentityRequest),
             typeof(UpdateCustomerIdentityRequest),
             typeof(CreateEmployeeIdentityRequest),

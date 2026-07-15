@@ -11,6 +11,9 @@ The service replaces the unsafe legacy token API with:
 - separate customer and employee identity boundaries;
 - trusted-BFF customer registration, single-use email confirmation, and
   password recovery through JSON-only endpoints;
+- customer-access-token-authorized email and password changes that verify the
+  current password, rotate identity security state, and revoke every refresh
+  session;
 - employee-authorized JSON administration for customer and employee identities,
   with initial passwords accepted only in request bodies;
 - OpenAPI and Scalar documentation through MALIEV service defaults.
@@ -68,3 +71,8 @@ Trusted BFF customer self-service uses JSON `POST` operations under
 `legacy-auth.customer-self-service`. Raw passwords and action tokens are never
 placed in URLs, logs, JWT claims, or PostgreSQL; only SHA-256 token hashes are
 stored. Issuing a replacement challenge invalidates the previous challenge.
+Authenticated `POST /auth/v1/customer-self-service/email/change` and
+`POST /auth/v1/customer-self-service/password/change` instead require a customer
+access token. The identity ID comes only from its signed `sub` claim; callers
+cannot select another account in the body or route. Successful changes rotate
+the security stamp and revoke all refresh sessions, requiring a fresh login.

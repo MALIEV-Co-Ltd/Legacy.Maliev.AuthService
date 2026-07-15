@@ -6,6 +6,7 @@ using Maliev.Aspire.ServiceDefaults.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Time.Testing;
 using System.Reflection;
@@ -22,7 +23,24 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.NotEmpty(controller.GetCustomAttributes<AuthorizeAttribute>());
         var methods = controller.GetMethods(BindingFlags.Instance | BindingFlags.Public).Where(method => method.DeclaringType == controller).ToArray();
         Assert.All(methods, method => Assert.NotEmpty(method.GetCustomAttributes<HttpPostAttribute>()));
-        Assert.All(methods, method => Assert.Contains(method.GetCustomAttributes<RequirePermissionAttribute>(), attribute => attribute.Permission == CustomerSelfServicePermissions.Use));
+        var customerCredentialMethods = new[]
+        {
+            nameof(CustomerSelfServiceController.ChangeEmail),
+            nameof(CustomerSelfServiceController.ChangePassword),
+        };
+        Assert.All(
+            methods.Where(method => customerCredentialMethods.Contains(method.Name, StringComparer.Ordinal)),
+            method => Assert.Equal("LegacyCustomer", method.GetCustomAttribute<AuthorizeAttribute>()?.Policy));
+        Assert.All(
+            methods.Where(method => customerCredentialMethods.Contains(method.Name, StringComparer.Ordinal)),
+            method => Assert.Equal(
+                "credential-change",
+                method.GetCustomAttribute<EnableRateLimitingAttribute>()?.PolicyName));
+        Assert.All(
+            methods.Where(method => !customerCredentialMethods.Contains(method.Name, StringComparer.Ordinal)),
+            method => Assert.Contains(
+                method.GetCustomAttributes<RequirePermissionAttribute>(),
+                attribute => attribute.Permission == CustomerSelfServicePermissions.Use));
         Assert.DoesNotContain(
             methods.SelectMany(method => method.GetCustomAttributes<HttpPostAttribute>()),
             attribute => attribute.Template?.Contains("{password", StringComparison.OrdinalIgnoreCase) == true
@@ -104,6 +122,73 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.False(confirmed); Assert.False((await fixture.Customers.Users.SingleAsync()).EmailConfirmed);
     }
 
+    [Fact]
+    public async Task ChangePassword_VerifiesCurrentPasswordRotatesSecurityStampAndRevokesRefreshSessions()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync();
+        await fixture.SeedRefreshSessionAsync();
+        var before = (await fixture.Customers.Users.AsNoTracking().SingleAsync()).SecurityStamp;
+
+        var rejected = await fixture.Service.ChangePasswordAsync(
+            "customer-id",
+            new ChangeCustomerPasswordRequest("wrong-password", "new-password"),
+            default);
+        var changed = await fixture.Service.ChangePasswordAsync(
+            "customer-id",
+            new ChangeCustomerPasswordRequest("old-password", "new-password"),
+            default);
+
+        Assert.False(rejected);
+        Assert.True(changed);
+        var stored = await fixture.Customers.Users.AsNoTracking().SingleAsync();
+        Assert.NotEqual(before, stored.SecurityStamp);
+        Assert.Equal(
+            PasswordVerificationResult.Success,
+            fixture.Hasher.VerifyHashedPassword(stored, stored.PasswordHash!, "new-password"));
+        Assert.NotNull((await fixture.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
+    }
+
+    [Fact]
+    public async Task ChangeEmail_VerifiesPasswordEnforcesUniquenessAndIssuesSingleUseConfirmation()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync();
+        await fixture.SeedCustomerAsync(
+            id: "other-id",
+            databaseId: 43,
+            email: "other@example.com");
+        await fixture.SeedRefreshSessionAsync();
+
+        var wrongPassword = await fixture.Service.ChangeEmailAsync(
+            "customer-id",
+            new ChangeCustomerEmailRequest("wrong-password", "new@example.com"),
+            default);
+        var duplicate = await fixture.Service.ChangeEmailAsync(
+            "customer-id",
+            new ChangeCustomerEmailRequest("old-password", "other@example.com"),
+            default);
+        var changed = await fixture.Service.ChangeEmailAsync(
+            "customer-id",
+            new ChangeCustomerEmailRequest("old-password", "new@example.com"),
+            default);
+
+        Assert.Null(wrongPassword);
+        Assert.Null(duplicate);
+        Assert.NotNull(changed?.Token);
+        var stored = await fixture.Customers.Users.AsNoTracking().SingleAsync(value => value.Id == "customer-id");
+        Assert.Equal("new@example.com", stored.Email);
+        Assert.Equal("new@example.com", stored.UserName);
+        Assert.False(stored.EmailConfirmed);
+        Assert.NotNull((await fixture.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
+        Assert.True(await fixture.Service.ConfirmEmailAsync(
+            new CompleteCustomerActionRequest("new@example.com", changed!.Token!),
+            default));
+        Assert.False(await fixture.Service.ConfirmEmailAsync(
+            new CompleteCustomerActionRequest("new@example.com", changed.Token!),
+            default));
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private Fixture(
@@ -125,10 +210,28 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
                 await postgres.CreateCustomerContextAsync(),
                 await postgres.CreateStateContextAsync(),
                 timeProvider);
-        public async Task SeedCustomerAsync()
+        public async Task SeedCustomerAsync(
+            string id = "customer-id",
+            int databaseId = 42,
+            string email = "customer@example.com")
         {
-            var row = new LegacyIdentityRow { Id = "customer-id", DatabaseID = 42, UserName = "customer@example.com", NormalizedUserName = "CUSTOMER@EXAMPLE.COM", Email = "customer@example.com", NormalizedEmail = "CUSTOMER@EXAMPLE.COM", SecurityStamp = Guid.NewGuid().ToString(), ConcurrencyStamp = Guid.NewGuid().ToString(), LockoutEnabled = true };
+            var normalized = email.ToUpperInvariant();
+            var row = new LegacyIdentityRow { Id = id, DatabaseID = databaseId, UserName = email, NormalizedUserName = normalized, Email = email, NormalizedEmail = normalized, SecurityStamp = Guid.NewGuid().ToString(), ConcurrencyStamp = Guid.NewGuid().ToString(), LockoutEnabled = true };
             row.PasswordHash = Hasher.HashPassword(row, "old-password"); Customers.Users.Add(row); await Customers.SaveChangesAsync();
+        }
+        public async Task SeedRefreshSessionAsync()
+        {
+            State.RefreshSessions.Add(new()
+            {
+                Id = Guid.NewGuid(),
+                FamilyId = Guid.NewGuid(),
+                IdentityId = "customer-id",
+                IdentityKind = Legacy.Maliev.AuthService.Domain.IdentityKind.Customer,
+                TokenHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(Guid.NewGuid().ToByteArray())),
+                CreatedAt = DateTimeOffset.UtcNow,
+                ExpiresAt = DateTimeOffset.UtcNow.AddDays(1),
+            });
+            await State.SaveChangesAsync();
         }
         public async ValueTask DisposeAsync() { await Customers.DisposeAsync(); await State.DisposeAsync(); }
     }
