@@ -13,7 +13,7 @@ public sealed class AuthenticationController(AuthenticationService authenticatio
 {
     /// <summary>Authenticates a configured machine identity without creating a refresh session.</summary>
     [HttpPost("service/login")]
-    [EnableRateLimiting("login")]
+    [EnableRateLimiting("service-login")]
     [ProducesResponseType<ServiceTokenResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<ServiceTokenResponse>> ServiceLogin(ServiceLoginRequest request)

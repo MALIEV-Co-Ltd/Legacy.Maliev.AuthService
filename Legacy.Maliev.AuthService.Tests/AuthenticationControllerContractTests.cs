@@ -2,6 +2,7 @@ using Legacy.Maliev.AuthService.Api.Controllers;
 using Legacy.Maliev.AuthService.Application;
 using Legacy.Maliev.AuthService.Domain;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Time.Testing;
 using System.Reflection;
 
@@ -9,6 +10,27 @@ namespace Legacy.Maliev.AuthService.Tests;
 
 public sealed class AuthenticationControllerContractTests
 {
+    [Fact]
+    public void AuthenticationBoundary_IsolatesMachineAndHumanRateLimitPolicies()
+    {
+        var methods = typeof(AuthenticationController).GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .Where(method => method.DeclaringType == typeof(AuthenticationController))
+            .ToDictionary(method => method.Name, StringComparer.Ordinal);
+
+        Assert.Equal(
+            "service-login",
+            methods[nameof(AuthenticationController.ServiceLogin)]
+                .GetCustomAttribute<EnableRateLimitingAttribute>()?.PolicyName);
+        Assert.Equal(
+            "login",
+            methods[nameof(AuthenticationController.Login)]
+                .GetCustomAttribute<EnableRateLimitingAttribute>()?.PolicyName);
+        Assert.Equal(
+            "login",
+            methods[nameof(AuthenticationController.Refresh)]
+                .GetCustomAttribute<EnableRateLimitingAttribute>()?.PolicyName);
+    }
+
     [Fact]
     public void AuthenticationBoundary_ExposesOnlyPostEndpointsAndNoLongLivedTokenRoute()
     {
