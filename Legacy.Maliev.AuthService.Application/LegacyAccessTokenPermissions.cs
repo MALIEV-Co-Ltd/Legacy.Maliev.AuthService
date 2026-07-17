@@ -9,4 +9,6 @@ public static class LegacyAccessTokenPermissions
     public const string CatalogMaterialsCreate = "legacy-catalog.materials.create";
     /// <summary>Allows an authenticated employee to update a legacy catalog material.</summary>
     public const string CatalogMaterialsUpdate = "legacy-catalog.materials.update";
+    /// <summary>Allows an authenticated employee to list and search legacy customer profiles.</summary>
+    public const string CustomersList = "legacy-customer.customers.list";
 }
