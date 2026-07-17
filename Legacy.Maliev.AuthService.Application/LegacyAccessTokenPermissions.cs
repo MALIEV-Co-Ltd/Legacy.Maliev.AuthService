@@ -21,4 +21,6 @@ public static class LegacyAccessTokenPermissions
     public const string EmployeeIdentitiesCreate = "legacy-auth.employee-identities.create";
     /// <summary>Allows an authenticated employee to list legacy employee profiles.</summary>
     public const string EmployeesList = "legacy-employee.employees.list";
+    /// <summary>Allows an authenticated employee to read a legacy employee profile.</summary>
+    public const string EmployeesRead = "legacy-employee.employees.read";
 }
