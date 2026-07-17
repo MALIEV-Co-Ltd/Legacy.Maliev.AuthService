@@ -25,6 +25,7 @@ public sealed class JwtAccessTokenContractTests
     private const string OrdersRead = "legacy.orders.read";
     private const string OrdersCreate = "legacy.orders.create";
     private const string SuppliersRead = "legacy-procurement.suppliers.read";
+    private const string PurchaseOrdersRead = "legacy-procurement.purchase-orders.read";
     private const string OrderCatalogRead = "legacy.order-catalog.read";
     private const string OrdersUpdate = "legacy.orders.update";
     private const string OrderFilesRead = "legacy.order-files.read";
@@ -67,7 +68,7 @@ public sealed class JwtAccessTokenContractTests
             default);
 
         var token = fixture.ReadAndValidate(Assert.IsType<TokenResponse>(result.Tokens).AccessToken);
-        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeeIdentitiesCreate, EmployeesList, EmployeesRead, OrdersRead, OrdersCreate, SuppliersRead, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
+        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeeIdentitiesCreate, EmployeesList, EmployeesRead, OrdersRead, OrdersCreate, SuppliersRead, PurchaseOrdersRead, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
         AssertStableEmployeeContract(token, fixture.KeyId);
     }
 
@@ -96,7 +97,7 @@ public sealed class JwtAccessTokenContractTests
             default);
 
         var token = fixture.ReadAndValidate(Assert.IsType<TokenResponse>(result.Tokens).AccessToken);
-        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeeIdentitiesCreate, EmployeesList, EmployeesRead, OrdersRead, OrdersCreate, SuppliersRead, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
+        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeeIdentitiesCreate, EmployeesList, EmployeesRead, OrdersRead, OrdersCreate, SuppliersRead, PurchaseOrdersRead, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
         AssertStableEmployeeContract(token, fixture.KeyId);
         Assert.NotNull(store.Replacement);
     }
@@ -130,6 +131,7 @@ public sealed class JwtAccessTokenContractTests
         Assert.DoesNotContain(EmployeesRead, PermissionValues(token));
         Assert.DoesNotContain(OrdersRead, PermissionValues(token));
         Assert.DoesNotContain(SuppliersRead, PermissionValues(token));
+        Assert.DoesNotContain(PurchaseOrdersRead, PermissionValues(token));
         Assert.DoesNotContain(OrderCatalogRead, PermissionValues(token));
         AssertDoesNotContainEmployeeOrderWorkflowPermissions(token);
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "customer");
@@ -161,6 +163,7 @@ public sealed class JwtAccessTokenContractTests
 
         var token = fixture.ReadAndValidate(Assert.IsType<TokenResponse>(result.Tokens).AccessToken);
         Assert.DoesNotContain(SuppliersRead, PermissionValues(token));
+        Assert.DoesNotContain(PurchaseOrdersRead, PermissionValues(token));
         AssertDoesNotContainEmployeeOrderWorkflowPermissions(token);
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "customer");
     }
@@ -179,6 +182,7 @@ public sealed class JwtAccessTokenContractTests
         Assert.Equal(["legacy-contact.messages.create"], PermissionValues(token));
         Assert.DoesNotContain(OrdersRead, PermissionValues(token));
         Assert.DoesNotContain(SuppliersRead, PermissionValues(token));
+        Assert.DoesNotContain(PurchaseOrdersRead, PermissionValues(token));
         Assert.DoesNotContain(OrderCatalogRead, PermissionValues(token));
         AssertDoesNotContainEmployeeOrderWorkflowPermissions(token);
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "service");
@@ -191,12 +195,12 @@ public sealed class JwtAccessTokenContractTests
 
         var issued = fixture.Issuer.IssueService(
             "legacy-intranet",
-            ["legacy-contact.messages.create", CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeesList, EmployeesRead, OrdersRead, OrderCatalogRead],
+            ["legacy-contact.messages.create", CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeesList, EmployeesRead, OrdersRead, PurchaseOrdersRead, OrderCatalogRead],
             Now);
 
         var token = fixture.ReadAndValidate(issued.Value);
         Assert.Equal(
-            ["legacy-contact.messages.create", CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeesList, EmployeesRead, OrdersRead, OrderCatalogRead],
+            ["legacy-contact.messages.create", CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeesList, EmployeesRead, OrdersRead, PurchaseOrdersRead, OrderCatalogRead],
             PermissionValues(token));
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "service");
     }
