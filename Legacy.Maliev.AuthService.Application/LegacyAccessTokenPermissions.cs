@@ -17,6 +17,8 @@ public static class LegacyAccessTokenPermissions
     public const string CustomersRead = "legacy-customer.customers.read";
     /// <summary>Allows an authenticated employee to create a legacy customer identity.</summary>
     public const string CustomerIdentitiesCreate = "legacy-auth.customer-identities.create";
+    /// <summary>Allows an authenticated employee to create a legacy employee identity.</summary>
+    public const string EmployeeIdentitiesCreate = "legacy-auth.employee-identities.create";
     /// <summary>Allows an authenticated employee to list legacy employee profiles.</summary>
     public const string EmployeesList = "legacy-employee.employees.list";
 }
