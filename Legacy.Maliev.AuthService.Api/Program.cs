@@ -1,4 +1,5 @@
 using Legacy.Maliev.AuthService.Infrastructure;
+using Legacy.Maliev.AuthService.Api.Security;
 using Maliev.Aspire.ServiceDefaults;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
@@ -16,6 +17,8 @@ builder.AddStandardOpenApi(
 
 builder.Services.AddProblemDetails();
 builder.Services.AddControllers();
+builder.Services.AddSingleton<LoginAttemptRateLimiter>();
+builder.Services.AddSingleton<LoginRateLimitFilter>();
 builder.Services.AddLegacyAuthInfrastructure(builder.Configuration);
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
 builder.Services.AddSingleton<IConfigureOptions<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>, LegacyJwtBearerConfiguration>();

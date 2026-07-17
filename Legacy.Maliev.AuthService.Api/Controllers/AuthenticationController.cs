@@ -1,4 +1,5 @@
 using Legacy.Maliev.AuthService.Application;
+using Legacy.Maliev.AuthService.Api.Security;
 using Legacy.Maliev.AuthService.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -23,9 +24,10 @@ public sealed class AuthenticationController(AuthenticationService authenticatio
     }
     /// <summary>Authenticates against one unchanged legacy identity database.</summary>
     [HttpPost("login")]
-    [EnableRateLimiting("login")]
+    [ServiceFilter(typeof(LoginRateLimitFilter))]
     [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<TokenResponse>> Login(
         LoginRequest request,
         CancellationToken cancellationToken)

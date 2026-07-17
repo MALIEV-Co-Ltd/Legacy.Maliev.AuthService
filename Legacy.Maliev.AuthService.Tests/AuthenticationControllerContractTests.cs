@@ -1,6 +1,8 @@
 using Legacy.Maliev.AuthService.Api.Controllers;
+using Legacy.Maliev.AuthService.Api.Security;
 using Legacy.Maliev.AuthService.Application;
 using Legacy.Maliev.AuthService.Domain;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Time.Testing;
@@ -11,7 +13,7 @@ namespace Legacy.Maliev.AuthService.Tests;
 public sealed class AuthenticationControllerContractTests
 {
     [Fact]
-    public void AuthenticationBoundary_IsolatesMachineAndHumanRateLimitPolicies()
+    public void AuthenticationBoundary_IsolatesMachineLoginHumanLoginAndRefreshRateLimits()
     {
         var methods = typeof(AuthenticationController).GetMethods(BindingFlags.Instance | BindingFlags.Public)
             .Where(method => method.DeclaringType == typeof(AuthenticationController))
@@ -22,9 +24,20 @@ public sealed class AuthenticationControllerContractTests
             methods[nameof(AuthenticationController.ServiceLogin)]
                 .GetCustomAttribute<EnableRateLimitingAttribute>()?.PolicyName);
         Assert.Equal(
+            typeof(LoginRateLimitFilter),
+            methods[nameof(AuthenticationController.Login)]
+                .GetCustomAttribute<ServiceFilterAttribute>()?.ServiceType);
+        Assert.Null(
+            methods[nameof(AuthenticationController.Login)]
+                .GetCustomAttribute<EnableRateLimitingAttribute>());
+        Assert.Equal(
             "login",
             methods[nameof(AuthenticationController.Login)]
-                .GetCustomAttribute<EnableRateLimitingAttribute>()?.PolicyName);
+                .GetCustomAttribute<HttpPostAttribute>()?.Template);
+        Assert.Contains(
+            methods[nameof(AuthenticationController.Login)]
+                .GetCustomAttributes<ProducesResponseTypeAttribute>(),
+            attribute => attribute.StatusCode == StatusCodes.Status429TooManyRequests);
         Assert.Equal(
             "login",
             methods[nameof(AuthenticationController.Refresh)]

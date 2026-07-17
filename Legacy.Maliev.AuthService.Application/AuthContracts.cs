@@ -7,7 +7,7 @@ namespace Legacy.Maliev.AuthService.Application;
 public sealed record LoginRequest(
     [Required, EmailAddress, StringLength(320)] string UserName,
     [Required, StringLength(1024, MinimumLength = 1)] string Password,
-    IdentityKind IdentityKind);
+    [EnumDataType(typeof(IdentityKind))] IdentityKind IdentityKind);
 
 /// <summary>A single-use refresh token request.</summary>
 public sealed record RefreshRequest([Required, StringLength(256, MinimumLength = 32)] string RefreshToken);
