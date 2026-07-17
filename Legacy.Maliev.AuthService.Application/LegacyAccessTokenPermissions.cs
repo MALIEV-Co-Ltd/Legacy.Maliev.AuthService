@@ -29,6 +29,8 @@ public static class LegacyAccessTokenPermissions
     public const string OrdersCreate = "legacy.orders.create";
     /// <summary>Allows an authenticated employee to read legacy supplier records.</summary>
     public const string SuppliersRead = "legacy-procurement.suppliers.read";
+    /// <summary>Allows an authenticated employee to read legacy purchase-order records.</summary>
+    public const string PurchaseOrdersRead = "legacy-procurement.purchase-orders.read";
     /// <summary>Allows an authenticated employee to read legacy order catalog data.</summary>
     public const string OrderCatalogRead = "legacy.order-catalog.read";
     /// <summary>Allows an authenticated employee to update a legacy order.</summary>
