@@ -5,4 +5,6 @@ public static class LegacyAccessTokenPermissions
 {
     /// <summary>Allows an authenticated employee to read the legacy material catalog.</summary>
     public const string CatalogMaterialsRead = "legacy-catalog.materials.read";
+    /// <summary>Allows an authenticated employee to create a legacy catalog material.</summary>
+    public const string CatalogMaterialsCreate = "legacy-catalog.materials.create";
 }
