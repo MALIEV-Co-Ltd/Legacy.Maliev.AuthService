@@ -31,6 +31,7 @@ builder.Services.AddAuthorizationBuilder().AddPolicy("LegacyEmployee", policy =>
     policy.RequireAuthenticatedUser();
     policy.RequireClaim("identity_kind", "customer");
 });
+builder.Services.AddPermissionAuthorization();
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
