@@ -47,6 +47,7 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
         if (identity.Kind == IdentityKind.Employee)
         {
             claims.Add(new("permissions", LegacyAccessTokenPermissions.CatalogMaterialsRead));
+            claims.Add(new("permissions", LegacyAccessTokenPermissions.CatalogMaterialsCreate));
         }
 
         return Issue(claims, now);
