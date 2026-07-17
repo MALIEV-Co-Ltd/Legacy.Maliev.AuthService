@@ -23,11 +23,13 @@ public sealed class LoginAttemptRateLimiter : IDisposable
     private readonly byte[] partitionKeySecret = RandomNumberGenerator.GetBytes(32);
     private readonly ConcurrentDictionary<string, LoginWindow> partitions = new(StringComparer.Ordinal);
     private readonly FixedWindowRateLimiter globalLimiter;
+    private readonly TimeProvider timeProvider;
     private int cleanupCounter;
 
     /// <summary>Initializes the process-local, privacy-preserving login limiter.</summary>
-    public LoginAttemptRateLimiter()
+    public LoginAttemptRateLimiter(TimeProvider timeProvider)
     {
+        this.timeProvider = timeProvider;
         globalLimiter = new FixedWindowRateLimiter(new FixedWindowRateLimiterOptions
         {
             PermitLimit = GlobalPermitLimit,
@@ -50,7 +52,7 @@ public sealed class LoginAttemptRateLimiter : IDisposable
             return LoginRateLimitDecision.Rejected(GetRetryAfter(globalLease));
         }
 
-        var now = TimeProvider.System.GetUtcNow();
+        var now = timeProvider.GetUtcNow();
         if (Interlocked.Increment(ref cleanupCounter) % CleanupInterval == 0)
         {
             RemoveExpiredPartitions(now);
@@ -63,22 +65,30 @@ public sealed class LoginAttemptRateLimiter : IDisposable
         var partitionKey = Convert.ToHexString(HMACSHA256.HashData(
             partitionKeySecret,
             Encoding.UTF8.GetBytes(compositeIdentity)));
-        var window = partitions.GetOrAdd(partitionKey, _ => new LoginWindow(now.Add(Window)));
-        lock (window.SyncRoot)
+        while (true)
         {
-            if (now >= window.ResetsAt)
+            var window = partitions.GetOrAdd(partitionKey, _ => new LoginWindow(now.Add(Window)));
+            lock (window.SyncRoot)
             {
-                window.Count = 0;
-                window.ResetsAt = now.Add(Window);
-            }
+                if (!partitions.TryGetValue(partitionKey, out var current) || !ReferenceEquals(current, window))
+                {
+                    continue;
+                }
 
-            if (window.Count >= PermitLimit)
-            {
-                return LoginRateLimitDecision.Rejected(window.ResetsAt - now);
-            }
+                if (now >= window.ResetsAt)
+                {
+                    window.Count = 0;
+                    window.ResetsAt = now.Add(Window);
+                }
 
-            window.Count++;
-            return LoginRateLimitDecision.Acquired;
+                if (window.Count >= PermitLimit)
+                {
+                    return LoginRateLimitDecision.Rejected(window.ResetsAt - now);
+                }
+
+                window.Count++;
+                return LoginRateLimitDecision.Acquired;
+            }
         }
     }
 
