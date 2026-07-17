@@ -1,6 +1,7 @@
 using Legacy.Maliev.AuthService.Api.Controllers;
 using Legacy.Maliev.AuthService.Application;
 using Legacy.Maliev.AuthService.Infrastructure;
+using Maliev.Aspire.ServiceDefaults.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -69,13 +70,16 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public void Controller_UsesEmployeePolicyAndNeverCarriesPasswordInRoute()
+    public void Controller_UsesLeastPrivilegeCreatePermissionAndNeverCarriesPasswordInRoute()
     {
         var controller = typeof(CustomerIdentitiesController);
-        Assert.Equal("LegacyEmployee", controller.GetCustomAttribute<AuthorizeAttribute>()?.Policy);
+        Assert.Null(controller.GetCustomAttribute<AuthorizeAttribute>());
         var create = controller.GetMethod(nameof(CustomerIdentitiesController.Create))!;
         var route = create.GetCustomAttribute<HttpPostAttribute>()?.Template;
 
+        Assert.Equal(
+            "legacy-auth.customer-identities.create",
+            Assert.Single(create.GetCustomAttributes<RequirePermissionAttribute>()).Permission);
         Assert.Equal("{databaseId:int}", route);
         Assert.DoesNotContain("password", route, StringComparison.OrdinalIgnoreCase);
         Assert.Contains(create.GetParameters(), parameter => parameter.ParameterType == typeof(CreateCustomerIdentityRequest));

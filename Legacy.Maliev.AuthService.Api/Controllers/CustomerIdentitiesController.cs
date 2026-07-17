@@ -1,4 +1,5 @@
 using Legacy.Maliev.AuthService.Application;
+using Maliev.Aspire.ServiceDefaults.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -6,12 +7,12 @@ namespace Legacy.Maliev.AuthService.Api.Controllers;
 
 /// <summary>Employee-authorized administration of customer identities.</summary>
 [ApiController]
-[Authorize(Policy = "LegacyEmployee")]
 [Route("auth/v1/customer-identities")]
 public sealed class CustomerIdentitiesController(ICustomerIdentityAdminService service) : ControllerBase
 {
     /// <summary>Creates a customer identity; the password is accepted only in the JSON body.</summary>
     [HttpPost("{databaseId:int}")]
+    [RequirePermission(LegacyAccessTokenPermissions.CustomerIdentitiesCreate)]
     [ProducesResponseType<CustomerIdentityResponse>(StatusCodes.Status201Created)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     public async Task<ActionResult<CustomerIdentityResponse>> Create(
@@ -27,6 +28,7 @@ public sealed class CustomerIdentitiesController(ICustomerIdentityAdminService s
 
     /// <summary>Gets safe identity fields by legacy customer identifier.</summary>
     [HttpGet("{databaseId:int}", Name = "GetCustomerIdentity")]
+    [Authorize(Policy = "LegacyEmployee")]
     public async Task<ActionResult<CustomerIdentityResponse>> Get(int databaseId, CancellationToken cancellationToken)
     {
         var identity = await service.GetAsync(databaseId, cancellationToken);
@@ -35,6 +37,7 @@ public sealed class CustomerIdentitiesController(ICustomerIdentityAdminService s
 
     /// <summary>Updates safe identity fields without accepting password or security material.</summary>
     [HttpPut("{databaseId:int}")]
+    [Authorize(Policy = "LegacyEmployee")]
     public async Task<IActionResult> Update(
         int databaseId,
         UpdateCustomerIdentityRequest request,
@@ -43,6 +46,7 @@ public sealed class CustomerIdentitiesController(ICustomerIdentityAdminService s
 
     /// <summary>Deletes an identity without deleting the customer profile.</summary>
     [HttpDelete("{databaseId:int}")]
+    [Authorize(Policy = "LegacyEmployee")]
     public async Task<IActionResult> Delete(int databaseId, CancellationToken cancellationToken) =>
         await service.DeleteAsync(databaseId, cancellationToken) ? NoContent() : NotFound();
 }
