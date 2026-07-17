@@ -27,4 +27,22 @@ public static class LegacyAccessTokenPermissions
     public const string OrdersRead = "legacy.orders.read";
     /// <summary>Allows an authenticated employee to read legacy order catalog data.</summary>
     public const string OrderCatalogRead = "legacy.order-catalog.read";
+    /// <summary>Allows an authenticated employee to update a legacy order.</summary>
+    public const string OrdersUpdate = "legacy.orders.update";
+    /// <summary>Allows an authenticated employee to read legacy order-file metadata.</summary>
+    public const string OrderFilesRead = "legacy.order-files.read";
+    /// <summary>Allows an authenticated employee to create legacy order-file metadata.</summary>
+    public const string OrderFilesWrite = "legacy.order-files.write";
+    /// <summary>Allows an authenticated employee to delete legacy order-file metadata.</summary>
+    public const string OrderFilesDelete = "legacy.order-files.delete";
+    /// <summary>Allows an authenticated employee to read legacy order status history and transitions.</summary>
+    public const string OrderStatusRead = "legacy.order-status.read";
+    /// <summary>Allows an authenticated employee to transition a legacy order status.</summary>
+    public const string OrderStatusWrite = "legacy.order-status.write";
+    /// <summary>Allows an authenticated employee to upload a scanned legacy order file.</summary>
+    public const string FileUploadsCreate = "legacy-file.uploads.create";
+    /// <summary>Allows an authenticated employee to request a signed URL for a clean legacy order file.</summary>
+    public const string FileUploadsRead = "legacy-file.uploads.read";
+    /// <summary>Allows an authenticated employee to delete a legacy order file from storage.</summary>
+    public const string FileUploadsDelete = "legacy-file.uploads.delete";
 }
