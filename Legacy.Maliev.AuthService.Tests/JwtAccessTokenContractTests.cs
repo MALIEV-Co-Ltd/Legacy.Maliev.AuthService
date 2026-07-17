@@ -19,6 +19,7 @@ public sealed class JwtAccessTokenContractTests
     private const string CustomersCreate = "legacy-customer.customers.create";
     private const string CustomersRead = "legacy-customer.customers.read";
     private const string CustomerIdentitiesCreate = "legacy-auth.customer-identities.create";
+    private const string EmployeesList = "legacy-employee.employees.list";
     private static readonly DateTimeOffset Now = new(2026, 7, 17, 0, 0, 0, TimeSpan.Zero);
 
     [Fact]
@@ -38,7 +39,7 @@ public sealed class JwtAccessTokenContractTests
             default);
 
         var token = fixture.ReadAndValidate(Assert.IsType<TokenResponse>(result.Tokens).AccessToken);
-        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate], PermissionValues(token));
+        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeesList], PermissionValues(token));
         AssertStableEmployeeContract(token, fixture.KeyId);
     }
 
@@ -67,7 +68,7 @@ public sealed class JwtAccessTokenContractTests
             default);
 
         var token = fixture.ReadAndValidate(Assert.IsType<TokenResponse>(result.Tokens).AccessToken);
-        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate], PermissionValues(token));
+        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeesList], PermissionValues(token));
         AssertStableEmployeeContract(token, fixture.KeyId);
         Assert.NotNull(store.Replacement);
     }
@@ -96,6 +97,7 @@ public sealed class JwtAccessTokenContractTests
         Assert.DoesNotContain(CustomersCreate, PermissionValues(token));
         Assert.DoesNotContain(CustomerIdentitiesCreate, PermissionValues(token));
         Assert.DoesNotContain(CustomersRead, PermissionValues(token));
+        Assert.DoesNotContain(EmployeesList, PermissionValues(token));
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "customer");
     }
 
@@ -121,12 +123,12 @@ public sealed class JwtAccessTokenContractTests
 
         var issued = fixture.Issuer.IssueService(
             "legacy-intranet",
-            ["legacy-contact.messages.create", CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersCreate, CustomersRead, CustomerIdentitiesCreate],
+            ["legacy-contact.messages.create", CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeesList],
             Now);
 
         var token = fixture.ReadAndValidate(issued.Value);
         Assert.Equal(
-            ["legacy-contact.messages.create", CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersCreate, CustomersRead, CustomerIdentitiesCreate],
+            ["legacy-contact.messages.create", CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeesList],
             PermissionValues(token));
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "service");
     }
