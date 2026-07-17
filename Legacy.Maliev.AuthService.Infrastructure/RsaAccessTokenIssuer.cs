@@ -50,6 +50,7 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
             claims.Add(new("permissions", LegacyAccessTokenPermissions.CatalogMaterialsCreate));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.CatalogMaterialsUpdate));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.CustomersList));
+            claims.Add(new("permissions", LegacyAccessTokenPermissions.CustomersCreate));
         }
 
         return Issue(claims, now);
