@@ -124,7 +124,7 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         null,
         null);
 
-    public sealed class AuthApiFactory : WebApplicationFactory<Program>
+    public class AuthApiFactory : WebApplicationFactory<Program>
     {
         private readonly string privateKeyPem;
         private readonly RsaAccessTokenIssuer tokenIssuer;
@@ -156,6 +156,8 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
             {
                 services.RemoveAll<ICustomerIdentityAdminService>();
                 services.AddSingleton<ICustomerIdentityAdminService, StubCustomerIdentityAdminService>();
+                services.RemoveAll<IEmployeeIdentityAdminService>();
+                services.AddSingleton<IEmployeeIdentityAdminService, StubEmployeeIdentityAdminService>();
             });
         }
 
@@ -241,6 +243,35 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         public Task<bool> UpdateAsync(
             int databaseId,
             UpdateCustomerIdentityRequest request,
+            CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public Task<bool> DeleteAsync(int databaseId, CancellationToken cancellationToken) => Task.FromResult(false);
+    }
+
+    private sealed class StubEmployeeIdentityAdminService : IEmployeeIdentityAdminService
+    {
+        public Task<EmployeeIdentityResponse?> CreateAsync(
+            int databaseId,
+            CreateEmployeeIdentityRequest request,
+            CancellationToken cancellationToken) => Task.FromResult<EmployeeIdentityResponse?>(new(
+                "employee-identity-42",
+                request.UserName,
+                request.Email,
+                request.EmailConfirmed,
+                request.PhoneNumber,
+                false,
+                false,
+                null,
+                true,
+                0,
+                databaseId));
+
+        public Task<EmployeeIdentityResponse?> GetAsync(int databaseId, CancellationToken cancellationToken) =>
+            Task.FromResult<EmployeeIdentityResponse?>(null);
+
+        public Task<bool> UpdateAsync(
+            int databaseId,
+            UpdateEmployeeIdentityRequest request,
             CancellationToken cancellationToken) => Task.FromResult(false);
 
         public Task<bool> DeleteAsync(int databaseId, CancellationToken cancellationToken) => Task.FromResult(false);

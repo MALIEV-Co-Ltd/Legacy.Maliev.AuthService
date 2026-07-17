@@ -37,10 +37,10 @@ public sealed class EmployeeIdentityAdminTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public void Controller_RequiresEmployeePolicyAndPasswordNeverAppearsInRoute()
+    public void Controller_CreateUsesExactPermissionAndPasswordNeverAppearsInRoute()
     {
         var controller = typeof(EmployeeIdentitiesController);
-        Assert.Equal("LegacyEmployee", controller.GetCustomAttribute<AuthorizeAttribute>()?.Policy);
+        Assert.Null(controller.GetCustomAttribute<AuthorizeAttribute>());
         var create = controller.GetMethod(nameof(EmployeeIdentitiesController.Create))!;
         var route = create.GetCustomAttribute<HttpPostAttribute>()?.Template;
 
