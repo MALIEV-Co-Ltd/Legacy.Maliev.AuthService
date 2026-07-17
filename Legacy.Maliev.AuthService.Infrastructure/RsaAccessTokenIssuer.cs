@@ -44,6 +44,11 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
             claims.Add(new("legacy_database_id", identity.DatabaseId.Value.ToString()));
         }
 
+        if (identity.Kind == IdentityKind.Employee)
+        {
+            claims.Add(new("permissions", LegacyAccessTokenPermissions.CatalogMaterialsRead));
+        }
+
         return Issue(claims, now);
     }
 
