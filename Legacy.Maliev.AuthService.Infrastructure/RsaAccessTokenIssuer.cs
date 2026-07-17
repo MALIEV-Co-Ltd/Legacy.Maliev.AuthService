@@ -44,6 +44,11 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
             claims.Add(new("legacy_database_id", identity.DatabaseId.Value.ToString()));
         }
 
+        if (identity.Kind == IdentityKind.Employee)
+        {
+            claims.Add(new("permissions", LegacyAccessTokenPermissions.CatalogMaterialsRead));
+        }
+
         return Issue(claims, now);
     }
 
@@ -58,7 +63,13 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
             new(JwtRegisteredClaimNames.Name, clientId),
             new("identity_kind", "service"),
         };
-        claims.AddRange(permissions.Select(permission => new Claim("permissions", permission)));
+        claims.AddRange(
+            permissions
+                .Where(permission => !string.Equals(
+                    permission,
+                    LegacyAccessTokenPermissions.CatalogMaterialsRead,
+                    StringComparison.Ordinal))
+                .Select(permission => new Claim("permissions", permission)));
         return Issue(claims, now);
     }
 
