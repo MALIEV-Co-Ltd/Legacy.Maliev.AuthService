@@ -23,6 +23,7 @@ public sealed class JwtAccessTokenContractTests
     private const string EmployeesList = "legacy-employee.employees.list";
     private const string EmployeesRead = "legacy-employee.employees.read";
     private const string OrdersRead = "legacy.orders.read";
+    private const string OrdersCreate = "legacy.orders.create";
     private const string OrderCatalogRead = "legacy.order-catalog.read";
     private const string OrdersUpdate = "legacy.orders.update";
     private const string OrderFilesRead = "legacy.order-files.read";
@@ -34,8 +35,9 @@ public sealed class JwtAccessTokenContractTests
     private const string FileUploadsRead = "legacy-file.uploads.read";
     private const string FileUploadsDelete = "legacy-file.uploads.delete";
     private static readonly DateTimeOffset Now = new(2026, 7, 17, 0, 0, 0, TimeSpan.Zero);
-    private static readonly string[] EmployeeOrdersViewPermissions =
+    private static readonly string[] EmployeeOrderWorkflowPermissions =
     [
+        OrdersCreate,
         OrdersUpdate,
         OrderFilesRead,
         OrderFilesWrite,
@@ -64,7 +66,7 @@ public sealed class JwtAccessTokenContractTests
             default);
 
         var token = fixture.ReadAndValidate(Assert.IsType<TokenResponse>(result.Tokens).AccessToken);
-        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeeIdentitiesCreate, EmployeesList, EmployeesRead, OrdersRead, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
+        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeeIdentitiesCreate, EmployeesList, EmployeesRead, OrdersRead, OrdersCreate, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
         AssertStableEmployeeContract(token, fixture.KeyId);
     }
 
@@ -93,7 +95,7 @@ public sealed class JwtAccessTokenContractTests
             default);
 
         var token = fixture.ReadAndValidate(Assert.IsType<TokenResponse>(result.Tokens).AccessToken);
-        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeeIdentitiesCreate, EmployeesList, EmployeesRead, OrdersRead, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
+        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeeIdentitiesCreate, EmployeesList, EmployeesRead, OrdersRead, OrdersCreate, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
         AssertStableEmployeeContract(token, fixture.KeyId);
         Assert.NotNull(store.Replacement);
     }
@@ -127,12 +129,12 @@ public sealed class JwtAccessTokenContractTests
         Assert.DoesNotContain(EmployeesRead, PermissionValues(token));
         Assert.DoesNotContain(OrdersRead, PermissionValues(token));
         Assert.DoesNotContain(OrderCatalogRead, PermissionValues(token));
-        AssertDoesNotContainOrdersViewPermissions(token);
+        AssertDoesNotContainEmployeeOrderWorkflowPermissions(token);
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "customer");
     }
 
     [Fact]
-    public async Task Refresh_ValidatedCustomer_DoesNotIssueOrdersViewPermissions()
+    public async Task Refresh_ValidatedCustomer_DoesNotIssueEmployeeOrderWorkflowPermissions()
     {
         using var fixture = new TokenFixture();
         var identity = CustomerIdentity();
@@ -156,7 +158,7 @@ public sealed class JwtAccessTokenContractTests
             default);
 
         var token = fixture.ReadAndValidate(Assert.IsType<TokenResponse>(result.Tokens).AccessToken);
-        AssertDoesNotContainOrdersViewPermissions(token);
+        AssertDoesNotContainEmployeeOrderWorkflowPermissions(token);
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "customer");
     }
 
@@ -174,7 +176,7 @@ public sealed class JwtAccessTokenContractTests
         Assert.Equal(["legacy-contact.messages.create"], PermissionValues(token));
         Assert.DoesNotContain(OrdersRead, PermissionValues(token));
         Assert.DoesNotContain(OrderCatalogRead, PermissionValues(token));
-        AssertDoesNotContainOrdersViewPermissions(token);
+        AssertDoesNotContainEmployeeOrderWorkflowPermissions(token);
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "service");
     }
 
@@ -225,10 +227,10 @@ public sealed class JwtAccessTokenContractTests
             .Select(claim => claim.Value)
             .ToArray();
 
-    private static void AssertDoesNotContainOrdersViewPermissions(JwtSecurityToken token)
+    private static void AssertDoesNotContainEmployeeOrderWorkflowPermissions(JwtSecurityToken token)
     {
         var permissions = PermissionValues(token);
-        foreach (var permission in EmployeeOrdersViewPermissions)
+        foreach (var permission in EmployeeOrderWorkflowPermissions)
         {
             Assert.DoesNotContain(permission, permissions);
         }
