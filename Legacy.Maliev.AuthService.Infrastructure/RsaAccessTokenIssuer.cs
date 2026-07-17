@@ -48,6 +48,7 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
         {
             claims.Add(new("permissions", LegacyAccessTokenPermissions.CatalogMaterialsRead));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.CatalogMaterialsCreate));
+            claims.Add(new("permissions", LegacyAccessTokenPermissions.CatalogMaterialsUpdate));
         }
 
         return Issue(claims, now);
