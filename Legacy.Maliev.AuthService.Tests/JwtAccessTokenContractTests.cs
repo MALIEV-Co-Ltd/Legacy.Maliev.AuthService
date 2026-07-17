@@ -88,7 +88,22 @@ public sealed class JwtAccessTokenContractTests
     }
 
     [Fact]
-    public void ServiceToken_DoesNotIssueEmployeeCatalogPermission()
+    public void ServiceToken_WithoutExplicitCatalogPermission_DoesNotGainEmployeePermission()
+    {
+        using var fixture = new TokenFixture();
+
+        var issued = fixture.Issuer.IssueService(
+            "legacy-intranet",
+            ["legacy-contact.messages.create"],
+            Now);
+
+        var token = fixture.ReadAndValidate(issued.Value);
+        Assert.Equal(["legacy-contact.messages.create"], PermissionValues(token));
+        Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "service");
+    }
+
+    [Fact]
+    public void ServiceToken_ExplicitlyRequestedCatalogPermission_RetainsRequestedPermissions()
     {
         using var fixture = new TokenFixture();
 
@@ -98,7 +113,9 @@ public sealed class JwtAccessTokenContractTests
             Now);
 
         var token = fixture.ReadAndValidate(issued.Value);
-        Assert.Equal(["legacy-contact.messages.create"], PermissionValues(token));
+        Assert.Equal(
+            ["legacy-contact.messages.create", CatalogMaterialsRead],
+            PermissionValues(token));
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "service");
     }
 

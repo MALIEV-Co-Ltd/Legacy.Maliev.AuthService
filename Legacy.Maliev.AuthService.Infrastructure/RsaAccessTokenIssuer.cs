@@ -63,13 +63,7 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
             new(JwtRegisteredClaimNames.Name, clientId),
             new("identity_kind", "service"),
         };
-        claims.AddRange(
-            permissions
-                .Where(permission => !string.Equals(
-                    permission,
-                    LegacyAccessTokenPermissions.CatalogMaterialsRead,
-                    StringComparison.Ordinal))
-                .Select(permission => new Claim("permissions", permission)));
+        claims.AddRange(permissions.Select(permission => new Claim("permissions", permission)));
         return Issue(claims, now);
     }
 
