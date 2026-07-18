@@ -11,6 +11,17 @@ namespace Legacy.Maliev.AuthService.Tests;
 
 public sealed class ServiceAuthenticationTests
 {
+    private static readonly string[] LegacyAccountingPermissions =
+    [
+        "legacy.documents.render",
+        "legacy-file.uploads.create",
+        "legacy-file.uploads.read",
+        "legacy-file.uploads.delete",
+        "legacy.notifications.send",
+        "legacy-customer.customers.read",
+        "legacy-employee.signatures.read",
+    ];
+
     [Fact]
     public async Task Login_ValidConfiguredSecret_IssuesShortLivedServiceToken()
     {
@@ -51,6 +62,63 @@ public sealed class ServiceAuthenticationTests
             }), issuer, TimeProvider.System);
 
         var result = await service.LoginAsync(new ServiceLoginRequest(clientId, secret));
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Token);
+        Assert.Null(issuer.ClientId);
+    }
+
+    [Fact]
+    public async Task Login_LegacyAccounting_IssuesExactlyTheApprovedSevenPermissions()
+    {
+        var issuer = new RecordingIssuer();
+        var service = new ServiceAuthenticationService(
+            Options.Create(new ServiceClientOptions
+            {
+                Clients =
+                {
+                    ["legacy-accounting"] = new ServiceClientCredential
+                    {
+                        SecretSha256 = ServiceClientCredential.HashSecret("accounting-secret"),
+                        Permissions = [.. LegacyAccountingPermissions],
+                    },
+                },
+            }),
+            issuer,
+            TimeProvider.System);
+
+        var result = await service.LoginAsync(
+            new ServiceLoginRequest("legacy-accounting", "accounting-secret"));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("legacy-accounting", issuer.ClientId);
+        var permissions = Assert.IsAssignableFrom<IReadOnlyList<string>>(issuer.Permissions);
+        Assert.Equal(7, permissions.Count);
+        Assert.Equal(LegacyAccountingPermissions, permissions);
+        Assert.DoesNotContain(permissions, permission => permission.Contains('*', StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Login_ConfiguredWildcardPermission_FailsClosedWithoutIssuingToken()
+    {
+        var issuer = new RecordingIssuer();
+        var service = new ServiceAuthenticationService(
+            Options.Create(new ServiceClientOptions
+            {
+                Clients =
+                {
+                    ["legacy-accounting"] = new ServiceClientCredential
+                    {
+                        SecretSha256 = ServiceClientCredential.HashSecret("accounting-secret"),
+                        Permissions = [.. LegacyAccountingPermissions, "*"],
+                    },
+                },
+            }),
+            issuer,
+            TimeProvider.System);
+
+        var result = await service.LoginAsync(
+            new ServiceLoginRequest("legacy-accounting", "accounting-secret"));
 
         Assert.False(result.Succeeded);
         Assert.Null(result.Token);
