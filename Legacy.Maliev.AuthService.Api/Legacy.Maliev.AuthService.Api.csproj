@@ -9,9 +9,9 @@
     <ProjectReference Include="..\Legacy.Maliev.AuthService.Infrastructure\Legacy.Maliev.AuthService.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(GITHUB_ACTIONS)' != 'true' Or '$(UseLocalMalievDependencies)' == 'true'">
-    <ProjectReference Include="$(MalievWorkspaceRoot)\Maliev.Aspire\Maliev.Aspire.ServiceDefaults\Maliev.Aspire.ServiceDefaults.csproj" />
+    <ProjectReference Include="$(MalievWorkspaceRoot)\Legacy.Maliev.ServiceDefaults\src\Legacy.Maliev.ServiceDefaults\Legacy.Maliev.ServiceDefaults.csproj" />
   </ItemGroup>
   <ItemGroup Condition="'$(GITHUB_ACTIONS)' == 'true' And '$(UseLocalMalievDependencies)' != 'true'">
-    <PackageReference Include="Maliev.Aspire.ServiceDefaults" Version="$(SharedLibraryVersion)" />
+    <PackageReference Include="Legacy.Maliev.ServiceDefaults" Version="$(SharedLibraryVersion)" />
   </ItemGroup>
 </Project>

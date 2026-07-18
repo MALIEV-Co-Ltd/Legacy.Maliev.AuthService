@@ -2,6 +2,11 @@
 
 Temporary .NET 10 compatibility service for MALIEV's unchanged legacy customer and employee identity databases.
 
+The clean service layers depend only on the public `Legacy.Maliev.ServiceDefaults` and
+`Legacy.Maliev.CompatibilityContracts` repositories during local, CI, and image builds. Compatibility
+namespaces remain unchanged, so this dependency isolation does not alter token, refresh-session,
+permission, DTO, or JSON contracts.
+
 The service replaces the unsafe legacy token API with:
 
 - short-lived RS256 access tokens;
