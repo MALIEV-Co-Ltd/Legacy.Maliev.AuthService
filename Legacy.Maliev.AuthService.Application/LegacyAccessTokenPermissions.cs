@@ -39,8 +39,14 @@ public static class LegacyAccessTokenPermissions
     public const string QuotationRequestsUpdate = "legacy.quotation-requests.update";
     /// <summary>Allows an authenticated employee to read legacy quotations.</summary>
     public const string QuotationsRead = "legacy.quotations.read";
+    /// <summary>Allows an authenticated employee to create legacy quotations.</summary>
+    public const string QuotationsCreate = "legacy.quotations.create";
+    /// <summary>Allows an authenticated employee to create server-priced legacy quotation lines.</summary>
+    public const string QuotationLinesWrite = "legacy.quotation-lines.write";
     /// <summary>Allows an authenticated employee to read order links owned by a legacy quotation.</summary>
     public const string QuotationOrdersRead = "legacy.quotation-orders.read";
+    /// <summary>Allows an authenticated employee to link customer-owned orders to a legacy quotation.</summary>
+    public const string QuotationOrdersWrite = "legacy.quotation-orders.write";
     /// <summary>Allows an authenticated employee to read quotation-request file metadata.</summary>
     public const string QuotationFilesRead = "legacy.quotation-files.read";
     /// <summary>Allows an authenticated employee to list legacy employee profiles.</summary>
