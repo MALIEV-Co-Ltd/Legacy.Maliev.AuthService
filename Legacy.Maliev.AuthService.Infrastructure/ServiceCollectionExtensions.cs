@@ -51,6 +51,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<AuthenticationService>();
         services.AddScoped<ServiceAuthenticationService>();
         services.AddScoped<CustomerSelfService>();
+        services.AddScoped<EmployeeSelfService>();
 
         services.AddOptions<JwtOptions>()
             .Bind(configuration.GetSection(JwtOptions.SectionName))
