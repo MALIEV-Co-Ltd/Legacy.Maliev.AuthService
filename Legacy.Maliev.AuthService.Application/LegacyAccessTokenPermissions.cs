@@ -33,6 +33,12 @@ public static class LegacyAccessTokenPermissions
     public const string AccountingFilesWrite = "legacy.accounting-files.write";
     /// <summary>Allows an authenticated employee to delete legacy accounting-file metadata.</summary>
     public const string AccountingFilesDelete = "legacy.accounting-files.delete";
+    /// <summary>Allows an authenticated employee to read customer quotation requests.</summary>
+    public const string QuotationRequestsRead = "legacy.quotation-requests.read";
+    /// <summary>Allows an authenticated employee to update customer quotation requests.</summary>
+    public const string QuotationRequestsUpdate = "legacy.quotation-requests.update";
+    /// <summary>Allows an authenticated employee to read quotation-request file metadata.</summary>
+    public const string QuotationFilesRead = "legacy.quotation-files.read";
     /// <summary>Allows an authenticated employee to list legacy employee profiles.</summary>
     public const string EmployeesList = "legacy-employee.employees.list";
     /// <summary>Allows an authenticated employee to read a legacy employee profile.</summary>
