@@ -30,6 +30,9 @@ public sealed class JwtAccessTokenContractTests
     private const string QuotationRequestsRead = "legacy.quotation-requests.read";
     private const string QuotationRequestsUpdate = "legacy.quotation-requests.update";
     private const string QuotationsRead = "legacy.quotations.read";
+    private const string QuotationsCreate = "legacy.quotations.create";
+    private const string QuotationLinesWrite = "legacy.quotation-lines.write";
+    private const string QuotationOrdersWrite = "legacy.quotation-orders.write";
     private const string QuotationOrdersRead = "legacy.quotation-orders.read";
     private const string QuotationFilesRead = "legacy.quotation-files.read";
     private const string EmployeesList = "legacy-employee.employees.list";
@@ -89,7 +92,7 @@ public sealed class JwtAccessTokenContractTests
             default);
 
         var token = fixture.ReadAndValidate(Assert.IsType<TokenResponse>(result.Tokens).AccessToken);
-        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeeIdentitiesCreate, AccountingRead, .. EmployeeAccountingMutationPermissions, QuotationRequestsRead, QuotationRequestsUpdate, QuotationsRead, QuotationOrdersRead, QuotationFilesRead, EmployeesList, EmployeesRead, OrdersRead, OrdersCreate, SuppliersRead, PurchaseOrdersRead, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
+        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeeIdentitiesCreate, AccountingRead, .. EmployeeAccountingMutationPermissions, QuotationRequestsRead, QuotationRequestsUpdate, QuotationsRead, QuotationsCreate, QuotationLinesWrite, QuotationOrdersRead, QuotationOrdersWrite, QuotationFilesRead, EmployeesList, EmployeesRead, OrdersRead, OrdersCreate, SuppliersRead, PurchaseOrdersRead, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
         AssertStableEmployeeContract(token, fixture.KeyId);
     }
 
@@ -118,7 +121,7 @@ public sealed class JwtAccessTokenContractTests
             default);
 
         var token = fixture.ReadAndValidate(Assert.IsType<TokenResponse>(result.Tokens).AccessToken);
-        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeeIdentitiesCreate, AccountingRead, .. EmployeeAccountingMutationPermissions, QuotationRequestsRead, QuotationRequestsUpdate, QuotationsRead, QuotationOrdersRead, QuotationFilesRead, EmployeesList, EmployeesRead, OrdersRead, OrdersCreate, SuppliersRead, PurchaseOrdersRead, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
+        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CustomersList, CustomersCreate, CustomersRead, CustomerIdentitiesCreate, EmployeeIdentitiesCreate, AccountingRead, .. EmployeeAccountingMutationPermissions, QuotationRequestsRead, QuotationRequestsUpdate, QuotationsRead, QuotationsCreate, QuotationLinesWrite, QuotationOrdersRead, QuotationOrdersWrite, QuotationFilesRead, EmployeesList, EmployeesRead, OrdersRead, OrdersCreate, SuppliersRead, PurchaseOrdersRead, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
         AssertStableEmployeeContract(token, fixture.KeyId);
         Assert.NotNull(store.Replacement);
     }
@@ -152,6 +155,9 @@ public sealed class JwtAccessTokenContractTests
         Assert.DoesNotContain(QuotationRequestsRead, PermissionValues(token));
         Assert.DoesNotContain(QuotationRequestsUpdate, PermissionValues(token));
         Assert.DoesNotContain(QuotationsRead, PermissionValues(token));
+        Assert.DoesNotContain(QuotationsCreate, PermissionValues(token));
+        Assert.DoesNotContain(QuotationLinesWrite, PermissionValues(token));
+        Assert.DoesNotContain(QuotationOrdersWrite, PermissionValues(token));
         Assert.DoesNotContain(QuotationOrdersRead, PermissionValues(token));
         Assert.DoesNotContain(QuotationFilesRead, PermissionValues(token));
         Assert.DoesNotContain(CustomersRead, PermissionValues(token));
@@ -161,6 +167,9 @@ public sealed class JwtAccessTokenContractTests
         Assert.DoesNotContain(SuppliersRead, PermissionValues(token));
         Assert.DoesNotContain(PurchaseOrdersRead, PermissionValues(token));
         Assert.DoesNotContain(OrderCatalogRead, PermissionValues(token));
+        Assert.DoesNotContain(QuotationsCreate, PermissionValues(token));
+        Assert.DoesNotContain(QuotationLinesWrite, PermissionValues(token));
+        Assert.DoesNotContain(QuotationOrdersWrite, PermissionValues(token));
         Assert.DoesNotContain(AccountingRead, PermissionValues(token));
         AssertDoesNotContainEmployeeOrderWorkflowPermissions(token);
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "customer");
@@ -214,6 +223,9 @@ public sealed class JwtAccessTokenContractTests
         Assert.DoesNotContain(SuppliersRead, PermissionValues(token));
         Assert.DoesNotContain(PurchaseOrdersRead, PermissionValues(token));
         Assert.DoesNotContain(OrderCatalogRead, PermissionValues(token));
+        Assert.DoesNotContain(QuotationsCreate, PermissionValues(token));
+        Assert.DoesNotContain(QuotationLinesWrite, PermissionValues(token));
+        Assert.DoesNotContain(QuotationOrdersWrite, PermissionValues(token));
         AssertDoesNotContainEmployeeOrderWorkflowPermissions(token);
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "service");
     }
