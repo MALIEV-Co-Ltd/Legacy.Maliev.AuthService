@@ -17,23 +17,22 @@ jobs:
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
           persist-credentials: false
-      - name: Check out Maliev.Aspire
+      - name: Check out Legacy.Maliev.ServiceDefaults
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
-          repository: MALIEV-Co-Ltd/Maliev.Aspire
-          ref: 085f24b8b6b19c5a8e932b229d93421b03bcd032
-          path: .dependencies/Maliev.Aspire
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+          ref: bcab875a7f703d1d9c2d535479e93653720eb62d
+          path: .dependencies/Legacy.Maliev.ServiceDefaults
           persist-credentials: false
-      - name: Check out Maliev.MessagingContracts
+      - name: Check out Legacy.Maliev.CompatibilityContracts
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
         with:
-          repository: MALIEV-Co-Ltd/Maliev.MessagingContracts
-          ref: c533c12a8154f5cf7c4fbc9734e82a62705ac60f
-          path: .dependencies/Maliev.MessagingContracts
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts
+          ref: 95c62eb6209411f5aada443b315447a2f76ca0cd
+          path: .dependencies/Legacy.Maliev.CompatibilityContracts
           persist-credentials: false
       - name: Validate .NET solution
         uses: MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@6017816fa67f369d785ed30794f002cfd6299af7
         with:
           solution: Legacy.Maliev.AuthService.slnx
           use-local-maliev-dependencies: 'true'
-

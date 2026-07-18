@@ -65,14 +65,36 @@ public sealed class DeliveryContractTests
         Assert.Contains("dotnet/sdk:10.0-alpine", dockerfile, StringComparison.Ordinal);
         Assert.Contains("dotnet/aspnet:10.0-alpine", dockerfile, StringComparison.Ordinal);
         Assert.Contains("USER $APP_UID", dockerfile, StringComparison.Ordinal);
-        Assert.Contains("checkout 085f24b8b6b19c5a8e932b229d93421b03bcd032", dockerfile, StringComparison.Ordinal);
-        Assert.Contains("checkout c533c12a8154f5cf7c4fbc9734e82a62705ac60f", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("checkout bcab875a7f703d1d9c2d535479e93653720eb62d", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("checkout 95c62eb6209411f5aada443b315447a2f76ca0cd", dockerfile, StringComparison.Ordinal);
 
         var migrationDockerfile = File.ReadAllText(
             Path.Combine(FindRepositoryRoot(), "Legacy.Maliev.AuthService.IdentityMigration", "Dockerfile"));
         Assert.Contains("dotnet/sdk:10.0-alpine", migrationDockerfile, StringComparison.Ordinal);
         Assert.Contains("dotnet/runtime:10.0-alpine", migrationDockerfile, StringComparison.Ordinal);
         Assert.Contains("USER $APP_UID", migrationDockerfile, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SharedDependencies_UseOnlyPublicLegacyRepositoryAndPackageIdentities()
+    {
+        var root = FindRepositoryRoot();
+        var apiProject = File.ReadAllText(Path.Combine(
+            root,
+            "Legacy.Maliev.AuthService.Api",
+            "Legacy.Maliev.AuthService.Api.csproj"));
+        var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "_build-and-test.yml"));
+        var dockerfile = File.ReadAllText(Path.Combine(root, "Legacy.Maliev.AuthService.Api", "Dockerfile"));
+        var combined = string.Join('\n', apiProject, workflow, dockerfile);
+
+        Assert.Contains("Legacy.Maliev.ServiceDefaults", apiProject, StringComparison.Ordinal);
+        Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults", workflow, StringComparison.Ordinal);
+        Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts", workflow, StringComparison.Ordinal);
+        Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults.git", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts.git", dockerfile, StringComparison.Ordinal);
+        Assert.DoesNotContain("MALIEV-Co-Ltd/Maliev.Aspire", combined, StringComparison.Ordinal);
+        Assert.DoesNotContain("MALIEV-Co-Ltd/Maliev.MessagingContracts", combined, StringComparison.Ordinal);
+        Assert.DoesNotContain("Include=\"Maliev.Aspire.ServiceDefaults\"", apiProject, StringComparison.Ordinal);
     }
 
     [Fact]
