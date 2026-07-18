@@ -21,6 +21,18 @@ public static class LegacyAccessTokenPermissions
     public const string EmployeeIdentitiesCreate = "legacy-auth.employee-identities.create";
     /// <summary>Allows an authenticated employee to read legacy accounting records and summaries.</summary>
     public const string AccountingRead = "legacy.accounting.read";
+    /// <summary>Allows an authenticated employee to create legacy accounting records.</summary>
+    public const string AccountingCreate = "legacy.accounting.create";
+    /// <summary>Allows an authenticated employee to update legacy accounting records.</summary>
+    public const string AccountingUpdate = "legacy.accounting.update";
+    /// <summary>Allows an authenticated employee to delete legacy accounting records.</summary>
+    public const string AccountingDelete = "legacy.accounting.delete";
+    /// <summary>Allows an authenticated employee to read legacy accounting-file metadata.</summary>
+    public const string AccountingFilesRead = "legacy.accounting-files.read";
+    /// <summary>Allows an authenticated employee to create legacy accounting-file metadata.</summary>
+    public const string AccountingFilesWrite = "legacy.accounting-files.write";
+    /// <summary>Allows an authenticated employee to delete legacy accounting-file metadata.</summary>
+    public const string AccountingFilesDelete = "legacy.accounting-files.delete";
     /// <summary>Allows an authenticated employee to list legacy employee profiles.</summary>
     public const string EmployeesList = "legacy-employee.employees.list";
     /// <summary>Allows an authenticated employee to read a legacy employee profile.</summary>
