@@ -3,6 +3,8 @@ namespace Legacy.Maliev.AuthService.Application;
 /// <summary>Permissions assigned directly by the legacy identity token boundary.</summary>
 public static class LegacyAccessTokenPermissions
 {
+    /// <summary>Allows a trusted BFF to exchange a nonce-bound Google employee credential.</summary>
+    public const string GoogleIdentityExchange = "legacy-auth.google-identity.exchange";
     /// <summary>Allows an authenticated employee to read the legacy material catalog.</summary>
     public const string CatalogMaterialsRead = "legacy-catalog.materials.read";
     /// <summary>Allows an authenticated employee to create a legacy catalog material.</summary>

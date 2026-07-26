@@ -27,6 +27,19 @@ The source monorepo stays private. This extracted implementation is public and m
 
 Service clients are configured under `ServiceClients:Clients:<client-id>` with a lowercase SHA-256 secret hash and an explicit permission list. The raw client secret is presented only in the JSON login body and is never stored, logged, placed in a URL, or emitted as a JWT claim. Runtime values are projected from the consolidated `maliev-legacy-secrets` secret; source configuration contains no client credential.
 
+Employee Google Identity Services is an optional, fail-closed trusted-BFF flow. The
+Intranet BFF calls `POST /auth/v1/exchange/google/nonce` and
+`POST /auth/v1/exchange/google` using a service token carrying only
+`legacy-auth.google-identity.exchange`. Configure these values at runtime (never in
+source or browser code): `GoogleIdentity:Employee:HostedDomain` (for example,
+`maliev.com`), `GoogleIdentity:Employee:Audiences:intranet` (the OAuth client ID),
+and optionally `GoogleIdentity:NonceLifetimeMinutes` (1-15, default 10). If either
+the hosted domain or audience is missing, the exchange returns an unavailable
+result and no credential is accepted. The separate BFF client ID configuration
+must match the AuthService audience. Nonce hashes are stored in the isolated
+`google_identity_nonces` PostgreSQL table and are deleted atomically on use or
+expiry; the unchanged identity database remains the source of truth.
+
 ## Explicitly retired legacy behavior
 
 - `GET /auth/validate` (credentials in query strings);
