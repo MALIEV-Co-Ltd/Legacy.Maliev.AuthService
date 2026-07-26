@@ -19,6 +19,7 @@ public sealed class RefreshSessionMigrationTests
             options: MigrationsSqlGenerationOptions.Idempotent);
 
         Assert.Contains("identity_action_tokens", script, StringComparison.Ordinal);
+        Assert.Contains("google_identity_nonces", script, StringComparison.Ordinal);
         Assert.Contains("CREATE TABLE", script, StringComparison.Ordinal);
         Assert.DoesNotContain("AspNetUsers", script, StringComparison.Ordinal);
         Assert.DoesNotContain("DROP TABLE", script, StringComparison.Ordinal);

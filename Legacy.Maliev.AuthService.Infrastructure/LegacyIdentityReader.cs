@@ -10,7 +10,7 @@ public sealed class LegacyIdentityReader(
     CustomerIdentityDbContext customerContext,
     EmployeeIdentityDbContext employeeContext,
     IPasswordHasher<LegacyIdentityRow> passwordHasher,
-    TimeProvider timeProvider) : ILegacyCredentialValidator, ILegacyIdentityReader
+    TimeProvider timeProvider) : ILegacyCredentialValidator, ILegacyIdentityReader, IGoogleEmployeeIdentityReader
 {
     /// <inheritdoc />
     public async Task<LegacyIdentity?> ValidateAsync(
@@ -46,6 +46,23 @@ public sealed class LegacyIdentityReader(
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == identityId, cancellationToken);
         return IsActive(user, kind) ? Project(user!, kind) : null;
+    }
+
+    /// <inheritdoc />
+    public async Task<LegacyIdentity?> FindActiveEmployeeByEmailAsync(
+        string email,
+        CancellationToken cancellationToken)
+    {
+        var normalized = email.Trim().ToUpperInvariant();
+        if (normalized.Length == 0)
+        {
+            return null;
+        }
+
+        var user = await employeeContext.Users
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.NormalizedEmail == normalized, cancellationToken);
+        return IsActive(user, IdentityKind.Employee) ? Project(user!, IdentityKind.Employee) : null;
     }
 
     private IQueryable<LegacyIdentityRow> Users(IdentityKind kind) =>

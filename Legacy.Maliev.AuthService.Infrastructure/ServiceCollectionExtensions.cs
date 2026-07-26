@@ -42,13 +42,18 @@ public static class ServiceCollectionExtensions
         services.AddScoped<LegacyIdentityReader>();
         services.AddScoped<ILegacyCredentialValidator>(provider => provider.GetRequiredService<LegacyIdentityReader>());
         services.AddScoped<ILegacyIdentityReader>(provider => provider.GetRequiredService<LegacyIdentityReader>());
+        services.AddScoped<IGoogleEmployeeIdentityReader>(provider => provider.GetRequiredService<LegacyIdentityReader>());
         services.AddScoped<IRefreshSessionStore, PostgresRefreshSessionStore>();
+        services.AddScoped<IGoogleIdentityNonceService, GoogleIdentityNonceService>();
+        services.AddScoped<IGoogleIdentityTokenVerifier, GoogleIdentityTokenVerifier>();
+        services.AddScoped<IGoogleIdentityTokenValidator, GoogleIdentityTokenValidator>();
         services.AddScoped<ICustomerIdentityAdminService, CustomerIdentityAdminService>();
         services.AddScoped<IEmployeeIdentityAdminService, EmployeeIdentityAdminService>();
         services.AddSingleton<IAccessTokenIssuer, RsaAccessTokenIssuer>();
         services.AddSingleton<IServiceAccessTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<AuthenticationService>();
+        services.AddScoped<GoogleAuthenticationService>();
         services.AddScoped<ServiceAuthenticationService>();
         services.AddScoped<CustomerSelfService>();
         services.AddScoped<EmployeeSelfService>();

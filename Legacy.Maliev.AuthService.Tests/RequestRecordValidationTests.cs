@@ -23,7 +23,9 @@ public sealed class RequestRecordValidationTests
             typeof(CreateCustomerIdentityRequest),
             typeof(UpdateCustomerIdentityRequest),
             typeof(CreateEmployeeIdentityRequest),
-            typeof(UpdateEmployeeIdentityRequest)
+            typeof(UpdateEmployeeIdentityRequest),
+            typeof(GoogleIdentityNonceRequest),
+            typeof(GoogleExchangeRequest)
         ];
 
         var parameterValidationAttributes = 0;

@@ -46,6 +46,11 @@ public sealed class ServiceAuthenticationService(IOptions<ServiceClientOptions> 
             .Where(permission => !string.IsNullOrWhiteSpace(permission))
             .Distinct(StringComparer.Ordinal)
             .ToArray();
+        if (permissions.Any(permission => permission.Contains('*', StringComparison.Ordinal)))
+        {
+            return Task.FromResult(ServiceAuthenticationResult.Failed());
+        }
+
         return Task.FromResult(ServiceAuthenticationResult.Success(issuer.IssueService(request.ClientId, permissions, timeProvider.GetUtcNow())));
     }
 
