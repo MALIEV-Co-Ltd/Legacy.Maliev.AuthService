@@ -10,6 +10,8 @@ public sealed class RefreshSessionDbContext(DbContextOptions<RefreshSessionDbCon
     public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
     /// <summary>Gets hashed single-use identity actions.</summary>
     public DbSet<IdentityActionToken> IdentityActionTokens => Set<IdentityActionToken>();
+    /// <summary>Gets one-time Google Identity Services nonces.</summary>
+    public DbSet<GoogleIdentityNonce> GoogleIdentityNonces => Set<GoogleIdentityNonce>();
 
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -31,5 +33,14 @@ public sealed class RefreshSessionDbContext(DbContextOptions<RefreshSessionDbCon
         action.Property(x => x.Purpose).HasMaxLength(32).IsRequired();
         action.HasIndex(x => new { x.IdentityId, x.Purpose, x.TokenHash }).IsUnique();
         action.HasIndex(x => x.ExpiresAt);
+
+        var googleNonce = modelBuilder.Entity<GoogleIdentityNonce>();
+        googleNonce.ToTable("google_identity_nonces");
+        googleNonce.HasKey(x => x.Id);
+        googleNonce.Property(x => x.NonceHash).HasMaxLength(64).IsRequired();
+        googleNonce.Property(x => x.ServiceName).HasMaxLength(128).IsRequired();
+        googleNonce.Property(x => x.Application).HasMaxLength(64).IsRequired();
+        googleNonce.HasIndex(x => x.NonceHash).IsUnique();
+        googleNonce.HasIndex(x => x.ExpiresAt);
     }
 }
