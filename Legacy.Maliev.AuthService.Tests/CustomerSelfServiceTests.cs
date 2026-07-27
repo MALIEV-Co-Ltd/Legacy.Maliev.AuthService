@@ -45,6 +45,12 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             methods.SelectMany(method => method.GetCustomAttributes<HttpPostAttribute>()),
             attribute => attribute.Template?.Contains("{password", StringComparison.OrdinalIgnoreCase) == true
                 || attribute.Template?.Contains("{token", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.Equal(
+            "email-change/validate",
+            controller.GetMethod(nameof(CustomerSelfServiceController.ValidateEmailChange))?.GetCustomAttribute<HttpPostAttribute>()?.Template);
+        Assert.Equal(
+            "email-change/complete",
+            controller.GetMethod(nameof(CustomerSelfServiceController.CompleteEmailChange))?.GetCustomAttribute<HttpPostAttribute>()?.Template);
     }
     [Fact]
     public async Task Register_NewCustomer_PersistsCompatiblePasswordHashWithoutReturningSecurityMaterial()
@@ -150,7 +156,7 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task ChangeEmail_VerifiesPasswordEnforcesUniquenessAndIssuesSingleUseConfirmation()
+    public async Task ChangeEmail_VerifiesPasswordLeavesIdentityPendingUntilConfirmationAndThenRejectsReplay()
     {
         await using var fixture = await Fixture.CreateAsync(postgres);
         await fixture.SeedCustomerAsync();
@@ -177,16 +183,68 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Null(duplicate);
         Assert.NotNull(changed?.Token);
         var stored = await fixture.Customers.Users.AsNoTracking().SingleAsync(value => value.Id == "customer-id");
-        Assert.Equal("new@example.com", stored.Email);
-        Assert.Equal("new@example.com", stored.UserName);
+        Assert.Equal("customer@example.com", stored.Email);
+        Assert.Equal("customer@example.com", stored.UserName);
         Assert.False(stored.EmailConfirmed);
-        Assert.NotNull((await fixture.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
-        Assert.True(await fixture.Service.ConfirmEmailAsync(
+        Assert.Null((await fixture.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
+        var action = await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync();
+        Assert.Equal("email-change", action.Purpose);
+        Assert.Equal("new@example.com", action.TargetEmail);
+        Assert.Null(await fixture.Service.ValidateEmailChangeAsync(
+            new CompleteCustomerActionRequest("customer@example.com", changed!.Token!),
+            default));
+        var validation = await fixture.Service.ValidateEmailChangeAsync(
+            new CompleteCustomerActionRequest("new@example.com", changed.Token!),
+            default);
+        Assert.NotNull(validation);
+        Assert.Equal(42, validation!.DatabaseId);
+        Assert.Equal("customer@example.com", validation.CurrentEmail);
+        Assert.Equal("new@example.com", validation.NewEmail);
+        Assert.True(await fixture.Service.CompleteEmailChangeAsync(
             new CompleteCustomerActionRequest("new@example.com", changed!.Token!),
             default));
-        Assert.False(await fixture.Service.ConfirmEmailAsync(
+        Assert.False(await fixture.Service.CompleteEmailChangeAsync(
             new CompleteCustomerActionRequest("new@example.com", changed.Token!),
             default));
+        stored = await fixture.Customers.Users.AsNoTracking().SingleAsync(value => value.Id == "customer-id");
+        Assert.Equal("new@example.com", stored.Email);
+        Assert.Equal("new@example.com", stored.UserName);
+        Assert.True(stored.EmailConfirmed);
+        Assert.NotNull((await fixture.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
+    }
+
+    [Fact]
+    public async Task PasswordReset_EmailMismatchDoesNotConsumeChallenge()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync();
+        var challenge = await fixture.Service.RequestPasswordResetAsync(
+            new CustomerActionRequest("customer@example.com"), default);
+
+        Assert.False(await fixture.Service.CompletePasswordResetAsync(
+            new CompletePasswordResetRequest("other@example.com", challenge.Token!, "new-password"), default));
+        Assert.True(await fixture.Service.CompletePasswordResetAsync(
+            new CompletePasswordResetRequest("customer@example.com", challenge.Token!, "new-password"), default));
+    }
+
+    [Fact]
+    public async Task ChangeEmail_ExpiredChallengeLeavesIdentityAndProfileReadyForRetry()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 7, 15, 0, 0, 0, TimeSpan.Zero));
+        await using var fixture = await Fixture.CreateAsync(postgres, clock);
+        await fixture.SeedCustomerAsync();
+        var challenge = await fixture.Service.ChangeEmailAsync(
+            "customer-id",
+            new ChangeCustomerEmailRequest("old-password", "new@example.com"),
+            default);
+
+        clock.Advance(TimeSpan.FromHours(25));
+
+        Assert.Null(await fixture.Service.ValidateEmailChangeAsync(
+            new CompleteCustomerActionRequest("new@example.com", challenge!.Token!), default));
+        Assert.False(await fixture.Service.CompleteEmailChangeAsync(
+            new CompleteCustomerActionRequest("new@example.com", challenge.Token!), default));
+        Assert.Equal("customer@example.com", (await fixture.Customers.Users.AsNoTracking().SingleAsync()).Email);
     }
 
     private sealed class Fixture : IAsyncDisposable

@@ -31,6 +31,7 @@ public sealed class RefreshSessionDbContext(DbContextOptions<RefreshSessionDbCon
         action.Property(x => x.IdentityId).HasMaxLength(450).IsRequired();
         action.Property(x => x.TokenHash).HasMaxLength(64).IsRequired();
         action.Property(x => x.Purpose).HasMaxLength(32).IsRequired();
+        action.Property(x => x.TargetEmail).HasMaxLength(320);
         action.HasIndex(x => new { x.IdentityId, x.Purpose, x.TokenHash }).IsUnique();
         action.HasIndex(x => x.ExpiresAt);
 
