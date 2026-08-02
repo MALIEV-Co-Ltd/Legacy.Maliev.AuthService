@@ -10,7 +10,8 @@ public sealed class AuthenticationService(
     ILegacyIdentityReader identityReader,
     IAccessTokenIssuer accessTokenIssuer,
     IRefreshSessionStore refreshSessionStore,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    ICustomerLoginActionLifecycle? loginActionLifecycle = null)
 {
     private static readonly TimeSpan RefreshLifetime = TimeSpan.FromDays(14);
 
@@ -23,6 +24,34 @@ public sealed class AuthenticationService(
         if (identity is null)
         {
             return AuthenticationResult.Failed();
+        }
+
+        if (identity.Kind == IdentityKind.Customer && !identity.EmailConfirmed)
+        {
+            var token = loginActionLifecycle is null || string.IsNullOrWhiteSpace(identity.SecurityStamp)
+                ? null
+                : await loginActionLifecycle.IssueEmailConfirmationRecoveryAsync(
+                    identity.Id,
+                    identity.Email ?? request.UserName.Trim(),
+                    identity.SecurityStamp,
+                    cancellationToken);
+            return token is null
+                ? AuthenticationResult.Failed()
+                : AuthenticationResult.ActionRequired("confirm_email", token);
+        }
+
+        if (identity.Kind == IdentityKind.Customer && identity.RequiresInitialPassword)
+        {
+            var token = loginActionLifecycle is null || string.IsNullOrWhiteSpace(identity.SecurityStamp)
+                ? null
+                : await loginActionLifecycle.IssueInitialPasswordChallengeAsync(
+                    identity.Id,
+                    identity.Email ?? request.UserName.Trim(),
+                    identity.SecurityStamp,
+                    cancellationToken);
+            return token is null
+                ? AuthenticationResult.Failed()
+                : AuthenticationResult.ActionRequired("set_initial_password", token);
         }
 
         var now = timeProvider.GetUtcNow();

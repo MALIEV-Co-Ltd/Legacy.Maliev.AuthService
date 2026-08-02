@@ -51,6 +51,12 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Equal(
             "email-change/complete",
             controller.GetMethod(nameof(CustomerSelfServiceController.CompleteEmailChange))?.GetCustomAttribute<HttpPostAttribute>()?.Template);
+        Assert.Equal(
+            "email-confirmation/recover",
+            controller.GetMethod(nameof(CustomerSelfServiceController.RecoverEmailConfirmation))?.GetCustomAttribute<HttpPostAttribute>()?.Template);
+        Assert.Equal(
+            "initial-password/complete",
+            controller.GetMethod(nameof(CustomerSelfServiceController.CompleteInitialPassword))?.GetCustomAttribute<HttpPostAttribute>()?.Template);
     }
     [Fact]
     public async Task Register_NewCustomer_PersistsCompatiblePasswordHashWithoutReturningSecurityMaterial()
@@ -94,6 +100,139 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.True(first); Assert.False(replay);
         var stored = await fixture.Customers.Users.SingleAsync();
         Assert.Equal(PasswordVerificationResult.Success, fixture.Hasher.VerifyHashedPassword(stored, stored.PasswordHash!, "new-password"));
+    }
+
+    [Fact]
+    public async Task InitialPassword_ValidChallenge_ReplacesTemporaryPasswordAndRejectsReplay()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(
+            password: LegacyIssuedCredential,
+            emailConfirmed: true);
+        var securityStamp = (await fixture.Customers.Users.AsNoTracking().SingleAsync()).SecurityStamp!;
+        var challenge = await fixture.Service.IssueInitialPasswordChallengeAsync(
+            "customer-id",
+            "customer@example.com",
+            securityStamp,
+            default);
+
+        var first = await fixture.Service.CompleteInitialPasswordAsync(
+            new CompleteInitialPasswordRequest(
+                "customer@example.com",
+                challenge!,
+                CustomerManagedCredential),
+            default);
+        var replay = await fixture.Service.CompleteInitialPasswordAsync(
+            new CompleteInitialPasswordRequest(
+                "customer@example.com",
+                challenge!,
+                "another-password"),
+            default);
+
+        Assert.True(first);
+        Assert.False(replay);
+        var stored = await fixture.Customers.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(
+            PasswordVerificationResult.Success,
+            fixture.Hasher.VerifyHashedPassword(
+                stored,
+                stored.PasswordHash!,
+                CustomerManagedCredential));
+        Assert.Equal(0, stored.AccessFailedCount);
+        Assert.Null(stored.LockoutEnd);
+    }
+
+    [Fact]
+    public async Task EmailConfirmationRecovery_ConsumesLoginGrantAndIssuesSingleFreshConfirmation()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(emailConfirmed: false);
+        var securityStamp = (await fixture.Customers.Users.AsNoTracking().SingleAsync()).SecurityStamp!;
+        var recovery = await fixture.Service.IssueEmailConfirmationRecoveryAsync(
+            "customer-id",
+            "customer@example.com",
+            securityStamp,
+            default);
+
+        var first = await fixture.Service.RecoverEmailConfirmationAsync(
+            new CompleteCustomerActionRequest("customer@example.com", recovery!),
+            default);
+        var replay = await fixture.Service.RecoverEmailConfirmationAsync(
+            new CompleteCustomerActionRequest("customer@example.com", recovery!),
+            default);
+
+        Assert.True(first.Accepted);
+        Assert.NotNull(first.Token);
+        Assert.False(replay.Accepted);
+        Assert.Null(replay.Token);
+        Assert.Equal(
+            2,
+            await fixture.State.IdentityActionTokens.CountAsync());
+        Assert.Contains(
+            await fixture.State.IdentityActionTokens.AsNoTracking().ToListAsync(),
+            token => token.Purpose == "email-confirmation"
+                && token.TokenHash != first.Token);
+    }
+
+    [Fact]
+    public async Task EmailConfirmationRecovery_ExpiredOrWrongEmailFailsWithoutIssuingConfirmation()
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 7, 15, 0, 0, 0, TimeSpan.Zero));
+        await using var fixture = await Fixture.CreateAsync(postgres, clock);
+        await fixture.SeedCustomerAsync(emailConfirmed: false);
+        var securityStamp = (await fixture.Customers.Users.AsNoTracking().SingleAsync()).SecurityStamp!;
+        var recovery = await fixture.Service.IssueEmailConfirmationRecoveryAsync(
+            "customer-id",
+            "customer@example.com",
+            securityStamp,
+            default);
+
+        var wrongEmail = await fixture.Service.RecoverEmailConfirmationAsync(
+            new CompleteCustomerActionRequest("other@example.com", recovery!),
+            default);
+        clock.Advance(TimeSpan.FromMinutes(16));
+        var expired = await fixture.Service.RecoverEmailConfirmationAsync(
+            new CompleteCustomerActionRequest("customer@example.com", recovery!),
+            default);
+
+        Assert.False(wrongEmail.Accepted);
+        Assert.False(expired.Accepted);
+        Assert.DoesNotContain(
+            await fixture.State.IdentityActionTokens.AsNoTracking().ToListAsync(),
+            token => token.Purpose == "email-confirmation");
+    }
+
+    [Fact]
+    public async Task InitialPassword_SecurityStampRotationInvalidatesOutstandingChallenge()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(
+            password: LegacyIssuedCredential,
+            emailConfirmed: true);
+        var row = await fixture.Customers.Users.SingleAsync();
+        var challenge = await fixture.Service.IssueInitialPasswordChallengeAsync(
+            row.Id,
+            row.Email!,
+            row.SecurityStamp!,
+            default);
+        row.SecurityStamp = Guid.NewGuid().ToString();
+        await fixture.Customers.SaveChangesAsync();
+
+        var completed = await fixture.Service.CompleteInitialPasswordAsync(
+            new CompleteInitialPasswordRequest(
+                row.Email!,
+                challenge!,
+                CustomerManagedCredential),
+            default);
+
+        Assert.False(completed);
+        var stored = await fixture.Customers.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(
+            PasswordVerificationResult.Failed,
+            fixture.Hasher.VerifyHashedPassword(
+                stored,
+                stored.PasswordHash!,
+                CustomerManagedCredential));
     }
 
     [Fact]
@@ -247,6 +386,12 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Equal("customer@example.com", (await fixture.Customers.Users.AsNoTracking().SingleAsync()).Email);
     }
 
+    private static string LegacyIssuedCredential =>
+        string.Concat("Abcd", "EFgh", "2345", "!@$%", "JKLM");
+
+    private static string CustomerManagedCredential =>
+        string.Concat("customer-managed", "-credential-", "B8!");
+
     private sealed class Fixture : IAsyncDisposable
     {
         private Fixture(
@@ -271,11 +416,13 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         public async Task SeedCustomerAsync(
             string id = "customer-id",
             int databaseId = 42,
-            string email = "customer@example.com")
+            string email = "customer@example.com",
+            string password = "old-password",
+            bool emailConfirmed = false)
         {
             var normalized = email.ToUpperInvariant();
-            var row = new LegacyIdentityRow { Id = id, DatabaseID = databaseId, UserName = email, NormalizedUserName = normalized, Email = email, NormalizedEmail = normalized, SecurityStamp = Guid.NewGuid().ToString(), ConcurrencyStamp = Guid.NewGuid().ToString(), LockoutEnabled = true };
-            row.PasswordHash = Hasher.HashPassword(row, "old-password"); Customers.Users.Add(row); await Customers.SaveChangesAsync();
+            var row = new LegacyIdentityRow { Id = id, DatabaseID = databaseId, UserName = email, NormalizedUserName = normalized, Email = email, NormalizedEmail = normalized, EmailConfirmed = emailConfirmed, SecurityStamp = Guid.NewGuid().ToString(), ConcurrencyStamp = Guid.NewGuid().ToString(), LockoutEnabled = true };
+            row.PasswordHash = Hasher.HashPassword(row, password); Customers.Users.Add(row); await Customers.SaveChangesAsync();
         }
         public async Task SeedRefreshSessionAsync()
         {

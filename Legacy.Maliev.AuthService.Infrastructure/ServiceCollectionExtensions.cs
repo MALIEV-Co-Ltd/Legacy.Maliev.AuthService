@@ -56,6 +56,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<GoogleAuthenticationService>();
         services.AddScoped<ServiceAuthenticationService>();
         services.AddScoped<CustomerSelfService>();
+        services.AddScoped<ICustomerLoginActionLifecycle>(provider => provider.GetRequiredService<CustomerSelfService>());
         services.AddScoped<EmployeeSelfService>();
 
         services.AddOptions<JwtOptions>()

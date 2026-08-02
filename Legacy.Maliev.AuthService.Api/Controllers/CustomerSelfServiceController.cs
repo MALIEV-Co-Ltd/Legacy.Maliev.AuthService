@@ -31,6 +31,20 @@ public sealed class CustomerSelfServiceController(CustomerSelfService service) :
     [RequirePermission(CustomerSelfServicePermissions.Use)]
     public Task<CustomerActionChallenge> RequestEmailConfirmation(CustomerActionRequest request, CancellationToken cancellationToken) => service.RequestEmailConfirmationAsync(request, cancellationToken);
 
+    /// <summary>Consumes a credential-validated resend grant and creates a fresh confirmation challenge.</summary>
+    [HttpPost("email-confirmation/recover")]
+    [RequirePermission(CustomerSelfServicePermissions.Use)]
+    [EnableRateLimiting("credential-change")]
+    public async Task<ActionResult<CustomerActionChallenge>> RecoverEmailConfirmation(
+        CompleteCustomerActionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.RecoverEmailConfirmationAsync(request, cancellationToken);
+        return result.Accepted && result.Token is not null
+            ? Ok(result)
+            : BadRequest(InvalidAction());
+    }
+
     /// <summary>Consumes a one-time email confirmation challenge.</summary>
     [HttpPost("email-confirmation/complete")]
     [RequirePermission(CustomerSelfServicePermissions.Use)]
@@ -66,6 +80,17 @@ public sealed class CustomerSelfServiceController(CustomerSelfService service) :
     [HttpPost("password-reset/complete")]
     [RequirePermission(CustomerSelfServicePermissions.Use)]
     public async Task<IActionResult> CompletePasswordReset(CompletePasswordResetRequest request, CancellationToken cancellationToken) => await service.CompletePasswordResetAsync(request, cancellationToken) ? NoContent() : BadRequest(InvalidAction());
+
+    /// <summary>Consumes a first-login challenge and replaces the issued temporary password.</summary>
+    [HttpPost("initial-password/complete")]
+    [RequirePermission(CustomerSelfServicePermissions.Use)]
+    [EnableRateLimiting("credential-change")]
+    public async Task<IActionResult> CompleteInitialPassword(
+        CompleteInitialPasswordRequest request,
+        CancellationToken cancellationToken) =>
+        await service.CompleteInitialPasswordAsync(request, cancellationToken)
+            ? NoContent()
+            : BadRequest(InvalidAction());
 
     /// <summary>Changes the authenticated customer's email and creates a one-time confirmation challenge.</summary>
     [HttpPost("email/change")]

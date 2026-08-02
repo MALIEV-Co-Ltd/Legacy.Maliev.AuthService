@@ -45,6 +45,35 @@ public sealed class AuthenticationServiceTests
         Assert.Null(store.Created);
     }
 
+    [Theory]
+    [InlineData(true, true, "set_initial_password")]
+    [InlineData(false, false, "confirm_email")]
+    public async Task Login_ValidCustomerRequiringAction_ReturnsOpaqueActionWithoutCreatingSession(
+        bool emailConfirmed,
+        bool requiresInitialPassword,
+        string expectedAction)
+    {
+        var identity = Identity() with
+        {
+            EmailConfirmed = emailConfirmed,
+            RequiresInitialPassword = requiresInitialPassword,
+        };
+        var store = new RecordingStore();
+        var actions = new StubLoginActions("opaque-action-token");
+        var service = CreateService(new StubValidator(identity), store, actions);
+
+        var result = await service.LoginAsync(
+            new LoginRequest("user@maliev.com", "validated-password", IdentityKind.Customer),
+            default);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Tokens);
+        Assert.Equal(expectedAction, result.RequiredAction?.Action);
+        Assert.Equal("opaque-action-token", result.RequiredAction?.Token);
+        Assert.Null(store.Created);
+        Assert.Equal(identity.Id, actions.IdentityId);
+    }
+
     [Fact]
     public async Task Refresh_ActiveToken_RotatesTokenAndNeverStoresRawValue()
     {
@@ -95,8 +124,17 @@ public sealed class AuthenticationServiceTests
         Assert.Equal(Now, store.RevokedAt);
     }
 
-    private static AuthenticationService CreateService(StubValidator validator, RecordingStore store) =>
-        new(validator, new StubIdentityReader(Identity()), new StubTokenIssuer(), store, new FakeTimeProvider(Now));
+    private static AuthenticationService CreateService(
+        StubValidator validator,
+        RecordingStore store,
+        ICustomerLoginActionLifecycle? actions = null) =>
+        new(
+            validator,
+            new StubIdentityReader(Identity()),
+            new StubTokenIssuer(),
+            store,
+            new FakeTimeProvider(Now),
+            actions ?? new StubLoginActions(null));
 
     private static LegacyIdentity Identity() =>
         new("legacy-user-id", "user@maliev.com", "user@maliev.com", IdentityKind.Customer, 42, "stamp");
@@ -122,6 +160,31 @@ public sealed class AuthenticationServiceTests
     private sealed class StubTokenIssuer : IAccessTokenIssuer
     {
         public IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now) => new("signed.jwt", 900);
+    }
+
+    private sealed class StubLoginActions(string? token) : ICustomerLoginActionLifecycle
+    {
+        public string? IdentityId { get; private set; }
+
+        public Task<string?> IssueInitialPasswordChallengeAsync(
+            string identityId,
+            string email,
+            string securityStamp,
+            CancellationToken cancellationToken)
+        {
+            IdentityId = identityId;
+            return Task.FromResult(token);
+        }
+
+        public Task<string?> IssueEmailConfirmationRecoveryAsync(
+            string identityId,
+            string email,
+            string securityStamp,
+            CancellationToken cancellationToken)
+        {
+            IdentityId = identityId;
+            return Task.FromResult(token);
+        }
     }
 
     private sealed class StubIdentityReader(LegacyIdentity? identity) : ILegacyIdentityReader
