@@ -7,4 +7,6 @@ public sealed record LegacyIdentity(
     string? Email,
     IdentityKind Kind,
     int? DatabaseId,
-    string? SecurityStamp);
+    string? SecurityStamp,
+    bool EmailConfirmed = true,
+    bool RequiresInitialPassword = false);

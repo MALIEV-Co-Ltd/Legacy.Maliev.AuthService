@@ -24,7 +24,7 @@ public sealed class LegacyIdentityReader(
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.NormalizedUserName == normalized, cancellationToken);
 
-        if (!IsActive(user, kind) || string.IsNullOrEmpty(user!.PasswordHash))
+        if (!IsUnlocked(user) || string.IsNullOrEmpty(user!.PasswordHash))
         {
             DummyPasswordVerification(password);
             return null;
@@ -32,7 +32,7 @@ public sealed class LegacyIdentityReader(
 
         var verification = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, password);
         return verification is PasswordVerificationResult.Success or PasswordVerificationResult.SuccessRehashNeeded
-            ? Project(user, kind)
+            ? Project(user, kind, password)
             : null;
     }
 
@@ -69,8 +69,11 @@ public sealed class LegacyIdentityReader(
         kind == IdentityKind.Customer ? customerContext.Users : employeeContext.Users;
 
     private bool IsActive(LegacyIdentityRow? user, IdentityKind kind) =>
+        IsUnlocked(user)
+        && (kind != IdentityKind.Customer || user!.EmailConfirmed);
+
+    private bool IsUnlocked(LegacyIdentityRow? user) =>
         user is not null
-        && (kind != IdentityKind.Customer || user.EmailConfirmed)
         && (!user.LockoutEnabled || user.LockoutEnd is null || user.LockoutEnd <= timeProvider.GetUtcNow());
 
     private void DummyPasswordVerification(string password)
@@ -80,6 +83,26 @@ public sealed class LegacyIdentityReader(
         _ = passwordHasher.VerifyHashedPassword(dummy, hash, password);
     }
 
-    private static LegacyIdentity Project(LegacyIdentityRow user, IdentityKind kind) =>
-        new(user.Id, user.UserName ?? string.Empty, user.Email, kind, user.DatabaseID, user.SecurityStamp);
+    private static LegacyIdentity Project(LegacyIdentityRow user, IdentityKind kind, string? validatedPassword = null) =>
+        new(
+            user.Id,
+            user.UserName ?? string.Empty,
+            user.Email,
+            kind,
+            user.DatabaseID,
+            user.SecurityStamp,
+            kind != IdentityKind.Customer || user.EmailConfirmed,
+            kind == IdentityKind.Customer && MatchesLegacyIssuedPassword(validatedPassword));
+
+    private static bool MatchesLegacyIssuedPassword(string? password)
+    {
+        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@$%";
+        return password?.Length == 20
+            && password.All(alphabet.Contains)
+            && password.Any(char.IsUpper)
+            && password.Any(char.IsLower)
+            && password.Any(char.IsDigit)
+            && password.Any(character => !char.IsLetterOrDigit(character))
+            && password.Distinct().Count() >= 6;
+    }
 }

@@ -27,8 +27,16 @@ public sealed record TokenResponse(
 public sealed record AuthenticationResult(bool Succeeded, TokenResponse? Tokens)
 {
     /// <summary>Creates a generic authentication failure.</summary>
+    public AuthenticationRequiredAction? RequiredAction { get; init; }
+
     public static AuthenticationResult Failed() => new(false, null);
+
+    public static AuthenticationResult ActionRequired(string action, string token) =>
+        new(false, null) { RequiredAction = new(action, token) };
 
     /// <summary>Creates a successful result.</summary>
     public static AuthenticationResult Success(TokenResponse tokens) => new(true, tokens);
 }
+
+/// <summary>An opaque BFF-only action required before a customer session may be created.</summary>
+public sealed record AuthenticationRequiredAction(string Action, string Token);

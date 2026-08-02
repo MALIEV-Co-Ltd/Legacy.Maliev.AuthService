@@ -32,6 +32,7 @@ public sealed class AuthenticationController(
     [HttpPost("login")]
     [ServiceFilter(typeof(LoginRateLimitFilter))]
     [ProducesResponseType<TokenResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<AuthenticationRequiredAction>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<ActionResult<TokenResponse>> Login(
@@ -39,8 +40,13 @@ public sealed class AuthenticationController(
         CancellationToken cancellationToken)
     {
         var result = await authenticationService.LoginAsync(request, cancellationToken);
-        return result.Succeeded
-            ? Ok(result.Tokens)
+        if (result.Succeeded)
+        {
+            return Ok(result.Tokens);
+        }
+
+        return result.RequiredAction is not null
+            ? Conflict(result.RequiredAction)
             : Unauthorized(AuthenticationProblem());
     }
 

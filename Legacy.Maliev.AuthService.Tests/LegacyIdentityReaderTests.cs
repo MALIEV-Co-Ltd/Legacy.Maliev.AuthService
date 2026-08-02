@@ -44,6 +44,32 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
         Assert.Equal("legacy-id", result.Id);
         Assert.Equal(42, result.DatabaseId);
         Assert.Equal(IdentityKind.Customer, result.Kind);
+        Assert.True(result.EmailConfirmed);
+        Assert.False(result.RequiresInitialPassword);
+    }
+
+    [Fact]
+    public async Task Validate_LegacyIssuedCustomerPassword_RequiresInitialPasswordWithoutAffectingEmployees()
+    {
+        var temporaryPassword = LegacyIssuedCredential;
+        await using var contexts = await ContextPair.CreateAsync(postgres);
+        var customer = CreateUser("customer-id", "customer@example.com", temporaryPassword);
+        customer.DatabaseID = 42;
+        customer.EmailConfirmed = true;
+        var employee = CreateUser("employee-id", "employee@maliev.com", temporaryPassword);
+        contexts.Customer.Users.Add(customer);
+        contexts.Employee.Users.Add(employee);
+        await contexts.Customer.SaveChangesAsync();
+        await contexts.Employee.SaveChangesAsync();
+        var reader = contexts.CreateReader();
+
+        var customerResult = await reader.ValidateAsync(
+            customer.Email!, temporaryPassword, IdentityKind.Customer, default);
+        var employeeResult = await reader.ValidateAsync(
+            employee.Email!, temporaryPassword, IdentityKind.Employee, default);
+
+        Assert.True(customerResult?.RequiresInitialPassword);
+        Assert.False(employeeResult?.RequiresInitialPassword);
     }
 
     [Fact]
@@ -64,7 +90,7 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Validate_UnconfirmedCustomer_IsRejectedEvenWithCorrectPassword()
+    public async Task Validate_UnconfirmedCustomer_ReturnsRecoveryEligibleIdentityWithoutSessionEligibility()
     {
         await using var contexts = await ContextPair.CreateAsync(postgres);
         var user = CreateUser("legacy-id", "unconfirmed@example.com", "correct-password");
@@ -76,7 +102,8 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
         var result = await reader.ValidateAsync(
             "unconfirmed@example.com", "correct-password", IdentityKind.Customer, default);
 
-        Assert.Null(result);
+        Assert.NotNull(result);
+        Assert.False(result.EmailConfirmed);
     }
 
     [Fact]
@@ -107,6 +134,9 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
         Assert.Null(employee?.FindProperty(nameof(LegacyIdentityRow.FaxNumber)));
         Assert.Null(employee?.FindProperty(nameof(LegacyIdentityRow.MobileNumber)));
     }
+
+    private static string LegacyIssuedCredential =>
+        string.Concat("Abcd", "EFgh", "2345", "!@$%", "JKLM");
 
     private static LegacyIdentityRow CreateUser(string id, string email, string password)
     {

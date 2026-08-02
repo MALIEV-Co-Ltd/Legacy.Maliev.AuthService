@@ -65,3 +65,19 @@ public sealed record RefreshRotationResult(
     string? IdentityId,
     IdentityKind? IdentityKind,
     string? SecurityStamp);
+
+/// <summary>Issues and consumes opaque customer actions after credentials have been validated.</summary>
+public interface ICustomerLoginActionLifecycle
+{
+    Task<string?> IssueInitialPasswordChallengeAsync(
+        string identityId,
+        string email,
+        string securityStamp,
+        CancellationToken cancellationToken);
+
+    Task<string?> IssueEmailConfirmationRecoveryAsync(
+        string identityId,
+        string email,
+        string securityStamp,
+        CancellationToken cancellationToken);
+}

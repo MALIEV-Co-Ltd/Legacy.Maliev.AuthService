@@ -9,12 +9,15 @@ using System.Text;
 namespace Legacy.Maliev.AuthService.Infrastructure;
 
 /// <summary>Owns customer registration, confirmation, and recovery without changing the legacy schema.</summary>
-public sealed class CustomerSelfService(CustomerIdentityDbContext customers, RefreshSessionDbContext state, IPasswordHasher<LegacyIdentityRow> passwordHasher, TimeProvider timeProvider)
+public sealed class CustomerSelfService(CustomerIdentityDbContext customers, RefreshSessionDbContext state, IPasswordHasher<LegacyIdentityRow> passwordHasher, TimeProvider timeProvider) : ICustomerLoginActionLifecycle
 {
     private const string EmailConfirmation = "email-confirmation";
     private const string EmailChange = "email-change";
     private const string PasswordReset = "password-reset";
+    private const string InitialPassword = "initial-password";
+    private const string EmailConfirmationRecovery = "email-confirmation-recovery";
     private static readonly TimeSpan ActionLifetime = TimeSpan.FromHours(24);
+    private static readonly TimeSpan LoginActionLifetime = TimeSpan.FromMinutes(15);
 
     /// <summary>Creates an unconfirmed customer identity.</summary>
     public async Task<CustomerSelfServiceResult> RegisterAsync(RegisterCustomerIdentityRequest request, CancellationToken cancellationToken)
@@ -57,6 +60,102 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
     public Task<CustomerActionChallenge> RequestEmailConfirmationAsync(CustomerActionRequest request, CancellationToken cancellationToken) => CreateChallengeAsync(request.Email, EmailConfirmation, requireUnconfirmed: true, cancellationToken);
     /// <summary>Creates a reset challenge without revealing missing identities to the public caller.</summary>
     public Task<CustomerActionChallenge> RequestPasswordResetAsync(CustomerActionRequest request, CancellationToken cancellationToken) => CreateChallengeAsync(request.Email, PasswordReset, requireUnconfirmed: false, cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<string?> IssueInitialPasswordChallengeAsync(
+        string identityId,
+        string email,
+        string securityStamp,
+        CancellationToken cancellationToken) =>
+        (await CreateSecurityStampBoundChallengeAsync(
+            identityId,
+            InitialPassword,
+            email,
+            securityStamp,
+            cancellationToken,
+            LoginActionLifetime)).Token;
+
+    /// <inheritdoc />
+    public async Task<string?> IssueEmailConfirmationRecoveryAsync(
+        string identityId,
+        string email,
+        string securityStamp,
+        CancellationToken cancellationToken) =>
+        (await CreateSecurityStampBoundChallengeAsync(
+            identityId,
+            EmailConfirmationRecovery,
+            email,
+            securityStamp,
+            cancellationToken,
+            LoginActionLifetime)).Token;
+
+    /// <summary>Consumes a credential-validated resend grant and returns a fresh confirmation challenge.</summary>
+    public async Task<CustomerActionChallenge> RecoverEmailConfirmationAsync(
+        CompleteCustomerActionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var recovery = await FindSecurityStampBoundActionAsync(
+            EmailConfirmationRecovery,
+            request.Email,
+            request.Token,
+            cancellationToken);
+        if (recovery is null || !await TryConsumeAsync(recovery, cancellationToken))
+        {
+            return new(false, null);
+        }
+
+        var row = await customers.Users.AsNoTracking().SingleOrDefaultAsync(
+            value => value.Id == recovery.IdentityId,
+            cancellationToken);
+        if (row is null || row.EmailConfirmed || string.IsNullOrWhiteSpace(row.Email))
+        {
+            return new(false, null);
+        }
+
+        return await CreateChallengeForIdentityAsync(
+            row.Id,
+            EmailConfirmation,
+            row.Email,
+            cancellationToken);
+    }
+
+    /// <summary>Replaces an issued temporary password through a single-use login challenge.</summary>
+    public async Task<bool> CompleteInitialPasswordAsync(
+        CompleteInitialPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var action = await FindSecurityStampBoundActionAsync(
+            InitialPassword,
+            request.Email,
+            request.Token,
+            cancellationToken);
+        if (action is null)
+        {
+            return false;
+        }
+
+        var row = await customers.Users.SingleOrDefaultAsync(
+            value => value.Id == action.IdentityId,
+            cancellationToken);
+        if (row is null || !row.EmailConfirmed || !EmailMatches(row.Email, request.Email))
+        {
+            return false;
+        }
+
+        if (!await TryConsumeAsync(action, cancellationToken))
+        {
+            return false;
+        }
+
+        row.PasswordHash = passwordHasher.HashPassword(row, request.Password);
+        row.AccessFailedCount = 0;
+        row.LockoutEnd = null;
+        RotateSecurityStamp(row);
+        await customers.SaveChangesAsync(cancellationToken);
+        await RevokeRefreshSessionsAsync(row.Id, cancellationToken);
+        await SupersedeActiveChallengesAsync(row.Id, InitialPassword, timeProvider.GetUtcNow(), cancellationToken);
+        return true;
+    }
     /// <summary>Confirms an email using a single-use challenge.</summary>
     public async Task<bool> ConfirmEmailAsync(CompleteCustomerActionRequest request, CancellationToken cancellationToken)
     {
@@ -111,6 +210,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         row.LockoutEnd = null;
         RotateSecurityStamp(row);
         await customers.SaveChangesAsync(cancellationToken);
+        await SupersedeActiveChallengesAsync(row.Id, InitialPassword, timeProvider.GetUtcNow(), cancellationToken);
         return true;
     }
 
@@ -228,6 +328,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         RotateSecurityStamp(row);
         await customers.SaveChangesAsync(cancellationToken);
         await RevokeRefreshSessionsAsync(row.Id, cancellationToken);
+        await SupersedeActiveChallengesAsync(row.Id, InitialPassword, timeProvider.GetUtcNow(), cancellationToken);
         return true;
     }
 
@@ -253,6 +354,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         RotateSecurityStamp(row);
         await customers.SaveChangesAsync(cancellationToken);
         await RevokeRefreshSessionsAsync(row.Id, cancellationToken);
+        await SupersedeActiveChallengesAsync(row.Id, InitialPassword, timeProvider.GetUtcNow(), cancellationToken);
         return true;
     }
 
@@ -273,7 +375,8 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         string identityId,
         string purpose,
         string targetEmail,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        TimeSpan? lifetime = null)
     {
         var token = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
         var now = timeProvider.GetUtcNow();
@@ -286,7 +389,32 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
             TargetEmail = targetEmail.Trim(),
             TokenHash = Hash(token),
             CreatedAt = now,
-            ExpiresAt = now.Add(ActionLifetime),
+            ExpiresAt = now.Add(lifetime ?? ActionLifetime),
+        });
+        await state.SaveChangesAsync(cancellationToken);
+        return new(true, token);
+    }
+
+    private async Task<CustomerActionChallenge> CreateSecurityStampBoundChallengeAsync(
+        string identityId,
+        string purpose,
+        string targetEmail,
+        string securityStamp,
+        CancellationToken cancellationToken,
+        TimeSpan lifetime)
+    {
+        var token = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+        var now = timeProvider.GetUtcNow();
+        await SupersedeActiveChallengesAsync(identityId, purpose, now, cancellationToken);
+        state.IdentityActionTokens.Add(new()
+        {
+            Id = Guid.NewGuid(),
+            IdentityId = identityId,
+            Purpose = purpose,
+            TargetEmail = targetEmail.Trim(),
+            TokenHash = HashBoundToken(token, securityStamp),
+            CreatedAt = now,
+            ExpiresAt = now.Add(lifetime),
         });
         await state.SaveChangesAsync(cancellationToken);
         return new(true, token);
@@ -405,6 +533,28 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         return action.ExpiresAt > timeProvider.GetUtcNow() ? action : null;
     }
 
+    private async Task<IdentityActionToken?> FindSecurityStampBoundActionAsync(
+        string purpose,
+        string email,
+        string token,
+        CancellationToken cancellationToken)
+    {
+        var identity = await FindAsync(email, cancellationToken);
+        if (identity is null || string.IsNullOrWhiteSpace(identity.SecurityStamp))
+        {
+            return null;
+        }
+
+        var now = timeProvider.GetUtcNow();
+        return await state.IdentityActionTokens.AsNoTracking().SingleOrDefaultAsync(value =>
+            value.IdentityId == identity.Id
+            && value.Purpose == purpose
+            && value.TokenHash == HashBoundToken(token, identity.SecurityStamp)
+            && value.ConsumedAt == null
+            && value.ExpiresAt > now,
+            cancellationToken);
+    }
+
     private async Task<bool> TryConsumeAsync(
         IdentityActionToken action,
         CancellationToken cancellationToken)
@@ -435,6 +585,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         !string.IsNullOrWhiteSpace(actual)
         && string.Equals(actual.Trim(), expected.Trim(), StringComparison.OrdinalIgnoreCase);
     private static string Hash(string token) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+    private static string HashBoundToken(string token, string securityStamp) => Hash($"{token}:{securityStamp}");
     private static void RotateSecurityStamp(LegacyIdentityRow row)
     {
         row.SecurityStamp = Guid.NewGuid().ToString();
