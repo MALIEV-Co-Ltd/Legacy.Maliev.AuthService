@@ -36,6 +36,27 @@ public sealed class CustomerSelfServiceController(CustomerSelfService service) :
     [RequirePermission(CustomerSelfServicePermissions.Use)]
     public async Task<IActionResult> ConfirmEmail(CompleteCustomerActionRequest request, CancellationToken cancellationToken) => await service.ConfirmEmailAsync(request, cancellationToken) ? NoContent() : BadRequest(InvalidAction());
 
+    /// <summary>Validates a pending customer email-change challenge without consuming it.</summary>
+    [HttpPost("email-change/validate")]
+    [RequirePermission(CustomerSelfServicePermissions.Use)]
+    public async Task<ActionResult<CustomerEmailChangeValidation>> ValidateEmailChange(
+        CompleteCustomerActionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ValidateEmailChangeAsync(request, cancellationToken);
+        return result is null ? BadRequest(InvalidAction()) : Ok(result);
+    }
+
+    /// <summary>Consumes a pending customer email-change challenge and commits the identity change.</summary>
+    [HttpPost("email-change/complete")]
+    [RequirePermission(CustomerSelfServicePermissions.Use)]
+    public async Task<IActionResult> CompleteEmailChange(
+        CompleteCustomerActionRequest request,
+        CancellationToken cancellationToken) =>
+        await service.CompleteEmailChangeAsync(request, cancellationToken)
+            ? NoContent()
+            : BadRequest(InvalidAction());
+
     /// <summary>Creates a one-time password reset challenge for delivery by the BFF.</summary>
     [HttpPost("password-reset/request")]
     [RequirePermission(CustomerSelfServicePermissions.Use)]

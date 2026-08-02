@@ -11,6 +11,8 @@ public sealed class IdentityActionToken
     public required string TokenHash { get; set; }
     /// <summary>Bound action purpose.</summary>
     public required string Purpose { get; set; }
+    /// <summary>Email address bound to the action when the action targets an email.</summary>
+    public string? TargetEmail { get; set; }
     /// <summary>Creation timestamp.</summary>
     public DateTimeOffset CreatedAt { get; set; }
     /// <summary>Expiration timestamp.</summary>

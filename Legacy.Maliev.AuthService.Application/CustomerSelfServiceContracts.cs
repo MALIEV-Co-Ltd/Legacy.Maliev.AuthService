@@ -13,6 +13,12 @@ public sealed record CustomerSelfServiceResult(bool Succeeded, string? IdentityI
 public sealed record CustomerActionRequest([Required, EmailAddress, StringLength(320)] string Email);
 /// <summary>Internal BFF challenge result. External responses must never expose whether an account exists.</summary>
 public sealed record CustomerActionChallenge(bool Accepted, string? Token);
+/// <summary>Validated pending email change returned only to the trusted Web BFF.</summary>
+public sealed record CustomerEmailChangeValidation(
+    int DatabaseId,
+    string CurrentEmail,
+    string NewEmail,
+    bool Completed = false);
 /// <summary>Completes an email-bound identity action.</summary>
 public sealed record CompleteCustomerActionRequest(
     [Required, EmailAddress, StringLength(320)] string Email,
