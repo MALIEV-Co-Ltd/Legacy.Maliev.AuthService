@@ -9,4 +9,5 @@ public sealed record LegacyIdentity(
     int? DatabaseId,
     string? SecurityStamp,
     bool EmailConfirmed = true,
-    bool RequiresInitialPassword = false);
+    bool RequiresInitialPassword = false,
+    bool HasPassword = true);

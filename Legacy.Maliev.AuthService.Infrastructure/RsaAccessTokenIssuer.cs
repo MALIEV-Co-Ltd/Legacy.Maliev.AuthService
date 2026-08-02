@@ -32,6 +32,7 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
             new(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
             new(JwtRegisteredClaimNames.Name, identity.UserName),
             new("identity_kind", identity.Kind.ToString().ToLowerInvariant()),
+            new("has_password", identity.HasPassword ? "true" : "false", ClaimValueTypes.Boolean),
         };
 
         if (!string.IsNullOrWhiteSpace(identity.Email))
