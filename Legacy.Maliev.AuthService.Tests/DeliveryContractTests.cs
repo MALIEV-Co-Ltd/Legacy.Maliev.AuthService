@@ -65,8 +65,8 @@ public sealed class DeliveryContractTests
         Assert.Contains("dotnet/sdk:10.0-alpine", dockerfile, StringComparison.Ordinal);
         Assert.Contains("dotnet/aspnet:10.0-alpine", dockerfile, StringComparison.Ordinal);
         Assert.Contains("USER $APP_UID", dockerfile, StringComparison.Ordinal);
-        Assert.Contains("checkout bcab875a7f703d1d9c2d535479e93653720eb62d", dockerfile, StringComparison.Ordinal);
-        Assert.Contains("checkout 95c62eb6209411f5aada443b315447a2f76ca0cd", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("checkout ff1cc72d9978887ae31a936a7f34b80025f4c10d", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("checkout edcfdeeb9485c872be2de11c4b9e3cafa06ca806", dockerfile, StringComparison.Ordinal);
 
         var migrationDockerfile = File.ReadAllText(
             Path.Combine(FindRepositoryRoot(), "Legacy.Maliev.AuthService.IdentityMigration", "Dockerfile"));
