@@ -189,6 +189,18 @@ public sealed class JwtAccessTokenContractTests
         Assert.DoesNotContain(AccountingRead, PermissionValues(token));
         AssertDoesNotContainEmployeeOrderWorkflowPermissions(token);
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "customer");
+        Assert.Equal("true", token.Claims.Single(claim => claim.Type == "has_password").Value);
+    }
+
+    [Fact]
+    public void CustomerToken_PasswordlessIdentityCarriesExplicitFalseCapability()
+    {
+        using var fixture = new TokenFixture();
+        var identity = CustomerIdentity() with { HasPassword = false };
+
+        var token = fixture.ReadAndValidate(fixture.Issuer.Issue(identity, Now).Value);
+
+        Assert.Equal("false", token.Claims.Single(claim => claim.Type == "has_password").Value);
     }
 
     [Fact]

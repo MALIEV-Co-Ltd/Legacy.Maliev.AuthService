@@ -92,7 +92,8 @@ public sealed class LegacyIdentityReader(
             user.DatabaseID,
             user.SecurityStamp,
             kind != IdentityKind.Customer || user.EmailConfirmed,
-            kind == IdentityKind.Customer && MatchesLegacyIssuedPassword(validatedPassword));
+            kind == IdentityKind.Customer && MatchesLegacyIssuedPassword(validatedPassword),
+            !string.IsNullOrEmpty(user.PasswordHash));
 
     private static bool MatchesLegacyIssuedPassword(string? password)
     {
