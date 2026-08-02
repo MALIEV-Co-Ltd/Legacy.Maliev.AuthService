@@ -358,6 +358,34 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         return true;
     }
 
+    /// <summary>Adds the first password to an authenticated passwordless customer and revokes all sessions.</summary>
+    public async Task<CreateCustomerPasswordResult> CreatePasswordAsync(
+        string identityId,
+        CreateCustomerPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var row = await customers.Users.SingleOrDefaultAsync(
+            value => value.Id == identityId,
+            cancellationToken);
+        if (row is null)
+        {
+            return CreateCustomerPasswordResult.IdentityNotFound;
+        }
+
+        if (!string.IsNullOrEmpty(row.PasswordHash))
+        {
+            return CreateCustomerPasswordResult.AlreadyExists;
+        }
+
+        row.PasswordHash = passwordHasher.HashPassword(row, request.NewPassword);
+        row.AccessFailedCount = 0;
+        row.LockoutEnd = null;
+        RotateSecurityStamp(row);
+        await customers.SaveChangesAsync(cancellationToken);
+        await RevokeRefreshSessionsAsync(row.Id, cancellationToken);
+        return CreateCustomerPasswordResult.Created;
+    }
+
     private async Task<CustomerActionChallenge> CreateChallengeAsync(string email, string purpose, bool requireUnconfirmed, CancellationToken cancellationToken)
     {
         var row = await FindAsync(email, cancellationToken);

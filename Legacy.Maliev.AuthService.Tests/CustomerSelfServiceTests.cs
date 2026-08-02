@@ -26,6 +26,7 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         var customerCredentialMethods = new[]
         {
             nameof(CustomerSelfServiceController.ChangeEmail),
+            nameof(CustomerSelfServiceController.CreatePassword),
             nameof(CustomerSelfServiceController.ChangePassword),
         };
         Assert.All(
@@ -57,6 +58,9 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Equal(
             "initial-password/complete",
             controller.GetMethod(nameof(CustomerSelfServiceController.CompleteInitialPassword))?.GetCustomAttribute<HttpPostAttribute>()?.Template);
+        Assert.Equal(
+            "password/create",
+            controller.GetMethod(nameof(CustomerSelfServiceController.CreatePassword))?.GetCustomAttribute<HttpPostAttribute>()?.Template);
     }
     [Fact]
     public async Task Register_NewCustomer_PersistsCompatiblePasswordHashWithoutReturningSecurityMaterial()
@@ -295,6 +299,46 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task CreatePassword_PasswordlessCustomerCreatesCredentialRotatesSecurityStampAndRevokesRefreshSessions()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(password: null);
+        await fixture.SeedRefreshSessionAsync();
+        var before = (await fixture.Customers.Users.AsNoTracking().SingleAsync()).SecurityStamp;
+
+        var result = await fixture.Service.CreatePasswordAsync(
+            "customer-id",
+            new CreateCustomerPasswordRequest("customer-owned-password"),
+            default);
+
+        Assert.Equal(CreateCustomerPasswordResult.Created, result);
+        var stored = await fixture.Customers.Users.AsNoTracking().SingleAsync();
+        Assert.NotEqual(before, stored.SecurityStamp);
+        Assert.Equal(
+            PasswordVerificationResult.Success,
+            fixture.Hasher.VerifyHashedPassword(stored, stored.PasswordHash!, "customer-owned-password"));
+        Assert.NotNull((await fixture.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
+    }
+
+    [Fact]
+    public async Task CreatePassword_ExistingCredentialReturnsConflictStateWithoutChangingSecurityState()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync();
+        var before = await fixture.Customers.Users.AsNoTracking().SingleAsync();
+
+        var result = await fixture.Service.CreatePasswordAsync(
+            "customer-id",
+            new CreateCustomerPasswordRequest("replacement-password"),
+            default);
+
+        Assert.Equal(CreateCustomerPasswordResult.AlreadyExists, result);
+        var stored = await fixture.Customers.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(before.SecurityStamp, stored.SecurityStamp);
+        Assert.Equal(before.PasswordHash, stored.PasswordHash);
+    }
+
+    [Fact]
     public async Task ChangeEmail_VerifiesPasswordLeavesIdentityPendingUntilConfirmationAndThenRejectsReplay()
     {
         await using var fixture = await Fixture.CreateAsync(postgres);
@@ -417,12 +461,12 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             string id = "customer-id",
             int databaseId = 42,
             string email = "customer@example.com",
-            string password = "old-password",
+            string? password = "old-password",
             bool emailConfirmed = false)
         {
             var normalized = email.ToUpperInvariant();
             var row = new LegacyIdentityRow { Id = id, DatabaseID = databaseId, UserName = email, NormalizedUserName = normalized, Email = email, NormalizedEmail = normalized, EmailConfirmed = emailConfirmed, SecurityStamp = Guid.NewGuid().ToString(), ConcurrencyStamp = Guid.NewGuid().ToString(), LockoutEnabled = true };
-            row.PasswordHash = Hasher.HashPassword(row, password); Customers.Users.Add(row); await Customers.SaveChangesAsync();
+            row.PasswordHash = password is null ? null : Hasher.HashPassword(row, password); Customers.Users.Add(row); await Customers.SaveChangesAsync();
         }
         public async Task SeedRefreshSessionAsync()
         {
