@@ -6,7 +6,7 @@ namespace Legacy.Maliev.AuthService.Application;
 public sealed record RegisterCustomerIdentityRequest(
     [Range(1, int.MaxValue)] int DatabaseId,
     [Required, EmailAddress, StringLength(320)] string Email,
-    [Required, StringLength(1024, MinimumLength = 6)] string Password);
+    [Required, StringLength(1024, MinimumLength = 8)] string Password);
 /// <summary>Customer identity registration outcome without security material.</summary>
 public sealed record CustomerSelfServiceResult(bool Succeeded, string? IdentityId, int? DatabaseId, string? Email);
 /// <summary>Requests an email-bound identity action.</summary>
@@ -27,12 +27,12 @@ public sealed record CompleteCustomerActionRequest(
 public sealed record CompletePasswordResetRequest(
     [Required, EmailAddress, StringLength(320)] string Email,
     [Required, StringLength(256, MinimumLength = 32)] string Token,
-    [Required, StringLength(1024, MinimumLength = 6)] string Password);
+    [Required, StringLength(1024, MinimumLength = 8)] string Password);
 /// <summary>Completes the first-login password replacement challenge.</summary>
 public sealed record CompleteInitialPasswordRequest(
     [Required, EmailAddress, StringLength(320)] string Email,
     [Required, StringLength(256, MinimumLength = 32)] string Token,
-    [Required, StringLength(1024, MinimumLength = 6)] string Password);
+    [Required, StringLength(1024, MinimumLength = 8)] string Password);
 /// <summary>Changes the authenticated customer's email after verifying the current password.</summary>
 public sealed record ChangeCustomerEmailRequest(
     [Required, StringLength(1024)] string CurrentPassword,
@@ -40,4 +40,17 @@ public sealed record ChangeCustomerEmailRequest(
 /// <summary>Changes the authenticated customer's password after verifying the current password.</summary>
 public sealed record ChangeCustomerPasswordRequest(
     [Required, StringLength(1024)] string CurrentPassword,
-    [Required, StringLength(1024, MinimumLength = 6)] string NewPassword);
+    [Required, StringLength(1024, MinimumLength = 8)] string NewPassword);
+/// <summary>Adds the first password to an authenticated passwordless customer identity.</summary>
+public sealed record CreateCustomerPasswordRequest(
+    [Required, StringLength(1024, MinimumLength = 8)] string NewPassword);
+/// <summary>Outcome of an authenticated first-password creation attempt.</summary>
+public enum CreateCustomerPasswordResult
+{
+    /// <summary>The authenticated identity no longer exists.</summary>
+    IdentityNotFound,
+    /// <summary>The identity already owns a password and must use the change-password flow.</summary>
+    AlreadyExists,
+    /// <summary>The first password was created successfully.</summary>
+    Created,
+}

@@ -129,6 +129,30 @@ public sealed class CustomerSelfServiceController(CustomerSelfService service) :
             : BadRequest(InvalidCredentialChange());
     }
 
+    /// <summary>Adds the first password to an authenticated passwordless customer identity.</summary>
+    [HttpPost("password/create")]
+    [Authorize(Policy = "LegacyCustomer")]
+    [EnableRateLimiting("credential-change")]
+    public async Task<IActionResult> CreatePassword(
+        CreateCustomerPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var identityId = User.FindFirstValue(JwtRegisteredClaimNames.Sub);
+        if (string.IsNullOrWhiteSpace(identityId))
+        {
+            return Unauthorized();
+        }
+
+        return await service.CreatePasswordAsync(identityId, request, cancellationToken) switch
+        {
+            CreateCustomerPasswordResult.Created => NoContent(),
+            CreateCustomerPasswordResult.AlreadyExists => Conflict(PasswordAlreadyExists()),
+            _ => NotFound(IdentityNotFound()),
+        };
+    }
+
     private static ProblemDetails InvalidAction() => new() { Status = StatusCodes.Status400BadRequest, Title = "Identity action failed", Detail = "The identity action is invalid or expired." };
     private static ProblemDetails InvalidCredentialChange() => new() { Status = StatusCodes.Status400BadRequest, Title = "Credential change failed", Detail = "The current password or requested account value is invalid." };
+    private static ProblemDetails PasswordAlreadyExists() => new() { Status = StatusCodes.Status409Conflict, Title = "Password already exists", Detail = "Use the password change flow for an identity that already has a password." };
+    private static ProblemDetails IdentityNotFound() => new() { Status = StatusCodes.Status404NotFound, Title = "Identity not found", Detail = "The authenticated customer identity no longer exists." };
 }
