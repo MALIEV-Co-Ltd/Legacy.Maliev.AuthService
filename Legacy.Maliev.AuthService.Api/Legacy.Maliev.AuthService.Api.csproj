@@ -24,17 +24,17 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.17.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.17.0" />
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.17.0" />
-    <PackageReference Include="MassTransit.RabbitMQ" Version="9.1.2" />
-    <PackageReference Include="MassTransit.Abstractions" Version="9.1.2" />
+    <PackageReference Include="MassTransit.RabbitMQ" Version="9.2.0" />
+    <PackageReference Include="MassTransit.Abstractions" Version="9.2.0" />
     <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.10" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.10" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10" />
-    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.19.2" />
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.22.0" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
     <PackageReference Include="Microsoft.OpenApi" Version="2.11.0" />
-    <PackageReference Include="Scalar.AspNetCore" Version="2.16.15" />
-    <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.0.0" />
+    <PackageReference Include="Scalar.AspNetCore" Version="2.16.17" />
+    <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.0.1" />
   </ItemGroup>
   <ItemGroup Condition="'$(GITHUB_ACTIONS)' != 'true' Or '$(UseLocalMalievDependencies)' == 'true'">
     <ProjectReference Include="$(MalievWorkspaceRoot)\Legacy.Maliev.ServiceDefaults\src\Legacy.Maliev.ServiceDefaults\Legacy.Maliev.ServiceDefaults.csproj" />
