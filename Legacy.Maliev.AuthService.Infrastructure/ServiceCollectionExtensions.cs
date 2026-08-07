@@ -15,30 +15,13 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        // PostgreSQL is the migrated legacy store. SQL Server remains available only when
-        // an operator explicitly selects it during the staged cutover window; silently
-        // falling back to SQL Server would make a missing projection look healthy while
-        // reading the wrong source of truth.
-        var identityProvider = configuration["IdentityStorage:Provider"] ?? "PostgreSql";
-        if (string.Equals(identityProvider, "PostgreSql", StringComparison.OrdinalIgnoreCase))
-        {
-            services.AddDbContext<CustomerIdentityDbContext>(options =>
-                ConfigurePostgres(options, configuration, "CustomerIdentity"));
-            services.AddDbContext<EmployeeIdentityDbContext>(options =>
-                ConfigurePostgres(options, configuration, "EmployeeIdentity"));
-        }
-        else if (string.Equals(identityProvider, "SqlServer", StringComparison.OrdinalIgnoreCase))
-        {
-            services.AddDbContext<CustomerIdentityDbContext>(options =>
-                ConfigureSqlServer(options, configuration, "CustomerIdentity"));
-            services.AddDbContext<EmployeeIdentityDbContext>(options =>
-                ConfigureSqlServer(options, configuration, "EmployeeIdentity"));
-        }
-        else
-        {
-            throw new InvalidOperationException(
-                "IdentityStorage:Provider must be either 'SqlServer' or 'PostgreSql'.");
-        }
+        // All migrated identity stores are PostgreSQL. There is intentionally no provider
+        // selector: a stale or malicious configuration cannot route the service back to a
+        // retired database engine.
+        services.AddDbContext<CustomerIdentityDbContext>(options =>
+            ConfigurePostgres(options, configuration, "CustomerIdentity"));
+        services.AddDbContext<EmployeeIdentityDbContext>(options =>
+            ConfigurePostgres(options, configuration, "EmployeeIdentity"));
 
         services.AddDbContext<RefreshSessionDbContext>(options =>
             ConfigurePostgres(options, configuration, "RefreshSessions"));
@@ -92,22 +75,6 @@ public static class ServiceCollectionExtensions
                 maxRetryDelay: TimeSpan.FromSeconds(10),
                 errorCodesToAdd: null);
             npgsqlOptions.CommandTimeout(120);
-        });
-    }
-
-    private static void ConfigureSqlServer(
-        DbContextOptionsBuilder options,
-        IConfiguration configuration,
-        string connectionName)
-    {
-        var connectionString = RequireConnection(configuration.GetConnectionString(connectionName), connectionName);
-        options.UseSqlServer(connectionString, sqlServerOptions =>
-        {
-            sqlServerOptions.EnableRetryOnFailure(
-                maxRetryCount: 5,
-                maxRetryDelay: TimeSpan.FromSeconds(10),
-                errorNumbersToAdd: null);
-            sqlServerOptions.CommandTimeout(120);
         });
     }
 

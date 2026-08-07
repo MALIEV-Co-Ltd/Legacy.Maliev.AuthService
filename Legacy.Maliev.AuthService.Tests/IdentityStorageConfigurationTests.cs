@@ -9,20 +9,14 @@ namespace Legacy.Maliev.AuthService.Tests;
 
 public sealed class IdentityStorageConfigurationTests
 {
-    [Theory]
-    [InlineData(null, "Npgsql.EntityFrameworkCore.PostgreSQL")]
-    [InlineData("SqlServer", "Microsoft.EntityFrameworkCore.SqlServer")]
-    [InlineData("PostgreSql", "Npgsql.EntityFrameworkCore.PostgreSQL")]
-    public void AddInfrastructure_SelectsTheConfiguredIdentityProvider(
-        string? provider,
-        string expectedProvider)
+    [Fact]
+    public void AddInfrastructure_UsesPostgreSqlForBothIdentityContexts()
     {
         var settings = new Dictionary<string, string?>
         {
-            ["ConnectionStrings:CustomerIdentity"] = ProviderConnection(provider),
-            ["ConnectionStrings:EmployeeIdentity"] = ProviderConnection(provider),
+            ["ConnectionStrings:CustomerIdentity"] = "Host=localhost;Database=identity",
+            ["ConnectionStrings:EmployeeIdentity"] = "Host=localhost;Database=identity",
             ["ConnectionStrings:RefreshSessions"] = "Host=localhost;Database=auth",
-            ["IdentityStorage:Provider"] = provider,
             ["Jwt:Issuer"] = "https://test.invalid",
             ["Jwt:Audience"] = "test",
             ["Jwt:PrivateKeyPem"] = "test-only",
@@ -36,25 +30,16 @@ public sealed class IdentityStorageConfigurationTests
         using var providerServices = services.BuildServiceProvider();
         using var customer = providerServices.GetRequiredService<CustomerIdentityDbContext>();
         using var employee = providerServices.GetRequiredService<EmployeeIdentityDbContext>();
-        Assert.Equal(expectedProvider, customer.Database.ProviderName);
-        Assert.Equal(expectedProvider, employee.Database.ProviderName);
+        Assert.Equal("Npgsql.EntityFrameworkCore.PostgreSQL", customer.Database.ProviderName);
+        Assert.Equal("Npgsql.EntityFrameworkCore.PostgreSQL", employee.Database.ProviderName);
         Assert.True(customer.Database.CreateExecutionStrategy().RetriesOnFailure);
         Assert.Equal(120, customer.Database.GetCommandTimeout());
         Assert.True(employee.Database.CreateExecutionStrategy().RetriesOnFailure);
         Assert.Equal(120, employee.Database.GetCommandTimeout());
 
-        if (string.Equals(expectedProvider, "Npgsql.EntityFrameworkCore.PostgreSQL", StringComparison.Ordinal))
-        {
-            var connection = new NpgsqlConnectionStringBuilder(customer.Database.GetDbConnection().ConnectionString);
-            Assert.Equal(20, connection.MaxPoolSize);
-            Assert.Equal(2, connection.MinPoolSize);
-            Assert.Equal(60, connection.ConnectionIdleLifetime);
-        }
+        var connection = new NpgsqlConnectionStringBuilder(customer.Database.GetDbConnection().ConnectionString);
+        Assert.Equal(20, connection.MaxPoolSize);
+        Assert.Equal(2, connection.MinPoolSize);
+        Assert.Equal(60, connection.ConnectionIdleLifetime);
     }
-
-    private static string ProviderConnection(string? provider) =>
-        string.IsNullOrWhiteSpace(provider) ||
-        string.Equals(provider, "PostgreSql", StringComparison.OrdinalIgnoreCase)
-            ? "Host=localhost;Database=identity"
-            : "Server=localhost;Database=identity;Integrated Security=true;TrustServerCertificate=true";
 }

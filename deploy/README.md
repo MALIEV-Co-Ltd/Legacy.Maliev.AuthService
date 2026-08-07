@@ -9,8 +9,9 @@ These manifests are planning artifacts only. Deployment stays disabled until the
 - Customer identity credentials are restricted to the existing identity tables
   but require the minimal row-level operations used by registration,
   confirmation, password recovery, and security-stamp rotation. Employee
-  identity administration retains its existing compatibility access. No legacy
-  SQL Server schema migration is permitted.
+  identity administration retains its existing compatibility access. Source-data
+  import and parity rehearsal are external runbook steps; this service only consumes
+  the resulting PostgreSQL stores.
 - Runtime values come from the single Google Secret Manager JSON secret `maliev-legacy-secrets`, projected as `legacy-maliev-auth-runtime` by the central GitOps repository.
 - The same projection supplies `ServiceClients__Clients__legacy-web__SecretSha256`; numbered permission entries for only `legacy-auth.customer-self-service`, `legacy-customer.customers.create`, `legacy-customer.customers.delete`, `legacy-customer.customers.read`, `legacy-customer.customers.update`, `legacy-customer.addresses.create`, `legacy-customer.addresses.update`, `legacy-customer.companies.create`, `legacy-customer.companies.update`, `legacy-customer.companies.delete`, `legacy.customer-orders.read`, `legacy.customer-orders.cancel`, `legacy.customer-quotations.read`, `legacy-contact.messages.create`, `legacy.quotation-requests.create`, `legacy.quotation-files.write`, `legacy-file.uploads.create`, `legacy-file.uploads.delete`, and `legacy.notifications.send`. Web receives the corresponding raw secret separately; neither repository stores it.
 - The same projection must also supply `ServiceClients__Clients__legacy-intranet__SecretSha256`; the Intranet client receives the narrowly scoped `legacy-auth.google-identity.exchange` permission in addition to the service permissions it already uses. Web and Intranet receive their raw secrets separately; neither repository stores them.

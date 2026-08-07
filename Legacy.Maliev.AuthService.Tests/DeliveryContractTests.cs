@@ -98,11 +98,6 @@ public sealed class DeliveryContractTests
         Assert.Contains("checkout 2833d30c492d9c40869d9bfac30e1ce9bdc11f84", dockerfile, StringComparison.Ordinal);
         Assert.Contains("checkout 78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7", dockerfile, StringComparison.Ordinal);
 
-        var migrationDockerfile = File.ReadAllText(
-            Path.Combine(FindRepositoryRoot(), "Legacy.Maliev.AuthService.IdentityMigration", "Dockerfile"));
-        Assert.Contains("dotnet/sdk:10.0-alpine", migrationDockerfile, StringComparison.Ordinal);
-        Assert.Contains("dotnet/runtime:10.0-alpine", migrationDockerfile, StringComparison.Ordinal);
-        Assert.Contains("USER $APP_UID", migrationDockerfile, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -135,34 +130,6 @@ public sealed class DeliveryContractTests
 
         Assert.Contains("<IsTestProject>true</IsTestProject>", testProject, StringComparison.Ordinal);
         Assert.Contains("<PackageReference Include=\"coverlet.collector\" Version=\"6.0.4\" />", testProject, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void IdentityMigrationImage_IsProtectedBySameDeploymentGate()
-    {
-        var workflow = File.ReadAllText(
-            Path.Combine(FindRepositoryRoot(), ".github", "workflows", "publish-identity-migration.yml"));
-
-        Assert.Contains("vars.LEGACY_DEPLOY_ENABLED == 'true'", workflow, StringComparison.Ordinal);
-        Assert.Contains("legacy-maliev-auth-identity-migration", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("kubectl apply", workflow, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void IdentityMigration_ValidationModeIsNonMutatingAndCopyRequiresExplicitSchemaOptIn()
-    {
-        var source = File.ReadAllText(
-            Path.Combine(FindRepositoryRoot(), "Legacy.Maliev.AuthService.IdentityMigration", "Program.cs"));
-
-        Assert.Contains("options.Mode == MigrationMode.Validate", source, StringComparison.Ordinal);
-        Assert.Contains("GetPendingMigrationsAsync", source, StringComparison.Ordinal);
-        Assert.Contains("options.AllowSchemaMigration", source, StringComparison.Ordinal);
-        Assert.Contains("IDENTITY_ALLOW_SCHEMA_MIGRATION", source, StringComparison.Ordinal);
-
-        var validateMarker = source.IndexOf("if (options.Mode == MigrationMode.Validate)", StringComparison.Ordinal);
-        var migrateMarker = source.IndexOf("await destination.Database.MigrateAsync();", StringComparison.Ordinal);
-        Assert.True(validateMarker >= 0 && migrateMarker > validateMarker);
-        Assert.DoesNotContain("await destination.Database.MigrateAsync();\n    var rows", source, StringComparison.Ordinal);
     }
 
     [Fact]

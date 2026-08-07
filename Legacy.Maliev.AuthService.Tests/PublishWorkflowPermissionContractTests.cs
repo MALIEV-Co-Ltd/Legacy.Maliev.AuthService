@@ -14,16 +14,6 @@ public sealed class PublishWorkflowPermissionContractTests
             "publish-image.yml")));
     }
 
-    [Fact]
-    public void IdentityMigrationWorkflow_ScopesOidcToPublishJob()
-    {
-        AssertWorkflowScopesOidc(File.ReadAllText(Path.Combine(
-            FindRoot(),
-            ".github",
-            "workflows",
-            "publish-identity-migration.yml")));
-    }
-
     private static void AssertWorkflowScopesOidc(string source)
     {
         var jobsIndex = source.IndexOf("\njobs:", StringComparison.Ordinal);

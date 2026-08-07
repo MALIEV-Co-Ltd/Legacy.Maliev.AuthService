@@ -23,16 +23,6 @@ updates:
         applies-to: version-updates
         patterns: ["*"]
         update-types: ["minor", "patch"]
-  - package-ecosystem: docker
-    directory: /Legacy.Maliev.AuthService.IdentityMigration
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-    groups:
-      docker-dependencies:
-        applies-to: version-updates
-        patterns: ["*"]
-        update-types: ["minor", "patch"]
   - package-ecosystem: github-actions
     directory: /
     schedule:

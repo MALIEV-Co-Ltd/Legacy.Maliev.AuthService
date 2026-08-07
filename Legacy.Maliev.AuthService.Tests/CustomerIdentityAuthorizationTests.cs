@@ -229,7 +229,6 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
                 new Dictionary<string, string?>
                 {
-                    ["IdentityStorage:Provider"] = "PostgreSql",
                     ["ConnectionStrings:CustomerIdentity"] = "Host=localhost;Database=unused;Username=unused;Password=unused",
                     ["ConnectionStrings:EmployeeIdentity"] = "Host=localhost;Database=unused;Username=unused;Password=unused",
                     ["ConnectionStrings:RefreshSessions"] = "Host=localhost;Database=unused;Username=unused;Password=unused",
