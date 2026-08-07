@@ -23,16 +23,16 @@ public static class ServiceCollectionExtensions
         if (string.Equals(identityProvider, "PostgreSql", StringComparison.OrdinalIgnoreCase))
         {
             services.AddDbContext<CustomerIdentityDbContext>(options =>
-                options.UseNpgsql(configuration.GetConnectionString("CustomerIdentity")));
+                ConfigurePostgres(options, configuration, "CustomerIdentity"));
             services.AddDbContext<EmployeeIdentityDbContext>(options =>
-                options.UseNpgsql(configuration.GetConnectionString("EmployeeIdentity")));
+                ConfigurePostgres(options, configuration, "EmployeeIdentity"));
         }
         else if (string.Equals(identityProvider, "SqlServer", StringComparison.OrdinalIgnoreCase))
         {
             services.AddDbContext<CustomerIdentityDbContext>(options =>
-                options.UseSqlServer(configuration.GetConnectionString("CustomerIdentity")));
+                ConfigureSqlServer(options, configuration, "CustomerIdentity"));
             services.AddDbContext<EmployeeIdentityDbContext>(options =>
-                options.UseSqlServer(configuration.GetConnectionString("EmployeeIdentity")));
+                ConfigureSqlServer(options, configuration, "EmployeeIdentity"));
         }
         else
         {
@@ -41,7 +41,7 @@ public static class ServiceCollectionExtensions
         }
 
         services.AddDbContext<RefreshSessionDbContext>(options =>
-            options.UseNpgsql(configuration.GetConnectionString("RefreshSessions")));
+            ConfigurePostgres(options, configuration, "RefreshSessions"));
 
         services.AddScoped<IPasswordHasher<LegacyIdentityRow>, PasswordHasher<LegacyIdentityRow>>();
         services.AddScoped<LegacyIdentityReader>();
@@ -75,4 +75,66 @@ public static class ServiceCollectionExtensions
 
         return services;
     }
+
+    private static void ConfigurePostgres(
+        DbContextOptionsBuilder options,
+        IConfiguration configuration,
+        string connectionName)
+    {
+        var connectionString = EnsurePostgresConnectionPooling(
+            configuration.GetConnectionString(connectionName),
+            connectionName);
+
+        options.UseNpgsql(connectionString, npgsqlOptions =>
+        {
+            npgsqlOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(10),
+                errorCodesToAdd: null);
+            npgsqlOptions.CommandTimeout(120);
+        });
+    }
+
+    private static void ConfigureSqlServer(
+        DbContextOptionsBuilder options,
+        IConfiguration configuration,
+        string connectionName)
+    {
+        var connectionString = RequireConnection(configuration.GetConnectionString(connectionName), connectionName);
+        options.UseSqlServer(connectionString, sqlServerOptions =>
+        {
+            sqlServerOptions.EnableRetryOnFailure(
+                maxRetryCount: 5,
+                maxRetryDelay: TimeSpan.FromSeconds(10),
+                errorNumbersToAdd: null);
+            sqlServerOptions.CommandTimeout(120);
+        });
+    }
+
+    private static string EnsurePostgresConnectionPooling(string? connectionString, string connectionName)
+    {
+        var builder = new Npgsql.NpgsqlConnectionStringBuilder(RequireConnection(connectionString, connectionName));
+
+        if (builder.MaxPoolSize == 100)
+        {
+            builder.MaxPoolSize = 20;
+        }
+
+        if (builder.MinPoolSize == 0)
+        {
+            builder.MinPoolSize = 2;
+        }
+
+        if (builder.ConnectionIdleLifetime == 300)
+        {
+            builder.ConnectionIdleLifetime = 60;
+        }
+
+        return builder.ConnectionString;
+    }
+
+    private static string RequireConnection(string? connectionString, string connectionName) =>
+        string.IsNullOrWhiteSpace(connectionString)
+            ? throw new InvalidOperationException($"ConnectionStrings:{connectionName} is required.")
+            : connectionString;
 }
