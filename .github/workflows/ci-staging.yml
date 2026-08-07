@@ -2,8 +2,7 @@ name: CI - Staging
 
 on:
   push:
-    branches: [staging]
-
+    tags: [release/v*]
 permissions:
   contents: read
 
