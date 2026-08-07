@@ -7,7 +7,7 @@ namespace Legacy.Maliev.AuthService.Tests;
 public sealed class IdentityStorageConfigurationTests
 {
     [Theory]
-    [InlineData(null, "Microsoft.EntityFrameworkCore.SqlServer")]
+    [InlineData(null, "Npgsql.EntityFrameworkCore.PostgreSQL")]
     [InlineData("SqlServer", "Microsoft.EntityFrameworkCore.SqlServer")]
     [InlineData("PostgreSql", "Npgsql.EntityFrameworkCore.PostgreSQL")]
     public void AddInfrastructure_SelectsTheConfiguredIdentityProvider(

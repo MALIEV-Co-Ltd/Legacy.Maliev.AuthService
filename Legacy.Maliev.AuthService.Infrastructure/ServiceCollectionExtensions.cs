@@ -14,7 +14,11 @@ public static class ServiceCollectionExtensions
         this IServiceCollection services,
         IConfiguration configuration)
     {
-        var identityProvider = configuration["IdentityStorage:Provider"] ?? "SqlServer";
+        // PostgreSQL is the migrated legacy store. SQL Server remains available only when
+        // an operator explicitly selects it during the staged cutover window; silently
+        // falling back to SQL Server would make a missing projection look healthy while
+        // reading the wrong source of truth.
+        var identityProvider = configuration["IdentityStorage:Provider"] ?? "PostgreSql";
         if (string.Equals(identityProvider, "PostgreSql", StringComparison.OrdinalIgnoreCase))
         {
             services.AddDbContext<CustomerIdentityDbContext>(options =>
