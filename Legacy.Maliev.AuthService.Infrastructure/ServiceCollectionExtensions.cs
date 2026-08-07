@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace Legacy.Maliev.AuthService.Infrastructure;
 
@@ -67,8 +68,10 @@ public static class ServiceCollectionExtensions
             .Bind(configuration.GetSection(JwtOptions.SectionName))
             .ValidateDataAnnotations()
             .ValidateOnStart();
+        services.AddSingleton<IValidateOptions<ServiceClientOptions>, ServiceClientOptionsValidator>();
         services.AddOptions<ServiceClientOptions>()
-            .Bind(configuration.GetSection(ServiceClientOptions.SectionName));
+            .Bind(configuration.GetSection(ServiceClientOptions.SectionName))
+            .ValidateOnStart();
 
         return services;
     }
