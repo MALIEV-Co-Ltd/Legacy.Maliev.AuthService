@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -22,6 +21,9 @@ jobs:
         run: echo "Identity copy remains gated until backup rehearsal and shadow-login validation pass."
 
   publish:
+    permissions:
+      contents: read
+      id-token: write
     if: vars.LEGACY_DEPLOY_ENABLED == 'true'
     uses: MALIEV-Co-Ltd/Legacy.Maliev.Workflows/.github/workflows/publish-image.yml@6017816fa67f369d785ed30794f002cfd6299af7
     with:
