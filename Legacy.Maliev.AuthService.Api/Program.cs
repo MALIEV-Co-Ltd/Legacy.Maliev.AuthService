@@ -20,6 +20,14 @@ builder.Services.AddControllers();
 builder.Services.AddSingleton<LoginAttemptRateLimiter>();
 builder.Services.AddSingleton<LoginRateLimitFilter>();
 builder.Services.AddLegacyAuthInfrastructure(builder.Configuration);
+// Auth readiness must reflect every PostgreSQL store used by the service. The
+// infrastructure registrations above are intentionally explicit (they support
+// the staged SQL Server fallback), so register their health checks here rather
+// than relying on the shared AddPostgresDbContext helper.
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<CustomerIdentityDbContext>("auth_customer_identity", tags: ["db", "ready"])
+    .AddDbContextCheck<EmployeeIdentityDbContext>("auth_employee_identity", tags: ["db", "ready"])
+    .AddDbContextCheck<RefreshSessionDbContext>("auth_refresh_sessions", tags: ["db", "ready"]);
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
 builder.Services.AddSingleton<IConfigureOptions<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>, LegacyJwtBearerConfiguration>();
 builder.Services.AddAuthorizationBuilder().AddPolicy("LegacyEmployee", policy =>

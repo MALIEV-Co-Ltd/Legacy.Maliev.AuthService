@@ -45,6 +45,36 @@ public sealed class DeliveryContractTests
     }
 
     [Fact]
+    public void NetworkPolicy_AllowsOnlyHttpsForGoogleIdentityCertificateRefresh()
+    {
+        var policy = File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), "deploy", "base", "network-policy.yaml"));
+
+        Assert.Contains("cidr: 0.0.0.0/0", policy, StringComparison.Ordinal);
+        Assert.Contains("- protocol: TCP\n          port: 443", policy, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Readiness_ProbesEveryAuthPostgresStore()
+    {
+        var program = File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), "Legacy.Maliev.AuthService.Api", "Program.cs"));
+
+        Assert.Contains(
+            ".AddDbContextCheck<CustomerIdentityDbContext>(\"auth_customer_identity\", tags: [\"db\", \"ready\"])",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ".AddDbContextCheck<EmployeeIdentityDbContext>(\"auth_employee_identity\", tags: [\"db\", \"ready\"])",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ".AddDbContextCheck<RefreshSessionDbContext>(\"auth_refresh_sessions\", tags: [\"db\", \"ready\"])",
+            program,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PublishWorkflow_IsProtectedByExplicitCostAndMigrationGate()
     {
         var workflow = File.ReadAllText(
