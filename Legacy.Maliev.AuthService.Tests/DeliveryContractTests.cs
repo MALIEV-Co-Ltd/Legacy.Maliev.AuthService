@@ -119,6 +119,23 @@ public sealed class DeliveryContractTests
     }
 
     [Fact]
+    public void IdentityMigration_ValidationModeIsNonMutatingAndCopyRequiresExplicitSchemaOptIn()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), "Legacy.Maliev.AuthService.IdentityMigration", "Program.cs"));
+
+        Assert.Contains("options.Mode == MigrationMode.Validate", source, StringComparison.Ordinal);
+        Assert.Contains("GetPendingMigrationsAsync", source, StringComparison.Ordinal);
+        Assert.Contains("options.AllowSchemaMigration", source, StringComparison.Ordinal);
+        Assert.Contains("IDENTITY_ALLOW_SCHEMA_MIGRATION", source, StringComparison.Ordinal);
+
+        var validateMarker = source.IndexOf("if (options.Mode == MigrationMode.Validate)", StringComparison.Ordinal);
+        var migrateMarker = source.IndexOf("await destination.Database.MigrateAsync();", StringComparison.Ordinal);
+        Assert.True(validateMarker >= 0 && migrateMarker > validateMarker);
+        Assert.DoesNotContain("await destination.Database.MigrateAsync();\n    var rows", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DeploymentContract_ListsTheExactLegacyWebServicePermissions()
     {
         var deploymentContract = File.ReadAllText(

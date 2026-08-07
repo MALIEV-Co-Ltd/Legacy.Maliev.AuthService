@@ -69,7 +69,9 @@ fields, then compares row counts and a deterministic SHA-256 semantic fingerprin
 inside the destination transaction. A mismatch rolls the copy back.
 
 Run customer and employee databases separately, initially with `--mode copy` and
-then with `--mode validate` during the shadow comparison window. Supply connection
+the explicit `IDENTITY_ALLOW_SCHEMA_MIGRATION=true` opt-in, then with `--mode validate`
+during the shadow comparison window. Validation never applies schema migrations and
+fails if the destination has pending migrations. Supply connection
 strings through `IDENTITY_SOURCE_CONNECTION_STRING` and
 `IDENTITY_TARGET_CONNECTION_STRING`; command-line values are supported for local
 testing but must not be used in CI logs or shell history. PostgreSQL migrations are

@@ -25,7 +25,7 @@ static async Task<IdentityMigrationReport> RunCustomerAsync(MigrationOptions opt
         new DbContextOptionsBuilder<CustomerIdentityDbContext>()
             .UseNpgsql(options.TargetConnectionString)
             .Options);
-    await destination.Database.MigrateAsync();
+    await EnsureDestinationSchemaAsync(options, destination);
     var rows = source.Users.AsNoTracking().OrderBy(row => row.Id).AsAsyncEnumerable();
     return options.Mode == MigrationMode.Copy
         ? await IdentityDataMigrator.CopyAndValidateAsync(rows, destination, includeCustomerFields: true)
@@ -42,18 +42,50 @@ static async Task<IdentityMigrationReport> RunEmployeeAsync(MigrationOptions opt
         new DbContextOptionsBuilder<EmployeeIdentityDbContext>()
             .UseNpgsql(options.TargetConnectionString)
             .Options);
-    await destination.Database.MigrateAsync();
+    await EnsureDestinationSchemaAsync(options, destination);
     var rows = source.Users.AsNoTracking().OrderBy(row => row.Id).AsAsyncEnumerable();
     return options.Mode == MigrationMode.Copy
         ? await IdentityDataMigrator.CopyAndValidateAsync(rows, destination, includeCustomerFields: false)
         : await IdentityDataMigrator.ValidateAsync(rows, destination, includeCustomerFields: false);
 }
 
+static async Task EnsureDestinationSchemaAsync(
+    MigrationOptions options,
+    DbContext destination)
+{
+    if (options.Mode == MigrationMode.Validate)
+    {
+        if (!await destination.Database.CanConnectAsync())
+        {
+            throw new InvalidOperationException(
+                "Identity validation requires a reachable PostgreSQL destination with an already-applied schema.");
+        }
+
+        var pending = (await destination.Database.GetPendingMigrationsAsync()).ToArray();
+        if (pending.Length > 0)
+        {
+            throw new InvalidOperationException(
+                "Identity validation is non-mutating and cannot run while destination migrations are pending.");
+        }
+
+        return;
+    }
+
+    if (!options.AllowSchemaMigration)
+    {
+        throw new InvalidOperationException(
+            "Identity copy requires IDENTITY_ALLOW_SCHEMA_MIGRATION=true (or --allow-schema-migration=true) before applying the PostgreSQL schema.");
+    }
+
+    await destination.Database.MigrateAsync();
+}
+
 internal sealed record MigrationOptions(
     IdentityKind Kind,
     MigrationMode Mode,
     string SourceConnectionString,
-    string TargetConnectionString)
+    string TargetConnectionString,
+    bool AllowSchemaMigration)
 {
     public static MigrationOptions Parse(string[] args)
     {
@@ -66,13 +98,19 @@ internal sealed record MigrationOptions(
         var modeValue = Read(values, "mode", "IDENTITY_MIGRATION_MODE");
         var source = Read(values, "source", "IDENTITY_SOURCE_CONNECTION_STRING");
         var target = Read(values, "target", "IDENTITY_TARGET_CONNECTION_STRING");
+        var allowSchemaMigration = ReadOptional(values, "allow-schema-migration", "IDENTITY_ALLOW_SCHEMA_MIGRATION");
         if (!Enum.TryParse<IdentityKind>(kindValue, ignoreCase: true, out var kind) ||
             !Enum.TryParse<MigrationMode>(modeValue, ignoreCase: true, out var mode))
         {
             throw new InvalidOperationException("Use --kind customer|employee and --mode copy|validate.");
         }
 
-        return new(kind, mode, source, target);
+        return new(
+            kind,
+            mode,
+            source,
+            target,
+            string.Equals(allowSchemaMigration, "true", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string Read(IReadOnlyDictionary<string, string> values, string key, string environmentName)
@@ -82,6 +120,12 @@ internal sealed record MigrationOptions(
             ? throw new InvalidOperationException($"Missing --{key} or {environmentName}.")
             : value;
     }
+
+    private static string? ReadOptional(
+        IReadOnlyDictionary<string, string> values,
+        string key,
+        string environmentName) =>
+        values.GetValueOrDefault(key) ?? Environment.GetEnvironmentVariable(environmentName);
 }
 
 internal enum IdentityKind
