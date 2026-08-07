@@ -28,6 +28,7 @@ public sealed class EmployeeIdentitiesController(IEmployeeIdentityAdminService s
 
     /// <summary>Gets safe employee identity fields by legacy employee identifier.</summary>
     [HttpGet("{databaseId:int}", Name = "GetEmployeeIdentity")]
+    [RequirePermission(LegacyAccessTokenPermissions.EmployeeIdentitiesRead)]
     [Authorize(Policy = "LegacyEmployee")]
     public async Task<ActionResult<EmployeeIdentityResponse>> Get(int databaseId, CancellationToken cancellationToken)
     {
@@ -37,6 +38,7 @@ public sealed class EmployeeIdentitiesController(IEmployeeIdentityAdminService s
 
     /// <summary>Updates safe identity fields without accepting password or security material.</summary>
     [HttpPut("{databaseId:int}")]
+    [RequirePermission(LegacyAccessTokenPermissions.EmployeeIdentitiesUpdate)]
     [Authorize(Policy = "LegacyEmployee")]
     public async Task<IActionResult> Update(
         int databaseId,
@@ -46,6 +48,7 @@ public sealed class EmployeeIdentitiesController(IEmployeeIdentityAdminService s
 
     /// <summary>Deletes an identity without deleting the employee profile.</summary>
     [HttpDelete("{databaseId:int}")]
+    [RequirePermission(LegacyAccessTokenPermissions.EmployeeIdentitiesDelete)]
     [Authorize(Policy = "LegacyEmployee")]
     public async Task<IActionResult> Delete(int databaseId, CancellationToken cancellationToken) =>
         await service.DeleteAsync(databaseId, cancellationToken) ? NoContent() : NotFound();

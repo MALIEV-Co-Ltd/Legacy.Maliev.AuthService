@@ -23,8 +23,20 @@ public static class LegacyAccessTokenPermissions
     public const string CustomersUpdate = "legacy-customer.customers.update";
     /// <summary>Allows an authenticated employee to create a legacy customer identity.</summary>
     public const string CustomerIdentitiesCreate = "legacy-auth.customer-identities.create";
+    /// <summary>Allows an authenticated employee to read a legacy customer identity.</summary>
+    public const string CustomerIdentitiesRead = "legacy-auth.customer-identities.read";
+    /// <summary>Allows an authenticated employee to update a legacy customer identity.</summary>
+    public const string CustomerIdentitiesUpdate = "legacy-auth.customer-identities.update";
+    /// <summary>Allows an authenticated employee to delete a legacy customer identity.</summary>
+    public const string CustomerIdentitiesDelete = "legacy-auth.customer-identities.delete";
     /// <summary>Allows an authenticated employee to create a legacy employee identity.</summary>
     public const string EmployeeIdentitiesCreate = "legacy-auth.employee-identities.create";
+    /// <summary>Allows an authenticated employee to read a legacy employee identity.</summary>
+    public const string EmployeeIdentitiesRead = "legacy-auth.employee-identities.read";
+    /// <summary>Allows an authenticated employee to update a legacy employee identity.</summary>
+    public const string EmployeeIdentitiesUpdate = "legacy-auth.employee-identities.update";
+    /// <summary>Allows an authenticated employee to delete a legacy employee identity.</summary>
+    public const string EmployeeIdentitiesDelete = "legacy-auth.employee-identities.delete";
     /// <summary>Allows an authenticated employee to read legacy accounting records and summaries.</summary>
     public const string AccountingRead = "legacy.accounting.read";
     /// <summary>Allows an authenticated employee to create legacy accounting records.</summary>

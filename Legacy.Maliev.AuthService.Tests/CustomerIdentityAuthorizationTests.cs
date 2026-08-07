@@ -22,6 +22,9 @@ namespace Legacy.Maliev.AuthService.Tests;
 public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerIdentityAuthorizationTests.AuthApiFactory>
 {
     private const string CustomerIdentitiesCreate = "legacy-auth.customer-identities.create";
+    private const string CustomerIdentitiesRead = "legacy-auth.customer-identities.read";
+    private const string CustomerIdentitiesUpdate = "legacy-auth.customer-identities.update";
+    private const string CustomerIdentitiesDelete = "legacy-auth.customer-identities.delete";
     private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
     private readonly AuthApiFactory factory;
 
@@ -47,7 +50,33 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         {
             Assert.Equal(
                 "LegacyEmployee",
-                controller.GetMethod(methodName)!.GetCustomAttribute<AuthorizeAttribute>()?.Policy);
+                Assert.Single(controller.GetMethod(methodName)!.GetCustomAttributes<AuthorizeAttribute>(),
+                    attribute => attribute.Policy == "LegacyEmployee").Policy);
+        }
+    }
+
+    [Fact]
+    public void Controller_AdminOperationsRequireGranularPermissionsAndRetainEmployeePolicy()
+    {
+        var controller = typeof(CustomerIdentitiesController);
+        var expectedPermissions = new Dictionary<string, string>
+        {
+            [nameof(CustomerIdentitiesController.Get)] = CustomerIdentitiesRead,
+            [nameof(CustomerIdentitiesController.Update)] = CustomerIdentitiesUpdate,
+            [nameof(CustomerIdentitiesController.Delete)] = CustomerIdentitiesDelete
+        };
+
+        foreach (var (methodName, expectedPermission) in expectedPermissions)
+        {
+            var method = controller.GetMethod(methodName)!;
+
+            Assert.Equal(
+                expectedPermission,
+                Assert.Single(method.GetCustomAttributes<RequirePermissionAttribute>()).Permission);
+            Assert.Equal(
+                "LegacyEmployee",
+                Assert.Single(method.GetCustomAttributes<AuthorizeAttribute>(),
+                    attribute => attribute.Policy == "LegacyEmployee").Policy);
         }
     }
 
@@ -113,6 +142,64 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         using var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("GET", CustomerIdentitiesRead)]
+    [InlineData("PUT", CustomerIdentitiesUpdate)]
+    [InlineData("DELETE", CustomerIdentitiesDelete)]
+    public async Task AdminOperations_ServiceTokenWithMatchingPermissionStillRequiresEmployeePolicy(
+        string method,
+        string permission)
+    {
+        using var client = factory.CreateAuthorizedClient(factory.IssueService([permission]));
+        using var request = new HttpRequestMessage(new HttpMethod(method), "/auth/v1/customer-identities/42");
+        if (method == "PUT")
+        {
+            request.Content = JsonContent.Create(new UpdateCustomerIdentityRequest(
+                "customer@example.com",
+                "customer@example.com",
+                true,
+                null,
+                false,
+                false,
+                null,
+                true,
+                null,
+                null));
+        }
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
+    public async Task AdminOperations_EmployeeTokenPassesPermissionAndEmployeePolicies(string method)
+    {
+        using var client = factory.CreateAuthorizedClient(factory.IssueEmployee());
+        using var request = new HttpRequestMessage(new HttpMethod(method), "/auth/v1/customer-identities/42");
+        if (method == "PUT")
+        {
+            request.Content = JsonContent.Create(new UpdateCustomerIdentityRequest(
+                "customer@example.com",
+                "customer@example.com",
+                true,
+                null,
+                false,
+                false,
+                null,
+                true,
+                null,
+                null));
+        }
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     private static CreateCustomerIdentityRequest CreateRequest() => new(

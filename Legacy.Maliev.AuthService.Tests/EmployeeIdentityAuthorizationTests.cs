@@ -13,6 +13,9 @@ public sealed class EmployeeIdentityAuthorizationTests(
     : IClassFixture<CustomerIdentityAuthorizationTests.AuthApiFactory>
 {
     private const string EmployeeIdentitiesCreate = "legacy-auth.employee-identities.create";
+    private const string EmployeeIdentitiesRead = "legacy-auth.employee-identities.read";
+    private const string EmployeeIdentitiesUpdate = "legacy-auth.employee-identities.update";
+    private const string EmployeeIdentitiesDelete = "legacy-auth.employee-identities.delete";
 
     [Fact]
     public void Controller_PostUsesCreatePermission_WhileOtherOperationsRemainEmployeeOnly()
@@ -34,7 +37,33 @@ public sealed class EmployeeIdentityAuthorizationTests(
         {
             Assert.Equal(
                 "LegacyEmployee",
-                controller.GetMethod(methodName)!.GetCustomAttribute<AuthorizeAttribute>()?.Policy);
+                Assert.Single(controller.GetMethod(methodName)!.GetCustomAttributes<AuthorizeAttribute>(),
+                    attribute => attribute.Policy == "LegacyEmployee").Policy);
+        }
+    }
+
+    [Fact]
+    public void Controller_AdminOperationsRequireGranularPermissionsAndRetainEmployeePolicy()
+    {
+        var controller = typeof(EmployeeIdentitiesController);
+        var expectedPermissions = new Dictionary<string, string>
+        {
+            [nameof(EmployeeIdentitiesController.Get)] = EmployeeIdentitiesRead,
+            [nameof(EmployeeIdentitiesController.Update)] = EmployeeIdentitiesUpdate,
+            [nameof(EmployeeIdentitiesController.Delete)] = EmployeeIdentitiesDelete
+        };
+
+        foreach (var (methodName, expectedPermission) in expectedPermissions)
+        {
+            var method = controller.GetMethod(methodName)!;
+
+            Assert.Equal(
+                expectedPermission,
+                Assert.Single(method.GetCustomAttributes<RequirePermissionAttribute>()).Permission);
+            Assert.Equal(
+                "LegacyEmployee",
+                Assert.Single(method.GetCustomAttributes<AuthorizeAttribute>(),
+                    attribute => attribute.Policy == "LegacyEmployee").Policy);
         }
     }
 
@@ -96,6 +125,60 @@ public sealed class EmployeeIdentityAuthorizationTests(
         using var response = await client.SendAsync(request);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("GET", EmployeeIdentitiesRead)]
+    [InlineData("PUT", EmployeeIdentitiesUpdate)]
+    [InlineData("DELETE", EmployeeIdentitiesDelete)]
+    public async Task AdminOperations_ServiceTokenWithMatchingPermissionStillRequiresEmployeePolicy(
+        string method,
+        string permission)
+    {
+        using var client = factory.CreateAuthorizedClient(factory.IssueService([permission]));
+        using var request = new HttpRequestMessage(new HttpMethod(method), "/auth/v1/employee-identities/42");
+        if (method == "PUT")
+        {
+            request.Content = JsonContent.Create(new UpdateEmployeeIdentityRequest(
+                "employee@example.com",
+                "employee@example.com",
+                true,
+                null,
+                false,
+                false,
+                null,
+                true));
+        }
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("GET")]
+    [InlineData("PUT")]
+    [InlineData("DELETE")]
+    public async Task AdminOperations_EmployeeTokenPassesPermissionAndEmployeePolicies(string method)
+    {
+        using var client = factory.CreateAuthorizedClient(factory.IssueEmployee());
+        using var request = new HttpRequestMessage(new HttpMethod(method), "/auth/v1/employee-identities/42");
+        if (method == "PUT")
+        {
+            request.Content = JsonContent.Create(new UpdateEmployeeIdentityRequest(
+                "employee@example.com",
+                "employee@example.com",
+                true,
+                null,
+                false,
+                false,
+                null,
+                true));
+        }
+
+        using var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     private static CreateEmployeeIdentityRequest CreateRequest() => new(

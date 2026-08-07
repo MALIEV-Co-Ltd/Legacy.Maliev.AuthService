@@ -98,6 +98,16 @@ public sealed class DeliveryContractTests
     }
 
     [Fact]
+    public void TestProject_IsDiscoverableAndPublishesXplatCoverage()
+    {
+        var testProject = File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), "Legacy.Maliev.AuthService.Tests", "Legacy.Maliev.AuthService.Tests.csproj"));
+
+        Assert.Contains("<IsTestProject>true</IsTestProject>", testProject, StringComparison.Ordinal);
+        Assert.Contains("<PackageReference Include=\"coverlet.collector\" Version=\"6.0.4\" />", testProject, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void IdentityMigrationImage_IsProtectedBySameDeploymentGate()
     {
         var workflow = File.ReadAllText(

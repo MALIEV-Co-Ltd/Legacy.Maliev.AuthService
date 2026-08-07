@@ -56,7 +56,13 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
             claims.Add(new("permissions", LegacyAccessTokenPermissions.CustomersRead));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.CustomersUpdate));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.CustomerIdentitiesCreate));
+            claims.Add(new("permissions", LegacyAccessTokenPermissions.CustomerIdentitiesRead));
+            claims.Add(new("permissions", LegacyAccessTokenPermissions.CustomerIdentitiesUpdate));
+            claims.Add(new("permissions", LegacyAccessTokenPermissions.CustomerIdentitiesDelete));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.EmployeeIdentitiesCreate));
+            claims.Add(new("permissions", LegacyAccessTokenPermissions.EmployeeIdentitiesRead));
+            claims.Add(new("permissions", LegacyAccessTokenPermissions.EmployeeIdentitiesUpdate));
+            claims.Add(new("permissions", LegacyAccessTokenPermissions.EmployeeIdentitiesDelete));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.AccountingRead));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.AccountingCreate));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.AccountingUpdate));
