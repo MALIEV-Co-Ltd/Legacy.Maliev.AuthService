@@ -53,6 +53,15 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0,
             AutoReplenishment = true,
         }));
+    options.AddPolicy("revoke", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        }));
     options.AddPolicy("credential-change", context => RateLimitPartition.GetFixedWindowLimiter(
         context.User.FindFirst("sub")?.Value
             ?? context.Connection.RemoteIpAddress?.ToString()
