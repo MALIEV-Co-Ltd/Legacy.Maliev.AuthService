@@ -83,7 +83,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         var passwordWasCommitted = row.PasswordHash is not null
             && passwordHasher.VerifyHashedPassword(row, row.PasswordHash, request.Password)
                 is not PasswordVerificationResult.Failed;
-        if (row.DatabaseID != request.DatabaseId && !passwordWasCommitted)
+        if (!passwordWasCommitted)
         {
             await transaction.CommitAsync(cancellationToken);
             return new(false, null, null, null);

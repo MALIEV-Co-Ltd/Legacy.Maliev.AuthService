@@ -80,7 +80,7 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task ResolveRegistration_DeterministicallySelectsExistingIdentityWithoutClaimingCreation()
+    public async Task ResolveRegistration_DeterministicallySelectsExistingIdentityWithVerifiedCredential()
     {
         await using var fixture = await Fixture.CreateAsync(postgres);
         await fixture.SeedCustomerAsync(
@@ -90,15 +90,47 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             emailConfirmed: true);
 
         var result = await fixture.Service.ResolveRegistrationAsync(
-            new ResolveCustomerIdentityRequest(42, "customer@example.com", "new-temporary-password"),
+            new ResolveCustomerIdentityRequest(42, "customer@example.com", "old-password"),
             default);
 
         Assert.True(result.Succeeded);
-        Assert.False(result.Created);
+        Assert.True(result.Created);
         Assert.Equal("email-linked", result.IdentityId);
         Assert.Equal(42, result.DatabaseId);
         Assert.Equal(42, (await fixture.Customers.Users.AsNoTracking()
             .SingleAsync(value => value.Id == "email-linked")).DatabaseID);
+    }
+
+    [Fact]
+    public async Task ResolveRegistration_SameCustomerAndWrongPassword_ReturnsNonDisclosingFailure()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(databaseId: 42, password: "committed-password");
+
+        var result = await fixture.Service.ResolveRegistrationAsync(
+            new ResolveCustomerIdentityRequest(42, "customer@example.com", "wrong-password"),
+            default);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.IdentityId);
+        Assert.Null(result.DatabaseId);
+        Assert.Null(result.Email);
+    }
+
+    [Fact]
+    public async Task ResolveRegistration_SameCustomerAndMissingPasswordHash_ReturnsNonDisclosingFailure()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(databaseId: 42, password: null);
+
+        var result = await fixture.Service.ResolveRegistrationAsync(
+            new ResolveCustomerIdentityRequest(42, "customer@example.com", "attempted-password"),
+            default);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.IdentityId);
+        Assert.Null(result.DatabaseId);
+        Assert.Null(result.Email);
     }
 
     [Fact]
