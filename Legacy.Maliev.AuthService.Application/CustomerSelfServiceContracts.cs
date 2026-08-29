@@ -7,8 +7,19 @@ public sealed record RegisterCustomerIdentityRequest(
     [Range(1, int.MaxValue)] int DatabaseId,
     [Required, EmailAddress, StringLength(320)] string Email,
     [Required, StringLength(1024, MinimumLength = 8)] string Password);
+
+/// <summary>Resolves an identity after an ambiguous registration response by verifying the attempted credential.</summary>
+public sealed record ResolveCustomerIdentityRequest(
+    [Range(1, int.MaxValue)] int DatabaseId,
+    [Required, EmailAddress, StringLength(320)] string Email,
+    [Required, StringLength(1024, MinimumLength = 8)] string Password);
 /// <summary>Customer identity registration outcome without security material.</summary>
-public sealed record CustomerSelfServiceResult(bool Succeeded, string? IdentityId, int? DatabaseId, string? Email);
+public sealed record CustomerSelfServiceResult(
+    bool Succeeded,
+    string? IdentityId,
+    int? DatabaseId,
+    string? Email,
+    bool Created = false);
 /// <summary>Requests an email-bound identity action.</summary>
 public sealed record CustomerActionRequest([Required, EmailAddress, StringLength(320)] string Email);
 /// <summary>Internal BFF challenge result. External responses must never expose whether an account exists.</summary>

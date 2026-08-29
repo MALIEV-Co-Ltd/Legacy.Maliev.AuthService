@@ -26,6 +26,17 @@ public sealed class CustomerSelfServiceController(CustomerSelfService service) :
         return result.Succeeded ? StatusCode(StatusCodes.Status201Created, result) : Conflict(InvalidAction());
     }
 
+    /// <summary>Resolves a committed registration after the BFF received an ambiguous response.</summary>
+    [HttpPost("register/resolve")]
+    [RequirePermission(CustomerSelfServicePermissions.Use)]
+    public async Task<ActionResult<CustomerSelfServiceResult>> ResolveRegistration(
+        ResolveCustomerIdentityRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await service.ResolveRegistrationAsync(request, cancellationToken);
+        return result.Succeeded ? Ok(result) : NotFound(IdentityNotFound());
+    }
+
     /// <summary>Creates a one-time email confirmation challenge for delivery by the BFF.</summary>
     [HttpPost("email-confirmation/request")]
     [RequirePermission(CustomerSelfServicePermissions.Use)]

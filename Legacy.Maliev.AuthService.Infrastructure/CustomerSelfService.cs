@@ -24,6 +24,8 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
     {
         var email = request.Email.Trim();
         var normalized = email.ToUpperInvariant();
+        await using var transaction = await customers.Database.BeginTransactionAsync(cancellationToken);
+        await LockNormalizedEmailAsync(normalized, cancellationToken);
         var exists = await customers.Users.AnyAsync(
             value => value.DatabaseID == request.DatabaseId
                 || value.NormalizedEmail == normalized
@@ -53,8 +55,56 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         row.PasswordHash = passwordHasher.HashPassword(row, request.Password);
         customers.Users.Add(row);
         await customers.SaveChangesAsync(cancellationToken);
-        return new(true, row.Id, row.DatabaseID, row.Email);
+        await transaction.CommitAsync(cancellationToken);
+        return new(true, row.Id, row.DatabaseID, row.Email, Created: true);
     }
+
+    /// <summary>Resolves and links a deterministic existing identity after an ambiguous registration response.</summary>
+    public async Task<CustomerSelfServiceResult> ResolveRegistrationAsync(
+        ResolveCustomerIdentityRequest request,
+        CancellationToken cancellationToken)
+    {
+        var normalized = request.Email.Trim().ToUpperInvariant();
+        await using var transaction = await customers.Database.BeginTransactionAsync(cancellationToken);
+        await LockNormalizedEmailAsync(normalized, cancellationToken);
+        var row = await customers.Users
+            .Where(value => value.NormalizedEmail == normalized
+                || value.NormalizedUserName == normalized)
+            .OrderByDescending(value => value.DatabaseID > 0)
+            .ThenByDescending(value => value.EmailConfirmed)
+            .ThenBy(value => value.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (row is null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return new(false, null, null, null);
+        }
+
+        var passwordWasCommitted = row.PasswordHash is not null
+            && passwordHasher.VerifyHashedPassword(row, row.PasswordHash, request.Password)
+                is not PasswordVerificationResult.Failed;
+        if (!passwordWasCommitted)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return new(false, null, null, null);
+        }
+
+        if (row.DatabaseID != request.DatabaseId)
+        {
+            row.DatabaseID = request.DatabaseId;
+            row.SecurityStamp = Guid.NewGuid().ToString();
+            row.ConcurrencyStamp = Guid.NewGuid().ToString();
+            await customers.SaveChangesAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new(true, row.Id, row.DatabaseID, row.Email, Created: passwordWasCommitted);
+    }
+
+    private Task<int> LockNormalizedEmailAsync(string normalizedEmail, CancellationToken cancellationToken) =>
+        customers.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({normalizedEmail}, 0))",
+            cancellationToken);
 
     /// <summary>Creates a confirmation challenge for a known unconfirmed identity.</summary>
     public Task<CustomerActionChallenge> RequestEmailConfirmationAsync(CustomerActionRequest request, CancellationToken cancellationToken) => CreateChallengeAsync(request.Email, EmailConfirmation, requireUnconfirmed: true, cancellationToken);

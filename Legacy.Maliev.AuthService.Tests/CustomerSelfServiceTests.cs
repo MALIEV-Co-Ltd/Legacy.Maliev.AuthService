@@ -71,11 +71,146 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             new RegisterCustomerIdentityRequest(42, "customer@example.com", "correct-password"), default);
 
         Assert.True(result.Succeeded);
+        Assert.True(result.Created);
         var stored = await fixture.Customers.Users.SingleAsync();
         Assert.Equal(42, stored.DatabaseID);
         Assert.False(stored.EmailConfirmed);
         Assert.Equal(PasswordVerificationResult.Success, fixture.Hasher.VerifyHashedPassword(stored, stored.PasswordHash!, "correct-password"));
         Assert.DoesNotContain("Password", typeof(CustomerSelfServiceResult).GetProperties().Select(property => property.Name));
+    }
+
+    [Fact]
+    public async Task ResolveRegistration_DeterministicallySelectsExistingIdentityWithVerifiedCredential()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(
+            id: "email-linked",
+            databaseId: 42,
+            email: "customer@example.com",
+            emailConfirmed: true);
+
+        var result = await fixture.Service.ResolveRegistrationAsync(
+            new ResolveCustomerIdentityRequest(42, "customer@example.com", "old-password"),
+            default);
+
+        Assert.True(result.Succeeded);
+        Assert.True(result.Created);
+        Assert.Equal("email-linked", result.IdentityId);
+        Assert.Equal(42, result.DatabaseId);
+        Assert.Equal(42, (await fixture.Customers.Users.AsNoTracking()
+            .SingleAsync(value => value.Id == "email-linked")).DatabaseID);
+    }
+
+    [Fact]
+    public async Task ResolveRegistration_SameCustomerAndWrongPassword_ReturnsNonDisclosingFailure()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(databaseId: 42, password: "committed-password");
+
+        var result = await fixture.Service.ResolveRegistrationAsync(
+            new ResolveCustomerIdentityRequest(42, "customer@example.com", "wrong-password"),
+            default);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.IdentityId);
+        Assert.Null(result.DatabaseId);
+        Assert.Null(result.Email);
+    }
+
+    [Fact]
+    public async Task ResolveRegistration_SameCustomerAndMissingPasswordHash_ReturnsNonDisclosingFailure()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(databaseId: 42, password: null);
+
+        var result = await fixture.Service.ResolveRegistrationAsync(
+            new ResolveCustomerIdentityRequest(42, "customer@example.com", "attempted-password"),
+            default);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.IdentityId);
+        Assert.Null(result.DatabaseId);
+        Assert.Null(result.Email);
+    }
+
+    [Fact]
+    public async Task ResolveRegistration_DifferentCustomerAndUnverifiedPassword_FailsWithoutRelinking()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(
+            id: "email-linked",
+            databaseId: 92,
+            email: "customer@example.com",
+            password: "customer-owned-password",
+            emailConfirmed: true);
+
+        var result = await fixture.Service.ResolveRegistrationAsync(
+            new ResolveCustomerIdentityRequest(42, "customer@example.com", "new-temporary-password"),
+            default);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(92, (await fixture.Customers.Users.AsNoTracking()
+            .SingleAsync(value => value.Id == "email-linked")).DatabaseID);
+    }
+
+    [Fact]
+    public async Task ResolveRegistration_NoCandidate_ReturnsNonDisclosingFailure()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+
+        var result = await fixture.Service.ResolveRegistrationAsync(
+            new ResolveCustomerIdentityRequest(42, "missing@example.com", "new-temporary-password"),
+            default);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.IdentityId);
+        Assert.Null(result.DatabaseId);
+        Assert.Null(result.Email);
+    }
+
+    [Fact]
+    public async Task ResolveRegistration_LostCreateResponse_ReportsCommittedTemporaryPassword()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        var request = new RegisterCustomerIdentityRequest(
+            42,
+            "customer@example.com",
+            "new-temporary-password");
+        Assert.True((await fixture.Service.RegisterAsync(request, default)).Created);
+
+        var resolved = await fixture.Service.ResolveRegistrationAsync(
+            new ResolveCustomerIdentityRequest(42, request.Email, request.Password),
+            default);
+
+        Assert.True(resolved.Succeeded);
+        Assert.True(resolved.Created);
+        Assert.Equal(42, resolved.DatabaseId);
+    }
+
+    [Fact]
+    public async Task Register_ConcurrentSameEmail_CreatesExactlyOneIdentity()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        var options = new DbContextOptionsBuilder<CustomerIdentityDbContext>()
+            .UseNpgsql(fixture.Customers.Database.GetConnectionString())
+            .Options;
+        await using var secondContext = new CustomerIdentityDbContext(options);
+        var secondService = new CustomerSelfService(
+            secondContext,
+            fixture.State,
+            fixture.Hasher,
+            TimeProvider.System);
+        var request = new RegisterCustomerIdentityRequest(
+            42,
+            "customer@example.com",
+            "correct-password");
+
+        var results = await Task.WhenAll(
+            fixture.Service.RegisterAsync(request, default),
+            secondService.RegisterAsync(request, default));
+
+        Assert.Single(results, result => result.Succeeded);
+        Assert.Single(await fixture.Customers.Users.AsNoTracking().ToListAsync());
     }
 
     [Fact]
