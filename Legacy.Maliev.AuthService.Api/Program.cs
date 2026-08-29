@@ -20,6 +20,13 @@ builder.Services.AddControllers();
 builder.Services.AddSingleton<LoginAttemptRateLimiter>();
 builder.Services.AddSingleton<LoginRateLimitFilter>();
 builder.Services.AddLegacyAuthInfrastructure(builder.Configuration);
+// Auth readiness must reflect every PostgreSQL store used by the service. The
+// infrastructure registrations above are intentionally explicit, so register
+// their health checks here rather than relying on the shared helper.
+builder.Services.AddHealthChecks()
+    .AddDbContextCheck<CustomerIdentityDbContext>("auth_customer_identity", tags: ["db", "ready"])
+    .AddDbContextCheck<EmployeeIdentityDbContext>("auth_employee_identity", tags: ["db", "ready"])
+    .AddDbContextCheck<RefreshSessionDbContext>("auth_refresh_sessions", tags: ["db", "ready"]);
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
 builder.Services.AddSingleton<IConfigureOptions<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>, LegacyJwtBearerConfiguration>();
 builder.Services.AddAuthorizationBuilder().AddPolicy("LegacyEmployee", policy =>
@@ -45,6 +52,15 @@ builder.Services.AddRateLimiter(options =>
             AutoReplenishment = true,
         }));
     options.AddPolicy("login", context => RateLimitPartition.GetFixedWindowLimiter(
+        context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+        _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 10,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+            AutoReplenishment = true,
+        }));
+    options.AddPolicy("revoke", context => RateLimitPartition.GetFixedWindowLimiter(
         context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
         _ => new FixedWindowRateLimiterOptions
         {

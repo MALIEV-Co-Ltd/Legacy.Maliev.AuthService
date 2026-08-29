@@ -42,6 +42,14 @@ public sealed class AuthenticationControllerContractTests
             "login",
             methods[nameof(AuthenticationController.Refresh)]
                 .GetCustomAttribute<EnableRateLimitingAttribute>()?.PolicyName);
+        Assert.Equal(
+            "revoke",
+            methods[nameof(AuthenticationController.Revoke)]
+                .GetCustomAttribute<EnableRateLimitingAttribute>()?.PolicyName);
+        Assert.Contains(
+            methods[nameof(AuthenticationController.Revoke)]
+                .GetCustomAttributes<ProducesResponseTypeAttribute>(),
+            attribute => attribute.StatusCode == StatusCodes.Status429TooManyRequests);
     }
 
     [Fact]

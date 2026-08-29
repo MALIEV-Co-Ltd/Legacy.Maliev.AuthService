@@ -28,6 +28,7 @@ public sealed class CustomerIdentitiesController(ICustomerIdentityAdminService s
 
     /// <summary>Gets safe identity fields by legacy customer identifier.</summary>
     [HttpGet("{databaseId:int}", Name = "GetCustomerIdentity")]
+    [RequirePermission(LegacyAccessTokenPermissions.CustomerIdentitiesRead)]
     [Authorize(Policy = "LegacyEmployee")]
     public async Task<ActionResult<CustomerIdentityResponse>> Get(int databaseId, CancellationToken cancellationToken)
     {
@@ -37,6 +38,7 @@ public sealed class CustomerIdentitiesController(ICustomerIdentityAdminService s
 
     /// <summary>Updates safe identity fields without accepting password or security material.</summary>
     [HttpPut("{databaseId:int}")]
+    [RequirePermission(LegacyAccessTokenPermissions.CustomerIdentitiesUpdate)]
     [Authorize(Policy = "LegacyEmployee")]
     public async Task<IActionResult> Update(
         int databaseId,
@@ -46,6 +48,7 @@ public sealed class CustomerIdentitiesController(ICustomerIdentityAdminService s
 
     /// <summary>Deletes an identity without deleting the customer profile.</summary>
     [HttpDelete("{databaseId:int}")]
+    [RequirePermission(LegacyAccessTokenPermissions.CustomerIdentitiesDelete)]
     [Authorize(Policy = "LegacyEmployee")]
     public async Task<IActionResult> Delete(int databaseId, CancellationToken cancellationToken) =>
         await service.DeleteAsync(databaseId, cancellationToken) ? NoContent() : NotFound();

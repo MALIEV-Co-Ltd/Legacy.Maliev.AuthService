@@ -24,6 +24,16 @@ spec:
       ports:
         - protocol: TCP
           port: 5432
+    # GoogleJsonWebSignature fetches Google's rotating certificates during
+    # employee Google sign-in. Keep the egress surface to HTTPS only; the
+    # endpoint IPs are intentionally not hard-coded because Google rotates
+    # them and the verifier follows the public certificate endpoint.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - protocol: TCP
+          port: 443
     - to:
         - namespaceSelector: {}
       ports:
@@ -31,4 +41,3 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-

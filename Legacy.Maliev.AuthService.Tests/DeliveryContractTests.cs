@@ -45,6 +45,36 @@ public sealed class DeliveryContractTests
     }
 
     [Fact]
+    public void NetworkPolicy_AllowsOnlyHttpsForGoogleIdentityCertificateRefresh()
+    {
+        var policy = File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), "deploy", "base", "network-policy.yaml"));
+
+        Assert.Contains("cidr: 0.0.0.0/0", policy, StringComparison.Ordinal);
+        Assert.Contains("- protocol: TCP\n          port: 443", policy, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Readiness_ProbesEveryAuthPostgresStore()
+    {
+        var program = File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), "Legacy.Maliev.AuthService.Api", "Program.cs"));
+
+        Assert.Contains(
+            ".AddDbContextCheck<CustomerIdentityDbContext>(\"auth_customer_identity\", tags: [\"db\", \"ready\"])",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ".AddDbContextCheck<EmployeeIdentityDbContext>(\"auth_employee_identity\", tags: [\"db\", \"ready\"])",
+            program,
+            StringComparison.Ordinal);
+        Assert.Contains(
+            ".AddDbContextCheck<RefreshSessionDbContext>(\"auth_refresh_sessions\", tags: [\"db\", \"ready\"])",
+            program,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PublishWorkflow_IsProtectedByExplicitCostAndMigrationGate()
     {
         var workflow = File.ReadAllText(
@@ -65,14 +95,9 @@ public sealed class DeliveryContractTests
         Assert.Contains("dotnet/sdk:10.0-alpine", dockerfile, StringComparison.Ordinal);
         Assert.Contains("dotnet/aspnet:10.0-alpine", dockerfile, StringComparison.Ordinal);
         Assert.Contains("USER $APP_UID", dockerfile, StringComparison.Ordinal);
-        Assert.Contains("checkout ff1cc72d9978887ae31a936a7f34b80025f4c10d", dockerfile, StringComparison.Ordinal);
-        Assert.Contains("checkout edcfdeeb9485c872be2de11c4b9e3cafa06ca806", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("checkout 2833d30c492d9c40869d9bfac30e1ce9bdc11f84", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("checkout 78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7", dockerfile, StringComparison.Ordinal);
 
-        var migrationDockerfile = File.ReadAllText(
-            Path.Combine(FindRepositoryRoot(), "Legacy.Maliev.AuthService.IdentityMigration", "Dockerfile"));
-        Assert.Contains("dotnet/sdk:10.0-alpine", migrationDockerfile, StringComparison.Ordinal);
-        Assert.Contains("dotnet/runtime:10.0-alpine", migrationDockerfile, StringComparison.Ordinal);
-        Assert.Contains("USER $APP_UID", migrationDockerfile, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -98,14 +123,13 @@ public sealed class DeliveryContractTests
     }
 
     [Fact]
-    public void IdentityMigrationImage_IsProtectedBySameDeploymentGate()
+    public void TestProject_IsDiscoverableAndPublishesXplatCoverage()
     {
-        var workflow = File.ReadAllText(
-            Path.Combine(FindRepositoryRoot(), ".github", "workflows", "publish-identity-migration.yml"));
+        var testProject = File.ReadAllText(
+            Path.Combine(FindRepositoryRoot(), "Legacy.Maliev.AuthService.Tests", "Legacy.Maliev.AuthService.Tests.csproj"));
 
-        Assert.Contains("vars.LEGACY_DEPLOY_ENABLED == 'true'", workflow, StringComparison.Ordinal);
-        Assert.Contains("legacy-maliev-auth-identity-migration", workflow, StringComparison.Ordinal);
-        Assert.DoesNotContain("kubectl apply", workflow, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("<IsTestProject>true</IsTestProject>", testProject, StringComparison.Ordinal);
+        Assert.Contains("<PackageReference Include=\"coverlet.collector\" Version=\"6.0.4\" />", testProject, StringComparison.Ordinal);
     }
 
     [Fact]

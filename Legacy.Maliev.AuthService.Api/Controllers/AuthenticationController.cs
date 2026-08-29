@@ -67,7 +67,9 @@ public sealed class AuthenticationController(
 
     /// <summary>Revokes the complete family associated with a refresh token.</summary>
     [HttpPost("revoke")]
+    [EnableRateLimiting("revoke")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> Revoke(RevokeRequest request, CancellationToken cancellationToken)
     {
         await authenticationService.RevokeAsync(request, cancellationToken);

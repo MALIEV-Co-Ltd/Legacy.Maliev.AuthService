@@ -99,6 +99,33 @@ public sealed class ServiceAuthenticationTests
     }
 
     [Fact]
+    public async Task Login_ConfiguredLegacyIntranet_IssuesExactQuotationUpdatePermission()
+    {
+        var issuer = new RecordingIssuer();
+        var service = new ServiceAuthenticationService(
+            Options.Create(new ServiceClientOptions
+            {
+                Clients =
+                {
+                    ["legacy-intranet"] = new ServiceClientCredential
+                    {
+                        SecretSha256 = ServiceClientCredential.HashSecret("intranet-secret"),
+                        Permissions = [LegacyAccessTokenPermissions.QuotationsUpdate],
+                    },
+                },
+            }),
+            issuer,
+            TimeProvider.System);
+
+        var result = await service.LoginAsync(
+            new ServiceLoginRequest("legacy-intranet", "intranet-secret"));
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("legacy-intranet", issuer.ClientId);
+        Assert.Equal(["legacy.quotations.update"], issuer.Permissions);
+    }
+
+    [Fact]
     public async Task Login_ConfiguredWildcardPermission_FailsClosedWithoutIssuingToken()
     {
         var issuer = new RecordingIssuer();
