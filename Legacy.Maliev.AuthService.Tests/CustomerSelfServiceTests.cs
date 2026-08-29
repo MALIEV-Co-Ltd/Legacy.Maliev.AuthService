@@ -79,6 +79,70 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task ResolveRegistration_DeterministicallySelectsAndLinksExistingIdentity()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(
+            id: "email-linked",
+            databaseId: 92,
+            email: "customer@example.com",
+            emailConfirmed: true);
+
+        var result = await fixture.Service.ResolveRegistrationAsync(
+            new ResolveCustomerIdentityRequest(42, "customer@example.com"),
+            default);
+
+        Assert.True(result.Succeeded);
+        Assert.Equal("email-linked", result.IdentityId);
+        Assert.Equal(42, result.DatabaseId);
+        Assert.Equal(
+            42,
+            (await fixture.Customers.Users.AsNoTracking()
+                .SingleAsync(value => value.Id == "email-linked")).DatabaseID);
+    }
+
+    [Fact]
+    public async Task ResolveRegistration_NoCandidate_ReturnsNonDisclosingFailure()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+
+        var result = await fixture.Service.ResolveRegistrationAsync(
+            new ResolveCustomerIdentityRequest(42, "missing@example.com"),
+            default);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.IdentityId);
+        Assert.Null(result.DatabaseId);
+        Assert.Null(result.Email);
+    }
+
+    [Fact]
+    public async Task Register_ConcurrentSameEmail_CreatesExactlyOneIdentity()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        var options = new DbContextOptionsBuilder<CustomerIdentityDbContext>()
+            .UseNpgsql(fixture.Customers.Database.GetConnectionString())
+            .Options;
+        await using var secondContext = new CustomerIdentityDbContext(options);
+        var secondService = new CustomerSelfService(
+            secondContext,
+            fixture.State,
+            fixture.Hasher,
+            TimeProvider.System);
+        var request = new RegisterCustomerIdentityRequest(
+            42,
+            "customer@example.com",
+            "correct-password");
+
+        var results = await Task.WhenAll(
+            fixture.Service.RegisterAsync(request, default),
+            secondService.RegisterAsync(request, default));
+
+        Assert.Single(results, result => result.Succeeded);
+        Assert.Single(await fixture.Customers.Users.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
     public async Task RequestConfirmation_KnownIdentity_ReturnsOpaqueTokenButStoresOnlyHash()
     {
         await using var fixture = await Fixture.CreateAsync(postgres); await fixture.SeedCustomerAsync();

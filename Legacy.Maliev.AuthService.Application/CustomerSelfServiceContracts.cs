@@ -7,6 +7,11 @@ public sealed record RegisterCustomerIdentityRequest(
     [Range(1, int.MaxValue)] int DatabaseId,
     [Required, EmailAddress, StringLength(320)] string Email,
     [Required, StringLength(1024, MinimumLength = 8)] string Password);
+
+/// <summary>Resolves an identity after an ambiguous registration response without accepting credential material.</summary>
+public sealed record ResolveCustomerIdentityRequest(
+    [Range(1, int.MaxValue)] int DatabaseId,
+    [Required, EmailAddress, StringLength(320)] string Email);
 /// <summary>Customer identity registration outcome without security material.</summary>
 public sealed record CustomerSelfServiceResult(bool Succeeded, string? IdentityId, int? DatabaseId, string? Email);
 /// <summary>Requests an email-bound identity action.</summary>
