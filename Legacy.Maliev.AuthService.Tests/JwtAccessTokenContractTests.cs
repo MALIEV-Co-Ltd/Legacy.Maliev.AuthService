@@ -39,6 +39,7 @@ public sealed class JwtAccessTokenContractTests
     private const string QuotationRequestsUpdate = "legacy.quotation-requests.update";
     private const string QuotationsRead = "legacy.quotations.read";
     private const string QuotationsCreate = "legacy.quotations.create";
+    private const string QuotationsUpdate = "legacy.quotations.update";
     private const string QuotationLinesWrite = "legacy.quotation-lines.write";
     private const string QuotationOrdersWrite = "legacy.quotation-orders.write";
     private const string QuotationOrdersRead = "legacy.quotation-orders.read";
@@ -106,7 +107,7 @@ public sealed class JwtAccessTokenContractTests
             default);
 
         var token = fixture.ReadAndValidate(Assert.IsType<TokenResponse>(result.Tokens).AccessToken);
-        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CatalogCurrenciesRead, CustomersList, CustomersCreate, CustomersRead, CustomersUpdate, CustomerIdentitiesCreate, CustomerIdentitiesRead, CustomerIdentitiesUpdate, CustomerIdentitiesDelete, EmployeeIdentitiesCreate, EmployeeIdentitiesRead, EmployeeIdentitiesUpdate, EmployeeIdentitiesDelete, AccountingRead, .. EmployeeAccountingMutationPermissions, QuotationRequestsRead, QuotationRequestsUpdate, QuotationsRead, QuotationsCreate, QuotationLinesWrite, QuotationOrdersRead, QuotationOrdersWrite, QuotationFilesRead, EmployeesList, EmployeesCreate, EmployeesRead, OrdersRead, OrdersCreate, SuppliersRead, SuppliersCreate, SuppliersUpdate, SuppliersDelete, PurchaseOrdersRead, PurchaseOrdersCreate, PurchaseOrdersDelete, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
+        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CatalogCurrenciesRead, CustomersList, CustomersCreate, CustomersRead, CustomersUpdate, CustomerIdentitiesCreate, CustomerIdentitiesRead, CustomerIdentitiesUpdate, CustomerIdentitiesDelete, EmployeeIdentitiesCreate, EmployeeIdentitiesRead, EmployeeIdentitiesUpdate, EmployeeIdentitiesDelete, AccountingRead, .. EmployeeAccountingMutationPermissions, QuotationRequestsRead, QuotationRequestsUpdate, QuotationsRead, QuotationsCreate, QuotationsUpdate, QuotationLinesWrite, QuotationOrdersRead, QuotationOrdersWrite, QuotationFilesRead, EmployeesList, EmployeesCreate, EmployeesRead, OrdersRead, OrdersCreate, SuppliersRead, SuppliersCreate, SuppliersUpdate, SuppliersDelete, PurchaseOrdersRead, PurchaseOrdersCreate, PurchaseOrdersDelete, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
         AssertStableEmployeeContract(token, fixture.KeyId);
     }
 
@@ -135,7 +136,7 @@ public sealed class JwtAccessTokenContractTests
             default);
 
         var token = fixture.ReadAndValidate(Assert.IsType<TokenResponse>(result.Tokens).AccessToken);
-        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CatalogCurrenciesRead, CustomersList, CustomersCreate, CustomersRead, CustomersUpdate, CustomerIdentitiesCreate, CustomerIdentitiesRead, CustomerIdentitiesUpdate, CustomerIdentitiesDelete, EmployeeIdentitiesCreate, EmployeeIdentitiesRead, EmployeeIdentitiesUpdate, EmployeeIdentitiesDelete, AccountingRead, .. EmployeeAccountingMutationPermissions, QuotationRequestsRead, QuotationRequestsUpdate, QuotationsRead, QuotationsCreate, QuotationLinesWrite, QuotationOrdersRead, QuotationOrdersWrite, QuotationFilesRead, EmployeesList, EmployeesCreate, EmployeesRead, OrdersRead, OrdersCreate, SuppliersRead, SuppliersCreate, SuppliersUpdate, SuppliersDelete, PurchaseOrdersRead, PurchaseOrdersCreate, PurchaseOrdersDelete, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
+        Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CatalogCurrenciesRead, CustomersList, CustomersCreate, CustomersRead, CustomersUpdate, CustomerIdentitiesCreate, CustomerIdentitiesRead, CustomerIdentitiesUpdate, CustomerIdentitiesDelete, EmployeeIdentitiesCreate, EmployeeIdentitiesRead, EmployeeIdentitiesUpdate, EmployeeIdentitiesDelete, AccountingRead, .. EmployeeAccountingMutationPermissions, QuotationRequestsRead, QuotationRequestsUpdate, QuotationsRead, QuotationsCreate, QuotationsUpdate, QuotationLinesWrite, QuotationOrdersRead, QuotationOrdersWrite, QuotationFilesRead, EmployeesList, EmployeesCreate, EmployeesRead, OrdersRead, OrdersCreate, SuppliersRead, SuppliersCreate, SuppliersUpdate, SuppliersDelete, PurchaseOrdersRead, PurchaseOrdersCreate, PurchaseOrdersDelete, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
         AssertStableEmployeeContract(token, fixture.KeyId);
         Assert.NotNull(store.Replacement);
     }
@@ -178,6 +179,7 @@ public sealed class JwtAccessTokenContractTests
         Assert.DoesNotContain(QuotationRequestsUpdate, PermissionValues(token));
         Assert.DoesNotContain(QuotationsRead, PermissionValues(token));
         Assert.DoesNotContain(QuotationsCreate, PermissionValues(token));
+        Assert.DoesNotContain(QuotationsUpdate, PermissionValues(token));
         Assert.DoesNotContain(QuotationLinesWrite, PermissionValues(token));
         Assert.DoesNotContain(QuotationOrdersWrite, PermissionValues(token));
         Assert.DoesNotContain(QuotationOrdersRead, PermissionValues(token));
@@ -196,6 +198,7 @@ public sealed class JwtAccessTokenContractTests
         Assert.DoesNotContain(PurchaseOrdersDelete, PermissionValues(token));
         Assert.DoesNotContain(OrderCatalogRead, PermissionValues(token));
         Assert.DoesNotContain(QuotationsCreate, PermissionValues(token));
+        Assert.DoesNotContain(QuotationsUpdate, PermissionValues(token));
         Assert.DoesNotContain(QuotationLinesWrite, PermissionValues(token));
         Assert.DoesNotContain(QuotationOrdersWrite, PermissionValues(token));
         Assert.DoesNotContain(AccountingRead, PermissionValues(token));
@@ -264,6 +267,7 @@ public sealed class JwtAccessTokenContractTests
         Assert.DoesNotContain(PurchaseOrdersRead, PermissionValues(token));
         Assert.DoesNotContain(OrderCatalogRead, PermissionValues(token));
         Assert.DoesNotContain(QuotationsCreate, PermissionValues(token));
+        Assert.DoesNotContain(QuotationsUpdate, PermissionValues(token));
         Assert.DoesNotContain(QuotationLinesWrite, PermissionValues(token));
         Assert.DoesNotContain(QuotationOrdersWrite, PermissionValues(token));
         AssertDoesNotContainEmployeeOrderWorkflowPermissions(token);

@@ -59,6 +59,8 @@ public static class LegacyAccessTokenPermissions
     public const string QuotationsRead = "legacy.quotations.read";
     /// <summary>Allows an authenticated employee to create legacy quotations.</summary>
     public const string QuotationsCreate = "legacy.quotations.create";
+    /// <summary>Allows an authenticated employee to record a legacy quotation decision.</summary>
+    public const string QuotationsUpdate = "legacy.quotations.update";
     /// <summary>Allows an authenticated employee to create server-priced legacy quotation lines.</summary>
     public const string QuotationLinesWrite = "legacy.quotation-lines.write";
     /// <summary>Allows an authenticated employee to read order links owned by a legacy quotation.</summary>

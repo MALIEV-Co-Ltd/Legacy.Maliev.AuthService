@@ -74,6 +74,7 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
             claims.Add(new("permissions", LegacyAccessTokenPermissions.QuotationRequestsUpdate));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.QuotationsRead));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.QuotationsCreate));
+            claims.Add(new("permissions", LegacyAccessTokenPermissions.QuotationsUpdate));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.QuotationLinesWrite));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.QuotationOrdersRead));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.QuotationOrdersWrite));
