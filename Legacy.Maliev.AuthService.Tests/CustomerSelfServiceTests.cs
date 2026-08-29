@@ -71,6 +71,7 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             new RegisterCustomerIdentityRequest(42, "customer@example.com", "correct-password"), default);
 
         Assert.True(result.Succeeded);
+        Assert.True(result.Created);
         var stored = await fixture.Customers.Users.SingleAsync();
         Assert.Equal(42, stored.DatabaseID);
         Assert.False(stored.EmailConfirmed);
@@ -79,26 +80,45 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task ResolveRegistration_DeterministicallySelectsAndLinksExistingIdentity()
+    public async Task ResolveRegistration_DeterministicallySelectsExistingIdentityWithoutClaimingCreation()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(
+            id: "email-linked",
+            databaseId: 42,
+            email: "customer@example.com",
+            emailConfirmed: true);
+
+        var result = await fixture.Service.ResolveRegistrationAsync(
+            new ResolveCustomerIdentityRequest(42, "customer@example.com", "new-temporary-password"),
+            default);
+
+        Assert.True(result.Succeeded);
+        Assert.False(result.Created);
+        Assert.Equal("email-linked", result.IdentityId);
+        Assert.Equal(42, result.DatabaseId);
+        Assert.Equal(42, (await fixture.Customers.Users.AsNoTracking()
+            .SingleAsync(value => value.Id == "email-linked")).DatabaseID);
+    }
+
+    [Fact]
+    public async Task ResolveRegistration_DifferentCustomerAndUnverifiedPassword_FailsWithoutRelinking()
     {
         await using var fixture = await Fixture.CreateAsync(postgres);
         await fixture.SeedCustomerAsync(
             id: "email-linked",
             databaseId: 92,
             email: "customer@example.com",
+            password: "customer-owned-password",
             emailConfirmed: true);
 
         var result = await fixture.Service.ResolveRegistrationAsync(
-            new ResolveCustomerIdentityRequest(42, "customer@example.com"),
+            new ResolveCustomerIdentityRequest(42, "customer@example.com", "new-temporary-password"),
             default);
 
-        Assert.True(result.Succeeded);
-        Assert.Equal("email-linked", result.IdentityId);
-        Assert.Equal(42, result.DatabaseId);
-        Assert.Equal(
-            42,
-            (await fixture.Customers.Users.AsNoTracking()
-                .SingleAsync(value => value.Id == "email-linked")).DatabaseID);
+        Assert.False(result.Succeeded);
+        Assert.Equal(92, (await fixture.Customers.Users.AsNoTracking()
+            .SingleAsync(value => value.Id == "email-linked")).DatabaseID);
     }
 
     [Fact]
@@ -107,13 +127,32 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         await using var fixture = await Fixture.CreateAsync(postgres);
 
         var result = await fixture.Service.ResolveRegistrationAsync(
-            new ResolveCustomerIdentityRequest(42, "missing@example.com"),
+            new ResolveCustomerIdentityRequest(42, "missing@example.com", "new-temporary-password"),
             default);
 
         Assert.False(result.Succeeded);
         Assert.Null(result.IdentityId);
         Assert.Null(result.DatabaseId);
         Assert.Null(result.Email);
+    }
+
+    [Fact]
+    public async Task ResolveRegistration_LostCreateResponse_ReportsCommittedTemporaryPassword()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        var request = new RegisterCustomerIdentityRequest(
+            42,
+            "customer@example.com",
+            "new-temporary-password");
+        Assert.True((await fixture.Service.RegisterAsync(request, default)).Created);
+
+        var resolved = await fixture.Service.ResolveRegistrationAsync(
+            new ResolveCustomerIdentityRequest(42, request.Email, request.Password),
+            default);
+
+        Assert.True(resolved.Succeeded);
+        Assert.True(resolved.Created);
+        Assert.Equal(42, resolved.DatabaseId);
     }
 
     [Fact]

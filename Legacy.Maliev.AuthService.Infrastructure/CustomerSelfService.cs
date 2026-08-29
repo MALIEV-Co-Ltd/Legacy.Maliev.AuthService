@@ -56,7 +56,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         customers.Users.Add(row);
         await customers.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        return new(true, row.Id, row.DatabaseID, row.Email);
+        return new(true, row.Id, row.DatabaseID, row.Email, Created: true);
     }
 
     /// <summary>Resolves and links a deterministic existing identity after an ambiguous registration response.</summary>
@@ -80,6 +80,15 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
             return new(false, null, null, null);
         }
 
+        var passwordWasCommitted = row.PasswordHash is not null
+            && passwordHasher.VerifyHashedPassword(row, row.PasswordHash, request.Password)
+                is not PasswordVerificationResult.Failed;
+        if (row.DatabaseID != request.DatabaseId && !passwordWasCommitted)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return new(false, null, null, null);
+        }
+
         if (row.DatabaseID != request.DatabaseId)
         {
             row.DatabaseID = request.DatabaseId;
@@ -89,7 +98,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         }
 
         await transaction.CommitAsync(cancellationToken);
-        return new(true, row.Id, row.DatabaseID, row.Email);
+        return new(true, row.Id, row.DatabaseID, row.Email, Created: passwordWasCommitted);
     }
 
     private Task<int> LockNormalizedEmailAsync(string normalizedEmail, CancellationToken cancellationToken) =>
