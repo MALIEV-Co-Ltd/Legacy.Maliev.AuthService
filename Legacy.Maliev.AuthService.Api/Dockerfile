@@ -2,7 +2,7 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /src
 RUN apk add --no-cache git \
     && git clone --filter=blob:none --no-checkout https://github.com/MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults.git /dependencies/Legacy.Maliev.ServiceDefaults \
-    && git -C /dependencies/Legacy.Maliev.ServiceDefaults checkout 2833d30c492d9c40869d9bfac30e1ce9bdc11f84 \
+    && git -C /dependencies/Legacy.Maliev.ServiceDefaults checkout 3152a9612d8514597192a98eae31277aef8102ff \
     && git clone --filter=blob:none --no-checkout https://github.com/MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts.git /dependencies/Legacy.Maliev.CompatibilityContracts \
     && git -C /dependencies/Legacy.Maliev.CompatibilityContracts checkout 78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7
 COPY . .
