@@ -114,6 +114,7 @@ public sealed class DeliveryContractTests
 
         Assert.Contains("Legacy.Maliev.ServiceDefaults", apiProject, StringComparison.Ordinal);
         Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults", workflow, StringComparison.Ordinal);
+        Assert.Contains("ref: 3152a9612d8514597192a98eae31277aef8102ff", workflow, StringComparison.Ordinal);
         Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts", workflow, StringComparison.Ordinal);
         Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults.git", dockerfile, StringComparison.Ordinal);
         Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts.git", dockerfile, StringComparison.Ordinal);

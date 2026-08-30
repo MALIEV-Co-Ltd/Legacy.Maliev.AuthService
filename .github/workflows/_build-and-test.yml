@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
-          ref: 2833d30c492d9c40869d9bfac30e1ce9bdc11f84
+          ref: 3152a9612d8514597192a98eae31277aef8102ff
           path: .dependencies/Legacy.Maliev.ServiceDefaults
           persist-credentials: false
       - name: Check out Legacy.Maliev.CompatibilityContracts
