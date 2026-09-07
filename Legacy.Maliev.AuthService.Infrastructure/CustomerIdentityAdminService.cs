@@ -43,6 +43,7 @@ public sealed class CustomerIdentityAdminService(
             AccessFailedCount = 0,
             FaxNumber = request.FaxNumber,
             MobileNumber = request.MobileNumber,
+            PasswordSetupRequired = request.PasswordSetupRequired,
             SecurityStamp = Guid.NewGuid().ToString(),
             ConcurrencyStamp = Guid.NewGuid().ToString(),
         };

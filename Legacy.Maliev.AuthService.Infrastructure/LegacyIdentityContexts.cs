@@ -26,6 +26,9 @@ public sealed class LegacyIdentityRow
     /// <summary>Gets or sets the password hash.</summary>
     public string? PasswordHash { get; set; }
 
+    /// <summary>Gets or sets whether this customer must replace its server-issued bootstrap credential.</summary>
+    public bool PasswordSetupRequired { get; set; }
+
     /// <summary>Gets or sets the security stamp.</summary>
     public string? SecurityStamp { get; set; }
 
@@ -86,6 +89,7 @@ public abstract class LegacyIdentityDbContext(DbContextOptions options) : DbCont
         {
             user.Ignore(x => x.FaxNumber);
             user.Ignore(x => x.MobileNumber);
+            user.Ignore(x => x.PasswordSetupRequired);
         }
     }
 }

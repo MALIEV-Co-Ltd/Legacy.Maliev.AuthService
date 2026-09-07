@@ -46,6 +46,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ServiceAuthenticationService>();
         services.AddScoped<CustomerSelfService>();
         services.AddScoped<ICustomerLoginActionLifecycle>(provider => provider.GetRequiredService<CustomerSelfService>());
+        services.AddScoped<ICustomerPasswordSetupIssuer>(provider => provider.GetRequiredService<CustomerSelfService>());
         services.AddScoped<EmployeeSelfService>();
 
         services.AddOptions<JwtOptions>()
