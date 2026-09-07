@@ -109,7 +109,34 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
     /// <summary>Creates a confirmation challenge for a known unconfirmed identity.</summary>
     public Task<CustomerActionChallenge> RequestEmailConfirmationAsync(CustomerActionRequest request, CancellationToken cancellationToken) => CreateChallengeAsync(request.Email, EmailConfirmation, requireUnconfirmed: true, cancellationToken);
     /// <summary>Creates a reset challenge without revealing missing identities to the public caller.</summary>
-    public Task<CustomerActionChallenge> RequestPasswordResetAsync(CustomerActionRequest request, CancellationToken cancellationToken) => CreateChallengeAsync(request.Email, PasswordReset, requireUnconfirmed: false, cancellationToken);
+    public async Task<CustomerActionChallenge> RequestPasswordResetAsync(CustomerActionRequest request, CancellationToken cancellationToken)
+    {
+        var row = await FindAsync(request.Email, cancellationToken);
+        if (row is null || !EmailMatches(row.Email, request.Email))
+        {
+            return new(true, null);
+        }
+
+        if (string.IsNullOrWhiteSpace(row.SecurityStamp))
+        {
+            // Migrated identities may have no stamp. Only replace the value we observed,
+            // then reload so concurrent initialization or credential changes win safely.
+            var previousStamp = row.SecurityStamp;
+            var initialStamp = Guid.NewGuid().ToString();
+            await customers.Users.Where(value => value.Id == row.Id && value.SecurityStamp == previousStamp)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(value => value.SecurityStamp, initialStamp), cancellationToken);
+            await customers.Entry(row).ReloadAsync(cancellationToken);
+            if (customers.Entry(row).State == EntityState.Detached
+                || !EmailMatches(row.Email, request.Email)
+                || string.IsNullOrWhiteSpace(row.SecurityStamp))
+            {
+                return new(true, null);
+            }
+        }
+
+        return await CreateSecurityStampBoundChallengeAsync(
+            row.Id, PasswordReset, row.Email!, row.SecurityStamp, cancellationToken, ActionLifetime);
+    }
 
     /// <inheritdoc />
     public async Task<string?> IssueInitialPasswordChallengeAsync(
@@ -236,8 +263,8 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
     /// <summary>Replaces a password using a single-use challenge.</summary>
     public async Task<bool> CompletePasswordResetAsync(CompletePasswordResetRequest request, CancellationToken cancellationToken)
     {
-        var action = await FindActionAsync(PasswordReset, request.Email, request.Token, cancellationToken);
-        if (action is null)
+        var action = await FindSecurityStampBoundActionAsync(PasswordReset, request.Email, request.Token, cancellationToken);
+        if (action is null || !EmailMatches(action.TargetEmail, request.Email))
         {
             return false;
         }
@@ -245,7 +272,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         var row = await customers.Users.SingleOrDefaultAsync(
             value => value.Id == action.IdentityId,
             cancellationToken);
-        if (row is null)
+        if (row is null || !EmailMatches(row.Email, request.Email))
         {
             return false;
         }
@@ -260,6 +287,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         row.LockoutEnd = null;
         RotateSecurityStamp(row);
         await customers.SaveChangesAsync(cancellationToken);
+        await RevokeRefreshSessionsAsync(row.Id, cancellationToken);
         await SupersedeActiveChallengesAsync(row.Id, InitialPassword, timeProvider.GetUtcNow(), cancellationToken);
         return true;
     }
