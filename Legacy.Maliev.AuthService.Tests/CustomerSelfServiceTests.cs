@@ -5,11 +5,14 @@ using Legacy.Maliev.AuthService.Infrastructure;
 using Maliev.Aspire.ServiceDefaults.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Time.Testing;
 using System.Reflection;
+using System.Security.Claims;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
@@ -240,6 +243,238 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         var stored = await fixture.Customers.Users.SingleAsync();
         Assert.Equal(PasswordVerificationResult.Success, fixture.Hasher.VerifyHashedPassword(stored, stored.PasswordHash!, "new-password"));
     }
+
+    [Theory]
+    [InlineData("stamp")]
+    [InlineData("email")]
+    [InlineData("target")]
+    [InlineData("legacy-hash")]
+    public async Task PasswordReset_ChangedSecurityBinding_RejectsWithoutConsuming(string change)
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync();
+        var challenge = await fixture.Service.RequestPasswordResetAsync(new("customer@example.com"), default);
+        var row = await fixture.Customers.Users.SingleAsync();
+        var action = await fixture.State.IdentityActionTokens.SingleAsync();
+        switch (change)
+        {
+            case "stamp":
+                row.SecurityStamp = Guid.NewGuid().ToString();
+                break;
+            case "email":
+                // Deliberately retain NormalizedEmail and stamp: the current Email must also match.
+                row.Email = "changed@example.com";
+                break;
+            case "target":
+                action.TargetEmail = "other@example.com";
+                break;
+            case "legacy-hash":
+                action.TokenHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(challenge.Token!)));
+                break;
+        }
+
+        await fixture.Customers.SaveChangesAsync();
+        await fixture.State.SaveChangesAsync();
+        Assert.False(await fixture.Service.CompletePasswordResetAsync(
+            new("customer@example.com", challenge.Token!, "new-password"), default));
+        Assert.Null((await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync()).ConsumedAt);
+        var stored = await fixture.Customers.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(PasswordVerificationResult.Success,
+            fixture.Hasher.VerifyHashedPassword(stored, stored.PasswordHash!, "old-password"));
+    }
+
+    [Fact]
+    public async Task PasswordReset_Success_RevokesRefreshSessionsAndRotatesStamp()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync();
+        await fixture.SeedRefreshSessionAsync();
+        var before = (await fixture.Customers.Users.AsNoTracking().SingleAsync()).SecurityStamp;
+        var challenge = await fixture.Service.RequestPasswordResetAsync(new("customer@example.com"), default);
+
+        Assert.True(await fixture.Service.CompletePasswordResetAsync(
+            new("customer@example.com", challenge.Token!, "new-password"), default));
+        Assert.NotEqual(before, (await fixture.Customers.Users.AsNoTracking().SingleAsync()).SecurityStamp);
+        Assert.NotNull((await fixture.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
+    }
+
+    [Theory]
+    [InlineData("purpose")]
+    [InlineData("email")]
+    [InlineData("expiry")]
+    public async Task PasswordReset_InvalidChallenge_DoesNotChangePassword(string invalid)
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 9, 7, 0, 0, 0, TimeSpan.Zero));
+        await using var fixture = await Fixture.CreateAsync(postgres, clock);
+        await fixture.SeedCustomerAsync();
+        var challenge = await fixture.Service.RequestPasswordResetAsync(new("customer@example.com"), default);
+        if (invalid == "purpose")
+        {
+            var action = await fixture.State.IdentityActionTokens.SingleAsync();
+            action.Purpose = "initial-password";
+            await fixture.State.SaveChangesAsync();
+        }
+        if (invalid == "expiry")
+        {
+            clock.Advance(TimeSpan.FromHours(24));
+        }
+
+        Assert.False(await fixture.Service.CompletePasswordResetAsync(
+            new(invalid == "email" ? "other@example.com" : "customer@example.com", challenge.Token!, "new-password"), default));
+        Assert.Null((await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync()).ConsumedAt);
+        var row = await fixture.Customers.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(PasswordVerificationResult.Success,
+            fixture.Hasher.VerifyHashedPassword(row, row.PasswordHash!, "old-password"));
+    }
+
+    [Fact]
+    public async Task PasswordReset_PersistenceFailure_ConsumesOldLinkAndAllowsFreshRequest()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync();
+        var challenge = await fixture.Service.RequestPasswordResetAsync(new("customer@example.com"), default);
+        var options = new DbContextOptionsBuilder<CustomerIdentityDbContext>()
+            .UseNpgsql(fixture.Customers.Database.GetConnectionString())
+            .AddInterceptors(new RejectSaveInterceptor())
+            .Options;
+        await using (var failingCustomers = new CustomerIdentityDbContext(options))
+        {
+            var service = new CustomerSelfService(failingCustomers, fixture.State, fixture.Hasher, TimeProvider.System);
+            await Assert.ThrowsAsync<DbUpdateException>(() => service.CompletePasswordResetAsync(
+                new("customer@example.com", challenge.Token!, "failed-password"), default));
+        }
+
+        var unchanged = await fixture.Customers.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(PasswordVerificationResult.Success,
+            fixture.Hasher.VerifyHashedPassword(unchanged, unchanged.PasswordHash!, "old-password"));
+        Assert.False(await fixture.Service.CompletePasswordResetAsync(
+            new("customer@example.com", challenge.Token!, "retry-password"), default));
+        var fresh = await fixture.Service.RequestPasswordResetAsync(new("customer@example.com"), default);
+        Assert.NotEqual(challenge.Token, fresh.Token);
+        Assert.True(await fixture.Service.CompletePasswordResetAsync(
+            new("customer@example.com", fresh.Token!, "new-password"), default));
+    }
+
+    private sealed class RejectSaveInterceptor : SaveChangesInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData,
+            InterceptionResult<int> result,
+            CancellationToken cancellationToken = default) =>
+            throw new DbUpdateException("Injected customer persistence failure.");
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" ")]
+    public async Task PasswordReset_MigratedIdentityWithoutStamp_CanRequestAndComplete(string? stamp)
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync();
+        var row = await fixture.Customers.Users.SingleAsync();
+        row.SecurityStamp = stamp;
+        await fixture.Customers.SaveChangesAsync();
+
+        var challenge = await fixture.Service.RequestPasswordResetAsync(new("customer@example.com"), default);
+
+        Assert.True(challenge.Accepted);
+        Assert.NotNull(challenge.Token);
+        Assert.False(string.IsNullOrWhiteSpace((await fixture.Customers.Users.AsNoTracking().SingleAsync()).SecurityStamp));
+        Assert.True(await fixture.Service.CompletePasswordResetAsync(
+            new("customer@example.com", challenge.Token!, "new-password"), default));
+    }
+
+    [Fact]
+    public async Task PasswordReset_MissingIdentity_ReturnsAcceptedWithoutTokenOrState()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        var challenge = await fixture.Service.RequestPasswordResetAsync(new("missing@example.com"), default);
+        Assert.True(challenge.Accepted);
+        Assert.Null(challenge.Token);
+        Assert.Empty(await fixture.State.IdentityActionTokens.ToListAsync());
+    }
+
+    [Fact]
+    public async Task Controller_PasswordReset_MapsSuccessAndReplayToExistingResponseContracts()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync();
+        var controller = new CustomerSelfServiceController(fixture.Service);
+        var challenge = await controller.RequestPasswordReset(new("customer@example.com"), default);
+        var request = new CompletePasswordResetRequest("customer@example.com", challenge.Token!, "new-password");
+
+        Assert.IsType<NoContentResult>(await controller.CompletePasswordReset(request, default));
+        var rejected = Assert.IsType<BadRequestObjectResult>(await controller.CompletePasswordReset(request, default));
+        Assert.Equal(400, Assert.IsType<ProblemDetails>(rejected.Value).Status);
+        Assert.True((await controller.RequestPasswordReset(new("missing@example.com"), default)).Accepted);
+        Assert.IsType<BadRequestObjectResult>(await controller.CompleteInitialPassword(new("customer@example.com", challenge.Token!, "other-password"), default));
+        Assert.IsType<BadRequestObjectResult>((await controller.RecoverEmailConfirmation(new("customer@example.com", challenge.Token!), default)).Result);
+    }
+
+    [Fact]
+    public async Task Controller_CredentialChanges_MissingSubjectCannotSelectAnIdentity()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync();
+        var controller = CreateController(fixture.Service, null);
+
+        Assert.IsType<UnauthorizedResult>((await controller.ChangeEmail(new("old-password", "changed@example.com"), default)).Result);
+        Assert.IsType<UnauthorizedResult>(await controller.ChangePassword(new("old-password", "new-password"), default));
+        Assert.IsType<UnauthorizedResult>(await controller.CreatePassword(new("new-password"), default));
+        var row = await fixture.Customers.Users.AsNoTracking().SingleAsync();
+        Assert.Equal("customer@example.com", row.Email);
+        Assert.Equal(PasswordVerificationResult.Success,
+            fixture.Hasher.VerifyHashedPassword(row, row.PasswordHash!, "old-password"));
+    }
+
+    [Fact]
+    public async Task Controller_CredentialChanges_UsesSubjectAndMapsInvalidAndSuccessfulChanges()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync();
+        var controller = CreateController(fixture.Service, "customer-id");
+
+        var invalid = Assert.IsType<BadRequestObjectResult>(await controller.ChangePassword(new("wrong-password", "new-password"), default));
+        Assert.Equal(400, Assert.IsType<ProblemDetails>(invalid.Value).Status);
+        Assert.IsType<BadRequestObjectResult>((await controller.ChangeEmail(new("wrong-password", "changed@example.com"), default)).Result);
+        Assert.IsType<OkObjectResult>((await controller.ChangeEmail(new("old-password", "changed@example.com"), default)).Result);
+        Assert.IsType<NoContentResult>(await controller.ChangePassword(new("old-password", "new-password"), default));
+        var row = await fixture.Customers.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(PasswordVerificationResult.Success,
+            fixture.Hasher.VerifyHashedPassword(row, row.PasswordHash!, "new-password"));
+    }
+
+    [Fact]
+    public async Task Controller_CreatePassword_PreservesCreatedConflictAndMissingIdentityResponses()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(password: null);
+        var controller = CreateController(fixture.Service, "customer-id");
+
+        Assert.IsType<NoContentResult>(await controller.CreatePassword(new("new-password"), default));
+        var conflict = Assert.IsType<ConflictObjectResult>(await controller.CreatePassword(new("replacement-password"), default));
+        Assert.Equal(409, Assert.IsType<ProblemDetails>(conflict.Value).Status);
+        var missing = CreateController(fixture.Service, "missing-id");
+        var notFound = Assert.IsType<NotFoundObjectResult>(await missing.CreatePassword(new("new-password"), default));
+        Assert.Equal(404, Assert.IsType<ProblemDetails>(notFound.Value).Status);
+        var row = await fixture.Customers.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(PasswordVerificationResult.Success,
+            fixture.Hasher.VerifyHashedPassword(row, row.PasswordHash!, "new-password"));
+    }
+
+    private static CustomerSelfServiceController CreateController(CustomerSelfService service, string? identityId) => new(service)
+    {
+        ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext
+            {
+                User = new ClaimsPrincipal(new ClaimsIdentity(
+                    identityId is null ? [] : [new Claim("sub", identityId)], "test")),
+            },
+        },
+    };
 
     [Fact]
     public async Task InitialPassword_ValidChallenge_ReplacesTemporaryPasswordAndRejectsReplay()
@@ -617,6 +852,14 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             });
             await State.SaveChangesAsync();
         }
-        public async ValueTask DisposeAsync() { await Customers.DisposeAsync(); await State.DisposeAsync(); }
+        public async ValueTask DisposeAsync()
+        {
+            // Each fixture owns two disposable databases. Release their pools instead
+            // of retaining idle connections until the entire integration suite ends.
+            Npgsql.NpgsqlConnection.ClearPool((Npgsql.NpgsqlConnection)Customers.Database.GetDbConnection());
+            Npgsql.NpgsqlConnection.ClearPool((Npgsql.NpgsqlConnection)State.Database.GetDbConnection());
+            await Customers.DisposeAsync();
+            await State.DisposeAsync();
+        }
     }
 }

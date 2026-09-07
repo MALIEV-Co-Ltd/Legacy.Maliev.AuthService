@@ -64,6 +64,26 @@ Trusted BFF customer self-service uses JSON `POST` operations under
 `legacy-auth.customer-self-service`. Raw passwords and action tokens are never
 placed in URLs, logs, JWT claims, or PostgreSQL; only SHA-256 token hashes are
 stored. Issuing a replacement challenge invalidates the previous challenge.
+
+Customer password-reset links expire after 24 hours and are single-use, bound to
+the current identity security stamp and both the current and token-target email.
+Successful reset rotates the security stamp and revokes the customer's refresh
+sessions. The existing JSON request/response shapes and routes are unchanged.
+Tracked in [AuthService issue #77](https://github.com/MALIEV-Co-Ltd/Legacy.Maliev.AuthService/issues/77).
+Previously issued unbound password-reset links are intentionally rejected after
+this update: customers must request a fresh link through Forgot Password. There
+is no fallback to the old unbound hash format. Migrated identities missing a
+security stamp receive a persisted stamp before challenge issuance; initialization
+conditionally updates only the observed missing value and reloads the persisted
+winner, so it does not overwrite a concurrent initialization or stamp rotation.
+
+Token consumption and identity persistence use separate database contexts. If
+identity persistence fails after token consumption, the old link remains spent;
+request a fresh link rather than retrying the spent token. A reset response lost
+after persistence may likewise require a fresh link or login with the new
+password. Existing access tokens retain their normal lifetime; refresh-session
+revocation does not retract an already-issued access token.
+
 Authenticated `POST /auth/v1/customer-self-service/email/change` and
 `POST /auth/v1/customer-self-service/password/change` instead require a customer
 access token. The identity ID comes only from its signed `sub` claim; callers
