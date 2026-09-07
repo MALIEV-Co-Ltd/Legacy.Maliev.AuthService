@@ -40,6 +40,21 @@ must match the AuthService audience. Nonce hashes are stored in the isolated
 `google_identity_nonces` PostgreSQL table and are deleted atomically on use or
 expiry; the unchanged identity database remains the source of truth.
 
+## Customer self-identity projection
+
+`GET /auth/v1/customer-self-service/identity` accepts only a validated customer
+access token, not a service or employee token. It derives the identity from `sub`
+and verifies its current positive customer linkage against `legacy_database_id`.
+The response contains exactly `customerId`, nullable `email`, and nullable `mobile`
+from the current identity row. It is private and non-cacheable; no caller-supplied
+identity selector, security material, or administrative fields are exposed.
+Missing claims return 401, missing identities 404, and changed linkage or current
+unconfirmed/locked identities 403. Expired or disabled lockouts follow the existing
+customer eligibility rules. Employee identity administration remains unchanged.
+This does not add immediate revocation of already-issued access tokens; existing
+bearer expiry/validation remains in force. Web consumption is a separate slice.
+Tracked in [issue #80](https://github.com/MALIEV-Co-Ltd/Legacy.Maliev.AuthService/issues/80).
+
 ## Explicitly retired legacy behavior
 
 - `GET /auth/validate` (credentials in query strings);
