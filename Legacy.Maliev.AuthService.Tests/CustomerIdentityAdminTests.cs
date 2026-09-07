@@ -29,7 +29,8 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
                 true,
                 null,
                 null,
-                null),
+                null,
+                PasswordSetupRequired: true),
             default);
 
         Assert.NotNull(response);
@@ -39,6 +40,7 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
         Assert.Equal(
             PasswordVerificationResult.Success,
             hasher.VerifyHashedPassword(stored, stored.PasswordHash!, "correct-password"));
+        Assert.True(stored.PasswordSetupRequired);
         var responseFields = typeof(CustomerIdentityResponse).GetProperties().Select(property => property.Name);
         Assert.DoesNotContain("Password", responseFields);
         Assert.DoesNotContain("PasswordHash", responseFields);
@@ -85,6 +87,14 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
         Assert.Contains(create.GetParameters(), parameter => parameter.ParameterType == typeof(CreateCustomerIdentityRequest));
         Assert.DoesNotContain(create.GetParameters(), parameter =>
             string.Equals(parameter.Name, "password", StringComparison.OrdinalIgnoreCase));
+
+        var setup = controller.GetMethod(nameof(CustomerIdentitiesController.CreatePasswordSetupChallenge))!;
+        Assert.Equal(
+            "legacy-auth.customer-identities.create",
+            Assert.Single(setup.GetCustomAttributes<RequirePermissionAttribute>()).Permission);
+        Assert.Equal(
+            "{databaseId:int}/password-setup",
+            setup.GetCustomAttribute<HttpPostAttribute>()?.Template);
     }
 
     [Fact]

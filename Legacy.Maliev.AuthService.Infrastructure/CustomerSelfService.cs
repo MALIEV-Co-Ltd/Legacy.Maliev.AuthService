@@ -9,7 +9,7 @@ using System.Text;
 namespace Legacy.Maliev.AuthService.Infrastructure;
 
 /// <summary>Owns customer registration, confirmation, and recovery without changing the legacy schema.</summary>
-public sealed class CustomerSelfService(CustomerIdentityDbContext customers, RefreshSessionDbContext state, IPasswordHasher<LegacyIdentityRow> passwordHasher, TimeProvider timeProvider) : ICustomerLoginActionLifecycle
+public sealed class CustomerSelfService(CustomerIdentityDbContext customers, RefreshSessionDbContext state, IPasswordHasher<LegacyIdentityRow> passwordHasher, TimeProvider timeProvider) : ICustomerLoginActionLifecycle, ICustomerPasswordSetupIssuer
 {
     private const string EmailConfirmation = "email-confirmation";
     private const string EmailChange = "email-change";
@@ -152,6 +152,32 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
             cancellationToken,
             LoginActionLifetime)).Token;
 
+    /// <summary>Issues a setup challenge only for an explicitly classified bootstrap customer.</summary>
+    public async Task<CustomerActionChallenge> IssueInitialPasswordChallengeForDatabaseIdAsync(
+        int databaseId,
+        CancellationToken cancellationToken)
+    {
+        var row = await customers.Users.AsNoTracking().SingleOrDefaultAsync(
+            value => value.DatabaseID == databaseId,
+            cancellationToken);
+        if (row is null
+            || !row.PasswordSetupRequired
+            || !row.EmailConfirmed
+            || string.IsNullOrWhiteSpace(row.Email)
+            || string.IsNullOrWhiteSpace(row.SecurityStamp))
+        {
+            return new(false, null);
+        }
+
+        return await CreateSecurityStampBoundChallengeAsync(
+            row.Id,
+            InitialPassword,
+            row.Email,
+            row.SecurityStamp,
+            cancellationToken,
+            ActionLifetime);
+    }
+
     /// <inheritdoc />
     public async Task<string?> IssueEmailConfirmationRecoveryAsync(
         string identityId,
@@ -225,6 +251,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         }
 
         row.PasswordHash = passwordHasher.HashPassword(row, request.Password);
+        row.PasswordSetupRequired = false;
         row.AccessFailedCount = 0;
         row.LockoutEnd = null;
         RotateSecurityStamp(row);
@@ -283,6 +310,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         }
 
         row.PasswordHash = passwordHasher.HashPassword(row, request.Password);
+        row.PasswordSetupRequired = false;
         row.AccessFailedCount = 0;
         row.LockoutEnd = null;
         RotateSecurityStamp(row);

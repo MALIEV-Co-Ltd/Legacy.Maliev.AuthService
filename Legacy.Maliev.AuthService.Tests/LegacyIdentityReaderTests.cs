@@ -49,13 +49,14 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
     }
 
     [Fact]
-    public async Task Validate_LegacyIssuedCustomerPassword_RequiresInitialPasswordWithoutAffectingEmployees()
+    public async Task Validate_ExplicitCustomerLifecycle_RequiresInitialPasswordWithoutAffectingEmployees()
     {
         var temporaryPassword = LegacyIssuedCredential;
         await using var contexts = await ContextPair.CreateAsync(postgres);
         var customer = CreateUser("customer-id", "customer@example.com", temporaryPassword);
         customer.DatabaseID = 42;
         customer.EmailConfirmed = true;
+        customer.PasswordSetupRequired = true;
         var employee = CreateUser("employee-id", "employee@maliev.com", temporaryPassword);
         contexts.Customer.Users.Add(customer);
         contexts.Employee.Users.Add(employee);
@@ -70,6 +71,24 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
 
         Assert.True(customerResult?.RequiresInitialPassword);
         Assert.False(employeeResult?.RequiresInitialPassword);
+    }
+
+    [Fact]
+    public async Task Validate_CustomerOwnedPasswordMatchingOldHeuristic_DoesNotRetriggerSetup()
+    {
+        await using var contexts = await ContextPair.CreateAsync(postgres);
+        var customer = CreateUser("customer-id", "customer@example.com", LegacyIssuedCredential);
+        customer.DatabaseID = 42;
+        customer.EmailConfirmed = true;
+        customer.PasswordSetupRequired = false;
+        contexts.Customer.Users.Add(customer);
+        await contexts.Customer.SaveChangesAsync();
+
+        var result = await contexts.CreateReader().ValidateAsync(
+            customer.Email!, LegacyIssuedCredential, IdentityKind.Customer, default);
+
+        Assert.NotNull(result);
+        Assert.False(result.RequiresInitialPassword);
     }
 
     [Fact]
@@ -131,8 +150,10 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
 
         Assert.NotNull(customer?.FindProperty(nameof(LegacyIdentityRow.FaxNumber)));
         Assert.NotNull(customer?.FindProperty(nameof(LegacyIdentityRow.MobileNumber)));
+        Assert.NotNull(customer?.FindProperty(nameof(LegacyIdentityRow.PasswordSetupRequired)));
         Assert.Null(employee?.FindProperty(nameof(LegacyIdentityRow.FaxNumber)));
         Assert.Null(employee?.FindProperty(nameof(LegacyIdentityRow.MobileNumber)));
+        Assert.Null(employee?.FindProperty(nameof(LegacyIdentityRow.PasswordSetupRequired)));
     }
 
     private static string LegacyIssuedCredential =>

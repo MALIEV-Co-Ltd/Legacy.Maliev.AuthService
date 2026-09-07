@@ -28,6 +28,7 @@ public sealed class IdentityPostgresMigrationTests : IAsyncLifetime
         Assert.Contains("FaxNumber", columns);
         Assert.Contains("MobileNumber", columns);
         Assert.Contains("NormalizedUserName", columns);
+        Assert.Contains("PasswordSetupRequired", columns);
     }
 
     [Fact]
@@ -46,6 +47,7 @@ public sealed class IdentityPostgresMigrationTests : IAsyncLifetime
         Assert.Contains("DatabaseID", columns);
         Assert.DoesNotContain("FaxNumber", columns);
         Assert.DoesNotContain("MobileNumber", columns);
+        Assert.DoesNotContain("PasswordSetupRequired", columns);
     }
 
     public Task InitializeAsync() => Task.WhenAll(

@@ -8,7 +8,9 @@ namespace Legacy.Maliev.AuthService.Api.Controllers;
 /// <summary>Employee-authorized administration of customer identities.</summary>
 [ApiController]
 [Route("auth/v1/customer-identities")]
-public sealed class CustomerIdentitiesController(ICustomerIdentityAdminService service) : ControllerBase
+public sealed class CustomerIdentitiesController(
+    ICustomerIdentityAdminService service,
+    ICustomerPasswordSetupIssuer passwordSetupIssuer) : ControllerBase
 {
     /// <summary>Creates a customer identity; the password is accepted only in the JSON body.</summary>
     [HttpPost("{databaseId:int}")]
@@ -24,6 +26,27 @@ public sealed class CustomerIdentitiesController(ICustomerIdentityAdminService s
         return identity is null
             ? Conflict(new ProblemDetails { Status = StatusCodes.Status409Conflict, Title = "Identity already exists" })
             : CreatedAtAction(nameof(Get), new { databaseId }, identity);
+    }
+
+    /// <summary>Creates a single-use setup challenge for an explicitly classified bootstrap identity.</summary>
+    [HttpPost("{databaseId:int}/password-setup")]
+    [RequirePermission(LegacyAccessTokenPermissions.CustomerIdentitiesCreate)]
+    [ProducesResponseType<CustomerActionChallenge>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<CustomerActionChallenge>> CreatePasswordSetupChallenge(
+        int databaseId,
+        CancellationToken cancellationToken)
+    {
+        var challenge = await passwordSetupIssuer.IssueInitialPasswordChallengeForDatabaseIdAsync(
+            databaseId,
+            cancellationToken);
+        return challenge.Accepted && !string.IsNullOrWhiteSpace(challenge.Token)
+            ? Ok(challenge)
+            : Conflict(new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "Password setup is not available",
+            });
     }
 
     /// <summary>Gets safe identity fields by legacy customer identifier.</summary>

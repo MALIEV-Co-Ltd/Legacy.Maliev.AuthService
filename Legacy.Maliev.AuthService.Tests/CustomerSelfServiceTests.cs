@@ -290,12 +290,17 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         await using var fixture = await Fixture.CreateAsync(postgres);
         await fixture.SeedCustomerAsync();
         await fixture.SeedRefreshSessionAsync();
+        var bootstrap = await fixture.Customers.Users.SingleAsync();
+        bootstrap.PasswordSetupRequired = true;
+        await fixture.Customers.SaveChangesAsync();
         var before = (await fixture.Customers.Users.AsNoTracking().SingleAsync()).SecurityStamp;
         var challenge = await fixture.Service.RequestPasswordResetAsync(new("customer@example.com"), default);
 
         Assert.True(await fixture.Service.CompletePasswordResetAsync(
             new("customer@example.com", challenge.Token!, "new-password"), default));
-        Assert.NotEqual(before, (await fixture.Customers.Users.AsNoTracking().SingleAsync()).SecurityStamp);
+        var stored = await fixture.Customers.Users.AsNoTracking().SingleAsync();
+        Assert.NotEqual(before, stored.SecurityStamp);
+        Assert.False(stored.PasswordSetupRequired);
         Assert.NotNull((await fixture.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
@@ -483,6 +488,9 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         await fixture.SeedCustomerAsync(
             password: LegacyIssuedCredential,
             emailConfirmed: true);
+        var bootstrap = await fixture.Customers.Users.SingleAsync();
+        bootstrap.PasswordSetupRequired = true;
+        await fixture.Customers.SaveChangesAsync();
         var securityStamp = (await fixture.Customers.Users.AsNoTracking().SingleAsync()).SecurityStamp!;
         var challenge = await fixture.Service.IssueInitialPasswordChallengeAsync(
             "customer-id",
@@ -514,6 +522,25 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
                 CustomerManagedCredential));
         Assert.Equal(0, stored.AccessFailedCount);
         Assert.Null(stored.LockoutEnd);
+        Assert.False(stored.PasswordSetupRequired);
+    }
+
+    [Fact]
+    public async Task InitialPasswordSetupChallenge_RequiresExplicitBootstrapState()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(password: LegacyIssuedCredential, emailConfirmed: true);
+
+        var absent = await fixture.Service.IssueInitialPasswordChallengeForDatabaseIdAsync(42, default);
+        var row = await fixture.Customers.Users.SingleAsync();
+        row.PasswordSetupRequired = true;
+        await fixture.Customers.SaveChangesAsync();
+        var issued = await fixture.Service.IssueInitialPasswordChallengeForDatabaseIdAsync(42, default);
+
+        Assert.False(absent.Accepted);
+        Assert.Null(absent.Token);
+        Assert.True(issued.Accepted);
+        Assert.NotNull(issued.Token);
     }
 
     [Fact]

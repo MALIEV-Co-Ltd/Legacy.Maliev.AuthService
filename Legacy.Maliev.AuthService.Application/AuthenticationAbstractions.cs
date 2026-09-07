@@ -81,3 +81,12 @@ public interface ICustomerLoginActionLifecycle
         string securityStamp,
         CancellationToken cancellationToken);
 }
+
+/// <summary>Issues onboarding actions to authorized employee workflows without exposing bootstrap credentials.</summary>
+public interface ICustomerPasswordSetupIssuer
+{
+    /// <summary>Issues a setup challenge only for an explicitly classified bootstrap customer.</summary>
+    Task<CustomerActionChallenge> IssueInitialPasswordChallengeForDatabaseIdAsync(
+        int databaseId,
+        CancellationToken cancellationToken);
+}

@@ -92,18 +92,6 @@ public sealed class LegacyIdentityReader(
             user.DatabaseID,
             user.SecurityStamp,
             kind != IdentityKind.Customer || user.EmailConfirmed,
-            kind == IdentityKind.Customer && MatchesLegacyIssuedPassword(validatedPassword),
+            kind == IdentityKind.Customer && user.PasswordSetupRequired,
             !string.IsNullOrEmpty(user.PasswordHash));
-
-    private static bool MatchesLegacyIssuedPassword(string? password)
-    {
-        const string alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@$%";
-        return password?.Length == 20
-            && password.All(alphabet.Contains)
-            && password.Any(char.IsUpper)
-            && password.Any(char.IsLower)
-            && password.Any(char.IsDigit)
-            && password.Any(character => !char.IsLetterOrDigit(character))
-            && password.Distinct().Count() >= 6;
-    }
 }

@@ -10,7 +10,8 @@ public sealed record CreateCustomerIdentityRequest(
     bool EmailConfirmed,
     [Phone, StringLength(64)] string? PhoneNumber,
     string? FaxNumber,
-    string? MobileNumber);
+    string? MobileNumber,
+    bool PasswordSetupRequired = false);
 
 /// <summary>Updates non-secret fields of an existing customer identity.</summary>
 public sealed record UpdateCustomerIdentityRequest(
