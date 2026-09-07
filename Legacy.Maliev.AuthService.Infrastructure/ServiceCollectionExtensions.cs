@@ -36,6 +36,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IGoogleIdentityTokenVerifier, GoogleIdentityTokenVerifier>();
         services.AddScoped<IGoogleIdentityTokenValidator, GoogleIdentityTokenValidator>();
         services.AddScoped<ICustomerIdentityAdminService, CustomerIdentityAdminService>();
+        services.AddScoped<ICustomerSelfIdentityReader, CustomerSelfIdentityReader>();
         services.AddScoped<IEmployeeIdentityAdminService, EmployeeIdentityAdminService>();
         services.AddSingleton<IAccessTokenIssuer, RsaAccessTokenIssuer>();
         services.AddSingleton<IServiceAccessTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
