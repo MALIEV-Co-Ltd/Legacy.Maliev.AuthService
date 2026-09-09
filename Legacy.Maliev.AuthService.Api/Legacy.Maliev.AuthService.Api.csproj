@@ -9,7 +9,7 @@
     <ProjectReference Include="..\Legacy.Maliev.AuthService.Infrastructure\Legacy.Maliev.AuthService.Infrastructure.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11">
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12">
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
@@ -26,12 +26,12 @@
     <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.18.0" />
     <PackageReference Include="MassTransit.RabbitMQ" Version="9.2.1" />
     <PackageReference Include="MassTransit.Abstractions" Version="9.2.1" />
-    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.11" />
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.11" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore" Version="10.0.12" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.11" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.12" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.22.0" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.12" />
     <PackageReference Include="Microsoft.OpenApi" Version="2.12.2" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.17.2" />
     <PackageReference Include="Asp.Versioning.Mvc.ApiExplorer" Version="10.2.1" />
