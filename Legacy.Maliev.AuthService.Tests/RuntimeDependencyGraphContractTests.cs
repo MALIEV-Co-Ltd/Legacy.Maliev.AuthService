@@ -15,8 +15,8 @@ public sealed class RuntimeDependencyGraphContractTests
             ["Microsoft.EntityFrameworkCore.Design"] = "10.0.12",
             ["Microsoft.Extensions.Caching.StackExchangeRedis"] = "10.0.12",
             ["Microsoft.Extensions.Diagnostics.HealthChecks.EntityFrameworkCore"] = "10.0.12",
-            ["Microsoft.Extensions.Http.Resilience"] = "10.9.0",
-            ["Microsoft.Extensions.ServiceDiscovery"] = "10.9.0",
+            ["Microsoft.Extensions.Http.Resilience"] = "10.10.0",
+            ["Microsoft.Extensions.ServiceDiscovery"] = "10.10.0",
             ["Microsoft.OpenApi"] = "2.12.2",
             ["Npgsql.EntityFrameworkCore.PostgreSQL"] = "10.0.3",
             ["OpenTelemetry.Exporter.OpenTelemetryProtocol"] = "1.18.0",
@@ -24,7 +24,7 @@ public sealed class RuntimeDependencyGraphContractTests
             ["OpenTelemetry.Instrumentation.AspNetCore"] = "1.18.0",
             ["OpenTelemetry.Instrumentation.Http"] = "1.18.0",
             ["OpenTelemetry.Instrumentation.Runtime"] = "1.18.0",
-            ["Scalar.AspNetCore"] = "2.17.2",
+            ["Scalar.AspNetCore"] = "2.17.3",
             ["System.IdentityModel.Tokens.Jwt"] = "8.22.0",
         };
 
