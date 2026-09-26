@@ -8,8 +8,8 @@ public sealed class RuntimeDependencyGraphContractTests
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["Asp.Versioning.Mvc.ApiExplorer"] = "10.2.1",
-            ["MassTransit.Abstractions"] = "9.2.1",
-            ["MassTransit.RabbitMQ"] = "9.2.1",
+            ["MassTransit.Abstractions"] = "9.2.2",
+            ["MassTransit.RabbitMQ"] = "9.2.2",
             ["Microsoft.AspNetCore.Authentication.JwtBearer"] = "10.0.12",
             ["Microsoft.AspNetCore.OpenApi"] = "10.0.12",
             ["Microsoft.EntityFrameworkCore.Design"] = "10.0.12",
@@ -19,13 +19,13 @@ public sealed class RuntimeDependencyGraphContractTests
             ["Microsoft.Extensions.ServiceDiscovery"] = "10.10.0",
             ["Microsoft.OpenApi"] = "2.12.2",
             ["Npgsql.EntityFrameworkCore.PostgreSQL"] = "10.0.3",
-            ["OpenTelemetry.Exporter.OpenTelemetryProtocol"] = "1.18.0",
-            ["OpenTelemetry.Extensions.Hosting"] = "1.18.0",
-            ["OpenTelemetry.Instrumentation.AspNetCore"] = "1.18.0",
-            ["OpenTelemetry.Instrumentation.Http"] = "1.18.0",
-            ["OpenTelemetry.Instrumentation.Runtime"] = "1.18.0",
-            ["Scalar.AspNetCore"] = "2.17.3",
-            ["System.IdentityModel.Tokens.Jwt"] = "8.22.0",
+            ["OpenTelemetry.Exporter.OpenTelemetryProtocol"] = "1.19.1",
+            ["OpenTelemetry.Extensions.Hosting"] = "1.19.1",
+            ["OpenTelemetry.Instrumentation.AspNetCore"] = "1.19.0",
+            ["OpenTelemetry.Instrumentation.Http"] = "1.19.0",
+            ["OpenTelemetry.Instrumentation.Runtime"] = "1.19.0",
+            ["Scalar.AspNetCore"] = "2.17.10",
+            ["System.IdentityModel.Tokens.Jwt"] = "8.23.0",
         };
 
     [Fact]
