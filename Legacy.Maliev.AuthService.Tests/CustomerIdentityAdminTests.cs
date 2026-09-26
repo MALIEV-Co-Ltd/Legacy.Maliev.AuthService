@@ -109,6 +109,30 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task KeyedCreate_DeletedOrReplacedIdentityCannotBeReplayed()
+    {
+        await using var context = await postgres.CreateCustomerContextAsync();
+        var service = new CustomerIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>());
+        var request = new CreateCustomerIdentityRequest(
+            "customer@example.com", "customer@example.com", "correct-password", true, null, null, null);
+        var key = Guid.NewGuid();
+        Assert.Equal(CustomerIdentityCreateOutcome.Created,
+            (await service.CreateOrReconcileAsync(42, "service:legacy-intranet", key, request, default)).Outcome);
+        var originalIdentityId = (await context.Users.AsNoTracking().SingleAsync()).Id;
+
+        Assert.True(await service.DeleteAsync(42, default));
+        Assert.Equal(CustomerIdentityCreateOutcome.Conflict,
+            (await service.CreateOrReconcileAsync(42, "service:legacy-intranet", key, request, default)).Outcome);
+
+        var replacement = await service.CreateAsync(42, request, default);
+        Assert.NotNull(replacement);
+        Assert.NotEqual(originalIdentityId, replacement.Id);
+        Assert.Equal(CustomerIdentityCreateOutcome.Conflict,
+            (await service.CreateOrReconcileAsync(42, "service:legacy-intranet", key, request, default)).Outcome);
+        Assert.Single(await context.CreateOperations.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
     public async Task KeyedCreate_ConcurrentSameKeyCommitsOneIdentityAndOneReceipt()
     {
         await using var first = await postgres.CreateCustomerContextAsync();

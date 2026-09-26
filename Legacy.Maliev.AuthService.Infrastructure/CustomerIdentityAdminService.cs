@@ -23,7 +23,7 @@ public sealed class CustomerIdentityAdminService(
             cancellationToken);
         if (existing is not null)
         {
-            return Reconcile(existing, databaseId, request);
+            return await ReconcileAsync(existing, databaseId, request, cancellationToken);
         }
 
         var normalizedUserName = request.UserName.Trim().ToUpperInvariant();
@@ -37,7 +37,7 @@ public sealed class CustomerIdentityAdminService(
                 cancellationToken);
             return existing is null
                 ? new(CustomerIdentityCreateOutcome.Conflict, databaseId)
-                : Reconcile(existing, databaseId, request);
+                : await ReconcileAsync(existing, databaseId, request, cancellationToken);
         }
 
         var user = NewUser(databaseId, request);
@@ -66,18 +66,27 @@ public sealed class CustomerIdentityAdminService(
                 cancellationToken);
             return existing is null
                 ? new(CustomerIdentityCreateOutcome.Conflict, databaseId)
-                : Reconcile(existing, databaseId, request);
+                : await ReconcileAsync(existing, databaseId, request, cancellationToken);
         }
     }
 
-    private static CustomerIdentityCreateResult Reconcile(
-        CustomerIdentityCreateOperation operation, int databaseId, CreateCustomerIdentityRequest request)
+    private async Task<CustomerIdentityCreateResult> ReconcileAsync(
+        CustomerIdentityCreateOperation operation, int databaseId,
+        CreateCustomerIdentityRequest request, CancellationToken cancellationToken)
     {
         var hash = HashPayload(request, operation.PayloadSalt);
-        return operation.DatabaseId == databaseId &&
-            CryptographicOperations.FixedTimeEquals(hash, operation.PayloadHash)
-            ? new(CustomerIdentityCreateOutcome.Replayed, databaseId)
-            : new(CustomerIdentityCreateOutcome.Conflict, databaseId);
+        if (operation.DatabaseId != databaseId ||
+            !CryptographicOperations.FixedTimeEquals(hash, operation.PayloadHash))
+        {
+            return new(CustomerIdentityCreateOutcome.Conflict, databaseId);
+        }
+
+        // A receipt is ownership proof only while it still identifies the current user.
+        var stillOwned = await dbContext.Users.AsNoTracking().AnyAsync(
+            user => user.Id == operation.IdentityId && user.DatabaseID == databaseId,
+            cancellationToken);
+        return new(stillOwned ? CustomerIdentityCreateOutcome.Replayed : CustomerIdentityCreateOutcome.Conflict,
+            databaseId);
     }
 
     private static byte[] HashPayload(CreateCustomerIdentityRequest request, byte[] salt)
