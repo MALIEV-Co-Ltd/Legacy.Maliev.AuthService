@@ -2,6 +2,7 @@ using Legacy.Maliev.AuthService.Application;
 using Maliev.Aspire.ServiceDefaults.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace Legacy.Maliev.AuthService.Api.Controllers;
 
@@ -12,6 +13,42 @@ public sealed class CustomerIdentitiesController(
     ICustomerIdentityAdminService service,
     ICustomerPasswordSetupIssuer passwordSetupIssuer) : ControllerBase
 {
+    /// <summary>Creates or reconciles one service-owned customer identity operation without exposing PII.</summary>
+    [HttpPost("{databaseId:int}/reconcile-create")]
+    [RequirePermission(LegacyAccessTokenPermissions.CustomerIdentitiesReconcileCreate)]
+    [Authorize(Policy = "LegacyService")]
+    [ProducesResponseType<CustomerIdentityCreateReceipt>(StatusCodes.Status201Created)]
+    [ProducesResponseType<CustomerIdentityCreateReceipt>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<CustomerIdentityCreateReceipt>> ReconcileCreate(
+        int databaseId,
+        [FromHeader(Name = "Idempotency-Key")] Guid operationKey,
+        CreateCustomerIdentityRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (databaseId <= 0 || operationKey == Guid.Empty)
+        {
+            return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Invalid operation" });
+        }
+
+        var subject = User.FindFirstValue("sub") ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(subject) || !subject.StartsWith("service:", StringComparison.Ordinal) ||
+            subject.Length > 256)
+        {
+            return Forbid();
+        }
+
+        var result = await service.CreateOrReconcileAsync(
+            databaseId, subject, operationKey, request, cancellationToken);
+        return result.Outcome switch
+        {
+            CustomerIdentityCreateOutcome.Created => StatusCode(StatusCodes.Status201Created,
+                new CustomerIdentityCreateReceipt(databaseId, "created")),
+            CustomerIdentityCreateOutcome.Replayed => Ok(new CustomerIdentityCreateReceipt(databaseId, "replayed")),
+            _ => Conflict(new ProblemDetails { Status = StatusCodes.Status409Conflict, Title = "Identity operation conflicts" }),
+        };
+    }
+
     /// <summary>Creates a customer identity; the password is accepted only in the JSON body.</summary>
     [HttpPost("{databaseId:int}")]
     [RequirePermission(LegacyAccessTokenPermissions.CustomerIdentitiesCreate)]

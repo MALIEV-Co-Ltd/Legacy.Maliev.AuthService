@@ -22,6 +22,7 @@ namespace Legacy.Maliev.AuthService.Tests;
 public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerIdentityAuthorizationTests.AuthApiFactory>
 {
     private const string CustomerIdentitiesCreate = "legacy-auth.customer-identities.create";
+    private const string CustomerIdentitiesReconcileCreate = "legacy-auth.customer-identities.reconcile-create";
     private const string CustomerIdentitiesRead = "legacy-auth.customer-identities.read";
     private const string CustomerIdentitiesUpdate = "legacy-auth.customer-identities.update";
     private const string CustomerIdentitiesDelete = "legacy-auth.customer-identities.delete";
@@ -89,6 +90,41 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         Assert.Equal(42, (await response.Content.ReadFromJsonAsync<CustomerIdentityResponse>())?.DatabaseID);
+    }
+
+    [Fact]
+    public async Task ReconcileCreate_RequiresServiceIdentityAndDedicatedPermission()
+    {
+        var key = Guid.NewGuid();
+        foreach (var token in new[]
+                 {
+                     factory.IssueCustomer(), factory.IssueEmployee(),
+                     factory.IssueService([CustomerIdentitiesCreate]),
+                 })
+        {
+            using var client = factory.CreateAuthorizedClient(token);
+            using var request = ReconcileRequest(key);
+            using var response = await client.SendAsync(request);
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+
+        using var authorized = factory.CreateAuthorizedClient(factory.IssueService([CustomerIdentitiesReconcileCreate]));
+        using var allowedRequest = ReconcileRequest(key);
+        using var allowed = await authorized.SendAsync(allowedRequest);
+        Assert.Equal(HttpStatusCode.Created, allowed.StatusCode);
+        var receipt = await allowed.Content.ReadFromJsonAsync<CustomerIdentityCreateReceipt>();
+        Assert.Equal(new CustomerIdentityCreateReceipt(42, "created"), receipt);
+        Assert.DoesNotContain("customer@example.com", await allowed.Content.ReadAsStringAsync());
+    }
+
+    private static HttpRequestMessage ReconcileRequest(Guid key)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, "/auth/v1/customer-identities/42/reconcile-create")
+        {
+            Content = JsonContent.Create(CreateRequest()),
+        };
+        request.Headers.Add("Idempotency-Key", key.ToString());
+        return request;
     }
 
     [Fact]
@@ -305,6 +341,11 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
 
     private sealed class StubCustomerIdentityAdminService : ICustomerIdentityAdminService
     {
+        public Task<CustomerIdentityCreateResult> CreateOrReconcileAsync(
+            int databaseId, string serviceSubject, Guid operationKey,
+            CreateCustomerIdentityRequest request, CancellationToken cancellationToken) =>
+            Task.FromResult(new CustomerIdentityCreateResult(CustomerIdentityCreateOutcome.Created, databaseId));
+
         public Task<CustomerIdentityResponse?> CreateAsync(
             int databaseId,
             CreateCustomerIdentityRequest request,

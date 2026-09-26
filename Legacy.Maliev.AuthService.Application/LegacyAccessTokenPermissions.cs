@@ -23,6 +23,8 @@ public static class LegacyAccessTokenPermissions
     public const string CustomersUpdate = "legacy-customer.customers.update";
     /// <summary>Allows an authenticated employee to create a legacy customer identity.</summary>
     public const string CustomerIdentitiesCreate = "legacy-auth.customer-identities.create";
+    /// <summary>Allows a service to create or reconcile only its own keyed customer identity operation.</summary>
+    public const string CustomerIdentitiesReconcileCreate = "legacy-auth.customer-identities.reconcile-create";
     /// <summary>Allows an authenticated employee to read a legacy customer identity.</summary>
     public const string CustomerIdentitiesRead = "legacy-auth.customer-identities.read";
     /// <summary>Allows an authenticated employee to update a legacy customer identity.</summary>

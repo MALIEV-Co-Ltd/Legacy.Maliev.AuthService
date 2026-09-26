@@ -27,6 +27,10 @@ The source monorepo stays private. This extracted implementation is public and m
 
 Service clients are configured under `ServiceClients:Clients:<client-id>` with a lowercase SHA-256 secret hash and an explicit permission list. The raw client secret is presented only in the JSON login body and is never stored, logged, placed in a URL, or emitted as a JWT claim. Runtime values are projected from the consolidated `maliev-legacy-secrets` secret; source configuration contains no client credential.
 
+The service-owned customer identity create/reconcile contract is `POST /auth/v1/customer-identities/{databaseId}/reconcile-create` with a GUID `Idempotency-Key` header and the existing `CreateCustomerIdentityRequest` JSON body. A token needs both `identity_kind=service` and `legacy-auth.customer-identities.reconcile-create`. The atomic ownership receipt binds the service subject, key, database ID, identity ID, and salted password-based hash of the complete payload. It returns only `{ "databaseId": 42, "status": "created" }` (201) or `"replayed"` (200); a changed key/payload, unrelated identity, or missing/replaced recorded identity returns generic 409. Neither this route nor the receipt is a general identity lookup. The legacy unkeyed POST and employee-only GET are unchanged.
+
+Release ordering: apply the additive `202609260001_AddCustomerIdentityCreateOperations` migration to the customer identity database, grant only the intended Intranet service client the new permission in runtime `ServiceClients` configuration, then deploy the AuthService and its Intranet consumer. No existing unkeyed create can be retroactively reconciled by this route.
+
 Employee Google Identity Services is an optional, fail-closed trusted-BFF flow. The
 Intranet BFF calls `POST /auth/v1/exchange/google/nonce` and
 `POST /auth/v1/exchange/google` using a service token carrying only
