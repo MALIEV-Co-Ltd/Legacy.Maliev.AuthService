@@ -37,6 +37,10 @@ builder.Services.AddAuthorizationBuilder().AddPolicy("LegacyEmployee", policy =>
 {
     policy.RequireAuthenticatedUser();
     policy.RequireClaim("identity_kind", "customer");
+}).AddPolicy("LegacyService", policy =>
+{
+    policy.RequireAuthenticatedUser();
+    policy.RequireClaim("identity_kind", "service");
 });
 builder.Services.AddPermissionAuthorization();
 builder.Services.AddRateLimiter(options =>

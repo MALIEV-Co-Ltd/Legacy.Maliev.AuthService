@@ -96,7 +96,45 @@ public abstract class LegacyIdentityDbContext(DbContextOptions options) : DbCont
 
 /// <summary>Read-only customer identity context.</summary>
 public sealed class CustomerIdentityDbContext(DbContextOptions<CustomerIdentityDbContext> options)
-    : LegacyIdentityDbContext(options);
+    : LegacyIdentityDbContext(options)
+{
+    /// <summary>Durable receipts for service-owned identity create operations.</summary>
+    public DbSet<CustomerIdentityCreateOperation> CreateOperations => Set<CustomerIdentityCreateOperation>();
+
+    /// <inheritdoc />
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+        var operation = modelBuilder.Entity<CustomerIdentityCreateOperation>();
+        operation.ToTable("CustomerIdentityCreateOperations");
+        operation.HasKey(x => x.Id);
+        operation.Property(x => x.ServiceSubject).HasMaxLength(256);
+        operation.Property(x => x.PayloadHash).HasMaxLength(32);
+        operation.Property(x => x.PayloadSalt).HasMaxLength(16);
+        operation.Property(x => x.IdentityId).HasMaxLength(450);
+        operation.HasIndex(x => new { x.ServiceSubject, x.OperationKey }).IsUnique();
+        operation.HasIndex(x => x.DatabaseId).IsUnique();
+    }
+}
+
+/// <summary>Ownership proof recorded atomically with one customer identity creation.</summary>
+public sealed class CustomerIdentityCreateOperation
+{
+    /// <summary>Primary key.</summary>
+    public long Id { get; set; }
+    /// <summary>Authenticated service subject.</summary>
+    public required string ServiceSubject { get; set; }
+    /// <summary>Caller-supplied durable operation key.</summary>
+    public Guid OperationKey { get; set; }
+    /// <summary>Business identity identifier.</summary>
+    public int DatabaseId { get; set; }
+    /// <summary>Created identity key.</summary>
+    public required string IdentityId { get; set; }
+    /// <summary>Random salt for the canonical payload hash.</summary>
+    public required byte[] PayloadSalt { get; set; }
+    /// <summary>PBKDF2 hash of canonical payload, including the password.</summary>
+    public required byte[] PayloadHash { get; set; }
+}
 
 /// <summary>Read-only employee identity context.</summary>
 public sealed class EmployeeIdentityDbContext(DbContextOptions<EmployeeIdentityDbContext> options)

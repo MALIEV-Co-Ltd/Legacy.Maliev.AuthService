@@ -42,9 +42,22 @@ public sealed record CustomerIdentityResponse(
     string? FaxNumber,
     string? MobileNumber);
 
+/// <summary>Non-PII result of an operation-keyed customer identity create.</summary>
+public sealed record CustomerIdentityCreateReceipt(int DatabaseId, string Status);
+
+/// <summary>Outcome of an operation-keyed create attempt.</summary>
+public enum CustomerIdentityCreateOutcome { Created, Replayed, Conflict }
+
+/// <summary>Result of an operation-keyed create attempt.</summary>
+public sealed record CustomerIdentityCreateResult(CustomerIdentityCreateOutcome Outcome, int DatabaseId);
+
 /// <summary>Customer identity administration backed by the unchanged legacy schema.</summary>
 public interface ICustomerIdentityAdminService
 {
+    /// <summary>Atomically creates an identity and durable ownership receipt, or reconciles its retry.</summary>
+    Task<CustomerIdentityCreateResult> CreateOrReconcileAsync(
+        int databaseId, string serviceSubject, Guid operationKey,
+        CreateCustomerIdentityRequest request, CancellationToken cancellationToken);
     /// <summary>Creates a customer identity for a business database identifier.</summary>
     Task<CustomerIdentityResponse?> CreateAsync(int databaseId, CreateCustomerIdentityRequest request, CancellationToken cancellationToken);
 

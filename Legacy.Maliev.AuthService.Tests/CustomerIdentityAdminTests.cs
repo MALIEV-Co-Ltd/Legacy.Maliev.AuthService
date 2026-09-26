@@ -49,6 +49,90 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task KeyedCreate_LostResponseReplaysOnlyForSameOwnerKeyAndPayload()
+    {
+        await using var context = await postgres.CreateCustomerContextAsync();
+        var service = new CustomerIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>());
+        var request = new CreateCustomerIdentityRequest(
+            "customer@example.com", "customer@example.com", "correct-password", true, null, null, null);
+        var key = Guid.NewGuid();
+
+        Assert.Equal(CustomerIdentityCreateOutcome.Created,
+            (await service.CreateOrReconcileAsync(42, "service:legacy-intranet", key, request, default)).Outcome);
+        context.ChangeTracker.Clear();
+        Assert.Equal(CustomerIdentityCreateOutcome.Replayed,
+            (await service.CreateOrReconcileAsync(42, "service:legacy-intranet", key, request, default)).Outcome);
+        Assert.Equal(CustomerIdentityCreateOutcome.Conflict,
+            (await service.CreateOrReconcileAsync(42, "service:other", key, request, default)).Outcome);
+        Assert.Equal(CustomerIdentityCreateOutcome.Conflict,
+            (await service.CreateOrReconcileAsync(42, "service:legacy-intranet", Guid.NewGuid(), request, default)).Outcome);
+        Assert.Single(await context.Users.ToListAsync());
+        var receipt = Assert.Single(await context.CreateOperations.ToListAsync());
+        Assert.Equal("service:legacy-intranet", receipt.ServiceSubject);
+        Assert.Equal(32, receipt.PayloadHash.Length);
+        Assert.Equal(16, receipt.PayloadSalt.Length);
+    }
+
+    [Fact]
+    public async Task KeyedCreate_ChangedPayloadOrDatabaseIdConflictsWithoutMutatingIdentity()
+    {
+        await using var context = await postgres.CreateCustomerContextAsync();
+        var service = new CustomerIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>());
+        var request = new CreateCustomerIdentityRequest(
+            "customer@example.com", "customer@example.com", "correct-password", true, null, null, null);
+        var key = Guid.NewGuid();
+        await service.CreateOrReconcileAsync(42, "service:legacy-intranet", key, request, default);
+
+        Assert.Equal(CustomerIdentityCreateOutcome.Conflict,
+            (await service.CreateOrReconcileAsync(42, "service:legacy-intranet", key,
+                request with { Password = "changed-password" }, default)).Outcome);
+        Assert.Equal(CustomerIdentityCreateOutcome.Conflict,
+            (await service.CreateOrReconcileAsync(43, "service:legacy-intranet", key, request, default)).Outcome);
+        Assert.Single(await context.Users.ToListAsync());
+        Assert.Single(await context.CreateOperations.ToListAsync());
+    }
+
+    [Fact]
+    public async Task KeyedCreate_UnrelatedExistingIdentityDoesNotGainOwnershipReceipt()
+    {
+        await using var context = await postgres.CreateCustomerContextAsync();
+        var service = new CustomerIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>());
+        var request = new CreateCustomerIdentityRequest(
+            "customer@example.com", "customer@example.com", "correct-password", true, null, null, null);
+        Assert.NotNull(await service.CreateAsync(42, request, default));
+
+        var result = await service.CreateOrReconcileAsync(
+            42, "service:legacy-intranet", Guid.NewGuid(), request, default);
+
+        Assert.Equal(CustomerIdentityCreateOutcome.Conflict, result.Outcome);
+        Assert.Empty(await context.CreateOperations.ToListAsync());
+    }
+
+    [Fact]
+    public async Task KeyedCreate_ConcurrentSameKeyCommitsOneIdentityAndOneReceipt()
+    {
+        await using var first = await postgres.CreateCustomerContextAsync();
+        await using var second = new CustomerIdentityDbContext(
+            new DbContextOptionsBuilder<CustomerIdentityDbContext>()
+                .UseNpgsql(first.Database.GetConnectionString()).Options);
+        var hasher = new PasswordHasher<LegacyIdentityRow>();
+        var request = new CreateCustomerIdentityRequest(
+            "customer@example.com", "customer@example.com", "correct-password", true, null, null, null);
+        var key = Guid.NewGuid();
+
+        var results = await Task.WhenAll(
+            new CustomerIdentityAdminService(first, hasher).CreateOrReconcileAsync(
+                42, "service:legacy-intranet", key, request, default),
+            new CustomerIdentityAdminService(second, hasher).CreateOrReconcileAsync(
+                42, "service:legacy-intranet", key, request, default));
+
+        Assert.Contains(results, result => result.Outcome == CustomerIdentityCreateOutcome.Created);
+        Assert.Contains(results, result => result.Outcome == CustomerIdentityCreateOutcome.Replayed);
+        Assert.Single(await first.Users.AsNoTracking().ToListAsync());
+        Assert.Single(await first.CreateOperations.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
     public async Task Update_ChangesSecurityStampSoExistingRefreshFamiliesBecomeInvalid()
     {
         await using var context = await postgres.CreateCustomerContextAsync();

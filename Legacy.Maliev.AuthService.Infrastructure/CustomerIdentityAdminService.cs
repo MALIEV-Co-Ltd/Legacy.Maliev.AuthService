@@ -1,6 +1,10 @@
 using Legacy.Maliev.AuthService.Application;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
 
 namespace Legacy.Maliev.AuthService.Infrastructure;
 
@@ -9,6 +13,80 @@ public sealed class CustomerIdentityAdminService(
     CustomerIdentityDbContext dbContext,
     IPasswordHasher<LegacyIdentityRow> passwordHasher) : ICustomerIdentityAdminService
 {
+    /// <inheritdoc />
+    public async Task<CustomerIdentityCreateResult> CreateOrReconcileAsync(
+        int databaseId, string serviceSubject, Guid operationKey,
+        CreateCustomerIdentityRequest request, CancellationToken cancellationToken)
+    {
+        var existing = await dbContext.CreateOperations.AsNoTracking().SingleOrDefaultAsync(
+            operation => operation.ServiceSubject == serviceSubject && operation.OperationKey == operationKey,
+            cancellationToken);
+        if (existing is not null)
+        {
+            return Reconcile(existing, databaseId, request);
+        }
+
+        var normalizedUserName = request.UserName.Trim().ToUpperInvariant();
+        var normalizedEmail = request.Email.Trim().ToUpperInvariant();
+        if (await dbContext.Users.AnyAsync(user => user.DatabaseID == databaseId ||
+                user.NormalizedUserName == normalizedUserName || user.NormalizedEmail == normalizedEmail,
+            cancellationToken))
+        {
+            existing = await dbContext.CreateOperations.AsNoTracking().SingleOrDefaultAsync(
+                operation => operation.ServiceSubject == serviceSubject && operation.OperationKey == operationKey,
+                cancellationToken);
+            return existing is null
+                ? new(CustomerIdentityCreateOutcome.Conflict, databaseId)
+                : Reconcile(existing, databaseId, request);
+        }
+
+        var user = NewUser(databaseId, request);
+        var salt = RandomNumberGenerator.GetBytes(16);
+        dbContext.Users.Add(user);
+        dbContext.CreateOperations.Add(new CustomerIdentityCreateOperation
+        {
+            ServiceSubject = serviceSubject,
+            OperationKey = operationKey,
+            DatabaseId = databaseId,
+            IdentityId = user.Id,
+            PayloadSalt = salt,
+            PayloadHash = HashPayload(request, salt),
+        });
+        try
+        {
+            // A single SaveChanges transaction commits the identity and ownership proof together.
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return new(CustomerIdentityCreateOutcome.Created, databaseId);
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
+        {
+            dbContext.ChangeTracker.Clear();
+            existing = await dbContext.CreateOperations.AsNoTracking().SingleOrDefaultAsync(
+                operation => operation.ServiceSubject == serviceSubject && operation.OperationKey == operationKey,
+                cancellationToken);
+            return existing is null
+                ? new(CustomerIdentityCreateOutcome.Conflict, databaseId)
+                : Reconcile(existing, databaseId, request);
+        }
+    }
+
+    private static CustomerIdentityCreateResult Reconcile(
+        CustomerIdentityCreateOperation operation, int databaseId, CreateCustomerIdentityRequest request)
+    {
+        var hash = HashPayload(request, operation.PayloadSalt);
+        return operation.DatabaseId == databaseId &&
+            CryptographicOperations.FixedTimeEquals(hash, operation.PayloadHash)
+            ? new(CustomerIdentityCreateOutcome.Replayed, databaseId)
+            : new(CustomerIdentityCreateOutcome.Conflict, databaseId);
+    }
+
+    private static byte[] HashPayload(CreateCustomerIdentityRequest request, byte[] salt)
+    {
+        var canonical = JsonSerializer.Serialize(request);
+        return Rfc2898DeriveBytes.Pbkdf2(
+            Encoding.UTF8.GetBytes(canonical), salt, 210_000, HashAlgorithmName.SHA256, 32);
+    }
+
     /// <inheritdoc />
     public async Task<CustomerIdentityResponse?> CreateAsync(
         int databaseId,
@@ -27,14 +105,22 @@ public sealed class CustomerIdentityAdminService(
             return null;
         }
 
+        var user = NewUser(databaseId, request);
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Project(user);
+    }
+
+    private LegacyIdentityRow NewUser(int databaseId, CreateCustomerIdentityRequest request)
+    {
         var user = new LegacyIdentityRow
         {
             Id = Guid.NewGuid().ToString(),
             DatabaseID = databaseId,
             UserName = request.UserName.Trim(),
-            NormalizedUserName = normalizedUserName,
+            NormalizedUserName = request.UserName.Trim().ToUpperInvariant(),
             Email = request.Email.Trim(),
-            NormalizedEmail = normalizedEmail,
+            NormalizedEmail = request.Email.Trim().ToUpperInvariant(),
             EmailConfirmed = request.EmailConfirmed,
             PhoneNumber = request.PhoneNumber,
             PhoneNumberConfirmed = false,
@@ -48,9 +134,7 @@ public sealed class CustomerIdentityAdminService(
             ConcurrencyStamp = Guid.NewGuid().ToString(),
         };
         user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
-        dbContext.Users.Add(user);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return Project(user);
+        return user;
     }
 
     /// <inheritdoc />
