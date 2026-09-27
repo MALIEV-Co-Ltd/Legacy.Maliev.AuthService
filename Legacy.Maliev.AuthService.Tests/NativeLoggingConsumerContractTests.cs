@@ -10,7 +10,7 @@ namespace Legacy.Maliev.AuthService.Tests;
 
 public sealed class NativeLoggingConsumerContractTests
 {
-    private const string SharedLoggingCommit = "d22f0e6f95254b10cf4fe891c8dce5df7c419f3f";
+    private const string SharedLoggingCommit = "cfc8053d316c55353841092429985a9f76f17d8d";
 
     [Fact]
     public void AuthHostAndDelivery_ConsumePinnedSharedLoggingWithoutNativeLogging()
@@ -34,7 +34,7 @@ public sealed class NativeLoggingConsumerContractTests
     }
 
     [Theory]
-    [InlineData(false, 500, LogLevel.Critical, "/auth/v1/login")]
+    [InlineData(false, 500, LogLevel.Critical, "/auth/v1/customer-identities/{identity}")]
     [InlineData(true, 404, LogLevel.Debug, "/")]
     public async Task SharedProductionExceptionBoundary_RedactsAuthSecrets(
         bool notFound,
@@ -47,9 +47,15 @@ public sealed class NativeLoggingConsumerContractTests
         context.Response.Body = new MemoryStream();
         context.TraceIdentifier = "auth-correlation";
         context.Request.Method = "POST";
-        context.Request.Path = notFound
-            ? "/auth/v1/customer-identities/private-email@example.test"
-            : "/auth/v1/login";
+        context.Request.Path = "/auth/v1/customer-identities/private-email@example.test";
+        if (!notFound)
+        {
+            context.SetEndpoint(new Microsoft.AspNetCore.Routing.RouteEndpointBuilder(
+                _ => Task.CompletedTask,
+                Microsoft.AspNetCore.Routing.Patterns.RoutePatternFactory.Parse(
+                    "/auth/v1/customer-identities/{identity}"),
+                0).Build());
+        }
         context.Request.QueryString = new QueryString("?token=private-query");
         context.Request.Headers.Authorization = "Bearer private-header";
         var failure = notFound
