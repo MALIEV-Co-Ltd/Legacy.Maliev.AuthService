@@ -5,12 +5,13 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
 public sealed class NativeLoggingConsumerContractTests
 {
-    private const string SharedLoggingCommit = "cfc8053d316c55353841092429985a9f76f17d8d";
+    private const string SharedLoggingCommit = "5c5f9479313710fa576f83d3b396442997a2fcf4";
 
     [Fact]
     public void AuthHostAndDelivery_ConsumePinnedSharedLoggingWithoutNativeLogging()
@@ -80,6 +81,32 @@ public sealed class NativeLoggingConsumerContractTests
         Assert.Equal(context.TraceIdentifier, json.RootElement.GetProperty("traceId").GetString());
         Assert.Equal(JsonValueKind.Null, json.RootElement.GetProperty("details").ValueKind);
         Assert.DoesNotContain("private-", json.RootElement.ToString(), StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("auth-correlation", true)]
+    [InlineData("secret@example.test", false)]
+    public async Task SharedCorrelationBoundary_PropagatesOnlyBoundedSafeIdentifiers(
+        string supplied, bool accepted)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Headers["X-Correlation-ID"] = supplied;
+        var middleware = new CorrelationIdMiddleware(_ => Task.CompletedTask,
+            NullLogger<CorrelationIdMiddleware>.Instance);
+
+        await middleware.InvokeAsync(context);
+
+        string actual = context.Response.Headers["X-Correlation-ID"].ToString();
+        Assert.Equal(actual, context.Items["CorrelationId"]);
+        if (accepted)
+        {
+            Assert.Equal(supplied, actual);
+        }
+        else
+        {
+            Assert.NotEqual(supplied, actual);
+            Assert.True(Guid.TryParse(actual, out _));
+        }
     }
 
     private static string FindRepositoryRoot()
