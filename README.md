@@ -27,6 +27,41 @@ The source monorepo stays private. This extracted implementation is public and m
 
 Service clients are configured under `ServiceClients:Clients:<client-id>` with a lowercase SHA-256 secret hash and an explicit permission list. The raw client secret is presented only in the JSON login body and is never stored, logged, placed in a URL, or emitted as a JWT claim. Runtime values are projected from the consolidated `maliev-legacy-secrets` secret; source configuration contains no client credential.
 
+## Invoice-create employee delegation (issuer contract only)
+
+`POST /auth/v1/exchange/invoice-create` is an additive, rate-limited server-to-server
+exchange. It requires a validated service Bearer with `identity_kind=service`,
+`sub=service:legacy-intranet`, and the explicit
+`legacy-auth.invoice-delegation.issue` permission. The JSON body contains the
+server-held employee access token, a positive `quotationId`, and a nonempty
+lowercase D-form UUID `operationId`. The employee JWT is independently validated
+against the existing RS256 issuer, ordinary access-token audience, signature,
+and lifetime. It must carry one non-service `sub`, `identity_kind=employee`,
+and `permissions=legacy.accounting.create`. Invalid credentials receive generic
+failure responses; neither token is echoed or logged. This permission is not
+granted in source configuration or deployed by this change.
+
+The response is `{ "accessToken": "<compact JWT>", "tokenType": "Bearer", "expiresIn": 120 }`.
+The signed JWT uses the configured Auth issuer and signing key, RS256 and the
+dedicated `aud=legacy-accounting:invoice-create`. Its only identity/operation
+claims are `sub=<validated employee subject>`, `azp=service:legacy-intranet`,
+`scope=legacy.accounting.create`, `quotation_id=<positive integer>`,
+`operation_id=<lowercase D UUID>`, a fresh D-form `jti`, and NumericDate
+`iat`, `nbf`, `exp` (120-second lifetime). It contains no name, email,
+permission list, browser cookie, request intent, or refresh token.
+
+AccountingService #23 must independently validate the signature, RS256,
+issuer, dedicated audience, scope, maximum lifetime/skew, route quotation,
+operation key and the authenticated service Bearer subject matching `azp`.
+It must bind durable admission to employee subject, operation ID, quotation,
+and canonical intent fingerprint. A renewed delegation for the same tuple has
+a new `jti` and remains eligible for retry; Accounting must reject a conflicting
+actor, quotation, or intent under that operation ID. This repository does not
+define the BFF-to-Accounting header, implement the Accounting verifier, enable
+actor-scoped status/resume, or change existing service-only invoice creation.
+Current employee access tokens retain their existing bounded-expiry revocation
+semantics; this exchange does not add immediate access-token revocation.
+
 The service-owned customer identity create/reconcile contract is `POST /auth/v1/customer-identities/{databaseId}/reconcile-create` with a GUID `Idempotency-Key` header and the existing `CreateCustomerIdentityRequest` JSON body. A token needs both `identity_kind=service` and `legacy-auth.customer-identities.reconcile-create`. The atomic ownership receipt binds the service subject, key, database ID, identity ID, and salted password-based hash of the complete payload. It returns only `{ "databaseId": 42, "status": "created" }` (201) or `"replayed"` (200); a changed key/payload, unrelated identity, or missing/replaced recorded identity returns generic 409. Neither this route nor the receipt is a general identity lookup. The legacy unkeyed POST and employee-only GET are unchanged.
 
 Release ordering: apply the additive `202609260001_AddCustomerIdentityCreateOperations` migration to the customer identity database, grant only the intended Intranet service client the new permission in runtime `ServiceClients` configuration, then deploy the AuthService and its Intranet consumer. No existing unkeyed create can be retroactively reconciled by this route.
