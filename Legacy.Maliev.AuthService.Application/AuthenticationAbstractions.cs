@@ -30,6 +30,13 @@ public interface IServiceAccessTokenIssuer
     IssuedAccessToken IssueService(string clientId, IReadOnlyList<string> permissions, DateTimeOffset now);
 }
 
+/// <summary>Signs only employee-bound invoice-create delegations for Accounting.</summary>
+public interface IInvoiceDelegationTokenIssuer
+{
+    /// <summary>Issues one short-lived, operation-bound delegation.</summary>
+    IssuedAccessToken IssueInvoiceDelegation(string employeeSubject, int quotationId, Guid operationId, DateTimeOffset now);
+}
+
 /// <summary>An issued access token and its lifetime.</summary>
 public sealed record IssuedAccessToken(string Value, int ExpiresInSeconds);
 
