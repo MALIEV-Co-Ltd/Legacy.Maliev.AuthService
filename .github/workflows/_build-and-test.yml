@@ -32,7 +32,7 @@ jobs:
           path: .dependencies/Legacy.Maliev.CompatibilityContracts
           persist-credentials: false
       - name: Validate .NET solution
-        uses: MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@d7efac266bc66273bc45eab583618871292ecbd6
+        uses: MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@b856eb3dc57fe6597c7a491ecbf65b2938c330a1
         with:
           solution: Legacy.Maliev.AuthService.slnx
           use-local-maliev-dependencies: 'true'

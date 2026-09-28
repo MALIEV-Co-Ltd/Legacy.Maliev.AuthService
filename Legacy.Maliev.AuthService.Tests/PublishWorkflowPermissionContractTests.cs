@@ -9,13 +9,21 @@ public sealed class PublishWorkflowPermissionContractTests
     {
         var source = File.ReadAllText(Path.Combine(FindRoot(), ".github", "workflows", "_build-and-test.yml"));
         Assert.Contains(
-            "MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@d7efac266bc66273bc45eab583618871292ecbd6",
+            "MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@b856eb3dc57fe6597c7a491ecbf65b2938c330a1",
             source,
             StringComparison.Ordinal);
         Assert.DoesNotContain(
             "MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@6017816fa67f369d785ed30794f002cfd6299af7",
             source,
             StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void SourceE2f_StaleJwtXmlDocumentationIsAbsent()
+    {
+        var root = FindRoot();
+        Assert.False(File.Exists(Path.Combine(root, "Maliev.AuthService.JwtSecurity", "Maliev.JwtSecurity.xml")));
+        Assert.False(File.Exists(Path.Combine(root, "Maliev.JwtSecurity.xml")));
     }
 
     [Fact]
