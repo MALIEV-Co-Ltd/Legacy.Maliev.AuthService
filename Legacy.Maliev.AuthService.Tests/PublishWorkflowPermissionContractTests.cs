@@ -5,6 +5,20 @@ namespace Legacy.Maliev.AuthService.Tests;
 public sealed class PublishWorkflowPermissionContractTests
 {
     [Fact]
+    public void ValidationWorkflow_UsesRedactedJwtResourceScanner()
+    {
+        var source = File.ReadAllText(Path.Combine(FindRoot(), ".github", "workflows", "_build-and-test.yml"));
+        Assert.Contains(
+            "MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@d7efac266bc66273bc45eab583618871292ecbd6",
+            source,
+            StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@6017816fa67f369d785ed30794f002cfd6299af7",
+            source,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void PublishWorkflow_ScopesOidcToPublishJobs()
     {
         AssertWorkflowScopesOidc(File.ReadAllText(Path.Combine(
