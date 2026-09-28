@@ -9,7 +9,7 @@ using System.Security.Cryptography;
 namespace Legacy.Maliev.AuthService.Infrastructure;
 
 /// <summary>Issues RS256 access tokens whose private key is supplied only at runtime.</summary>
-public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTokenIssuer, IDisposable
+public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTokenIssuer, IInvoiceDelegationTokenIssuer, IDisposable
 {
     private readonly JwtOptions options;
     private readonly RSA rsa;
@@ -121,17 +121,34 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
         return Issue(claims, now);
     }
 
-    private IssuedAccessToken Issue(IEnumerable<Claim> claims, DateTimeOffset now)
+    /// <inheritdoc />
+    public IssuedAccessToken IssueInvoiceDelegation(string employeeSubject, int quotationId, Guid operationId, DateTimeOffset now)
     {
+        var claims = new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, employeeSubject),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("D")),
+            new(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
+            new("azp", InvoiceDelegationContract.IntranetServiceSubject),
+            new("scope", InvoiceDelegationContract.Scope),
+            new("quotation_id", quotationId.ToString()),
+            new("operation_id", operationId.ToString("D")),
+        };
+        return Issue(claims, now, InvoiceDelegationContract.Audience, InvoiceDelegationContract.LifetimeSeconds);
+    }
+
+    private IssuedAccessToken Issue(IEnumerable<Claim> claims, DateTimeOffset now, string? audience = null, int? lifetimeSeconds = null)
+    {
+        var lifetime = lifetimeSeconds ?? options.AccessTokenLifetimeSeconds;
         var key = new RsaSecurityKey(rsa) { KeyId = options.KeyId };
         var token = new JwtSecurityToken(
             options.Issuer,
-            options.Audience,
+            audience ?? options.Audience,
             claims,
             now.UtcDateTime,
-            now.AddSeconds(options.AccessTokenLifetimeSeconds).UtcDateTime,
+            now.AddSeconds(lifetime).UtcDateTime,
             new SigningCredentials(key, SecurityAlgorithms.RsaSha256));
-        return new(new JwtSecurityTokenHandler().WriteToken(token), options.AccessTokenLifetimeSeconds);
+        return new(new JwtSecurityTokenHandler().WriteToken(token), lifetime);
     }
 
     /// <inheritdoc />

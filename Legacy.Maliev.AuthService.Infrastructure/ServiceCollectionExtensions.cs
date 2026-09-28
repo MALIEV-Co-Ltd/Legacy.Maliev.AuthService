@@ -40,10 +40,12 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEmployeeIdentityAdminService, EmployeeIdentityAdminService>();
         services.AddSingleton<IAccessTokenIssuer, RsaAccessTokenIssuer>();
         services.AddSingleton<IServiceAccessTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
+        services.AddSingleton<IInvoiceDelegationTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<AuthenticationService>();
         services.AddScoped<GoogleAuthenticationService>();
         services.AddScoped<ServiceAuthenticationService>();
+        services.AddScoped<InvoiceDelegationService>();
         services.AddScoped<CustomerSelfService>();
         services.AddScoped<ICustomerLoginActionLifecycle>(provider => provider.GetRequiredService<CustomerSelfService>());
         services.AddScoped<ICustomerPasswordSetupIssuer>(provider => provider.GetRequiredService<CustomerSelfService>());
