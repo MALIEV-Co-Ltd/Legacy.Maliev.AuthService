@@ -26,8 +26,13 @@ public sealed class AuthenticationService(
             return AuthenticationResult.Failed();
         }
 
-        if (identity.Kind == IdentityKind.Customer && !identity.EmailConfirmed)
+        if (!identity.EmailConfirmed)
         {
+            if (identity.Kind == IdentityKind.Employee)
+            {
+                return AuthenticationResult.Failed();
+            }
+
             var token = loginActionLifecycle is null || string.IsNullOrWhiteSpace(identity.SecurityStamp)
                 ? null
                 : await loginActionLifecycle.IssueEmailConfirmationRecoveryAsync(

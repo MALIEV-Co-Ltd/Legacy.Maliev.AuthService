@@ -45,7 +45,7 @@ public sealed class LegacyIdentityReader(
         var user = await Users(kind)
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == identityId, cancellationToken);
-        return IsActive(user, kind) ? Project(user!, kind) : null;
+        return IsActive(user) ? Project(user!, kind) : null;
     }
 
     /// <inheritdoc />
@@ -62,15 +62,15 @@ public sealed class LegacyIdentityReader(
         var user = await employeeContext.Users
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.NormalizedEmail == normalized, cancellationToken);
-        return IsActive(user, IdentityKind.Employee) ? Project(user!, IdentityKind.Employee) : null;
+        return IsActive(user) ? Project(user!, IdentityKind.Employee) : null;
     }
 
     private IQueryable<LegacyIdentityRow> Users(IdentityKind kind) =>
         kind == IdentityKind.Customer ? customerContext.Users : employeeContext.Users;
 
-    private bool IsActive(LegacyIdentityRow? user, IdentityKind kind) =>
+    private bool IsActive(LegacyIdentityRow? user) =>
         IsUnlocked(user)
-        && (kind != IdentityKind.Customer || user!.EmailConfirmed);
+        && user!.EmailConfirmed;
 
     private bool IsUnlocked(LegacyIdentityRow? user) =>
         user is not null
@@ -91,7 +91,7 @@ public sealed class LegacyIdentityReader(
             kind,
             user.DatabaseID,
             user.SecurityStamp,
-            kind != IdentityKind.Customer || user.EmailConfirmed,
+            user.EmailConfirmed,
             kind == IdentityKind.Customer && user.PasswordSetupRequired,
             !string.IsNullOrEmpty(user.PasswordHash));
 }
