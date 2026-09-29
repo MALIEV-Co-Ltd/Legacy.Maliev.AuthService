@@ -45,6 +45,38 @@ public sealed class AuthenticationServiceTests
         Assert.Null(store.Created);
     }
 
+    [Fact]
+    public async Task Login_UnconfirmedEmployee_ReturnsGenericFailureWithoutIssuingSessionOrCustomerAction()
+    {
+        var identity = Identity() with { Kind = IdentityKind.Employee, EmailConfirmed = false };
+        var store = new RecordingStore();
+        var actions = new StubLoginActions("must-not-be-issued");
+        var service = CreateService(new StubValidator(identity), store, actions);
+
+        var result = await service.LoginAsync(
+            new LoginRequest("employee@maliev.com", "validated-password", IdentityKind.Employee), default);
+
+        Assert.False(result.Succeeded);
+        Assert.Null(result.Tokens);
+        Assert.Null(result.RequiredAction);
+        Assert.Null(store.Created);
+        Assert.Null(actions.IdentityId);
+    }
+
+    [Fact]
+    public async Task Login_ConfirmedEmployee_CanCreateSession()
+    {
+        var identity = Identity() with { Kind = IdentityKind.Employee, EmailConfirmed = true };
+        var store = new RecordingStore();
+        var service = CreateService(new StubValidator(identity), store);
+
+        var result = await service.LoginAsync(
+            new LoginRequest("employee@maliev.com", "validated-password", IdentityKind.Employee), default);
+
+        Assert.True(result.Succeeded);
+        Assert.NotNull(store.Created);
+    }
+
     [Theory]
     [InlineData(true, true, "set_initial_password")]
     [InlineData(false, false, "confirm_email")]

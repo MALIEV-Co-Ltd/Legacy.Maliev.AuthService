@@ -141,6 +141,40 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task UnconfirmedEmployee_PasswordValidationPreservesFlagButActiveSessionLookupsRejectIt()
+    {
+        await using var contexts = await ContextPair.CreateAsync(postgres);
+        var user = CreateUser("employee-id", "unconfirmed@maliev.com", "correct-password");
+        user.EmailConfirmed = false;
+        contexts.Employee.Users.Add(user);
+        await contexts.Employee.SaveChangesAsync();
+        var reader = contexts.CreateReader();
+
+        var validated = await reader.ValidateAsync(
+            user.UserName!, "correct-password", IdentityKind.Employee, default);
+        var activeById = await reader.FindActiveAsync(user.Id, IdentityKind.Employee, default);
+        var activeByEmail = await reader.FindActiveEmployeeByEmailAsync(user.Email!, default);
+
+        Assert.NotNull(validated);
+        Assert.False(validated.EmailConfirmed);
+        Assert.Null(activeById);
+        Assert.Null(activeByEmail);
+    }
+
+    [Fact]
+    public async Task ConfirmedEmployee_RemainsEligibleForSessionLookups()
+    {
+        await using var contexts = await ContextPair.CreateAsync(postgres);
+        var user = CreateUser("employee-id", "confirmed@maliev.com", "correct-password");
+        contexts.Employee.Users.Add(user);
+        await contexts.Employee.SaveChangesAsync();
+        var reader = contexts.CreateReader();
+
+        Assert.NotNull(await reader.FindActiveAsync(user.Id, IdentityKind.Employee, default));
+        Assert.NotNull(await reader.FindActiveEmployeeByEmailAsync(user.Email!, default));
+    }
+
+    [Fact]
     public async Task ContextModels_MapCustomerOnlyColumnsOnlyInCustomerDatabase()
     {
         await using var contexts = await ContextPair.CreateAsync(postgres);
@@ -167,6 +201,8 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
             UserName = email,
             NormalizedUserName = email.ToUpperInvariant(),
             Email = email,
+            NormalizedEmail = email.ToUpperInvariant(),
+            EmailConfirmed = true,
             SecurityStamp = "security-stamp",
         };
         user.PasswordHash = new PasswordHasher<LegacyIdentityRow>().HashPassword(user, password);
