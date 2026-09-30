@@ -1,4 +1,5 @@
 using Legacy.Maliev.AuthService.Application;
+using Legacy.Maliev.AuthService.Infrastructure;
 using Maliev.Aspire.ServiceDefaults.Authorization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -43,13 +44,26 @@ public sealed class EmployeeIdentitiesController(IEmployeeIdentityAdminService s
     public async Task<IActionResult> Update(
         int databaseId,
         UpdateEmployeeIdentityRequest request,
-        CancellationToken cancellationToken) =>
-        await service.UpdateAsync(databaseId, request, cancellationToken) ? NoContent() : NotFound();
+        CancellationToken cancellationToken)
+    {
+        try { return await service.UpdateAsync(databaseId, request, cancellationToken) ? NoContent() : NotFound(); }
+        catch (EmployeeRecoveryUnavailableException) { return Unavailable(); }
+    }
 
     /// <summary>Deletes an identity without deleting the employee profile.</summary>
     [HttpDelete("{databaseId:int}")]
     [RequirePermission(LegacyAccessTokenPermissions.EmployeeIdentitiesDelete)]
     [Authorize(Policy = "LegacyEmployee")]
-    public async Task<IActionResult> Delete(int databaseId, CancellationToken cancellationToken) =>
-        await service.DeleteAsync(databaseId, cancellationToken) ? NoContent() : NotFound();
+    public async Task<IActionResult> Delete(int databaseId, CancellationToken cancellationToken)
+    {
+        try { return await service.DeleteAsync(databaseId, cancellationToken) ? NoContent() : NotFound(); }
+        catch (EmployeeRecoveryUnavailableException) { return Unavailable(); }
+    }
+
+    private ObjectResult Unavailable() => StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+    {
+        Status = StatusCodes.Status503ServiceUnavailable,
+        Title = "Identity action unavailable",
+        Detail = "The identity action is temporarily unavailable. Please retry later.",
+    });
 }
