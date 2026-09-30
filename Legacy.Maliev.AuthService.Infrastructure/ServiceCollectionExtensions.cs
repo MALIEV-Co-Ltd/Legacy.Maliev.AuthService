@@ -46,6 +46,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<GoogleAuthenticationService>();
         services.AddScoped<ServiceAuthenticationService>();
         services.AddScoped<InvoiceDelegationService>();
+        services.AddScoped<IQualificationIntrospectionService, QualificationIntrospectionService>();
+        services.AddScoped<IQualificationCallerAuthorizer, QualificationCallerAuthorizer>();
+        services.AddOptions<QualificationIntrospectionOptions>()
+            .Bind(configuration.GetSection("QualificationIntrospection"))
+            .ValidateDataAnnotations().ValidateOnStart();
         services.AddScoped<CustomerSelfService>();
         services.AddScoped<ICustomerLoginActionLifecycle>(provider => provider.GetRequiredService<CustomerSelfService>());
         services.AddScoped<ICustomerPasswordSetupIssuer>(provider => provider.GetRequiredService<CustomerSelfService>());
