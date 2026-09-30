@@ -160,7 +160,7 @@ public sealed class GoogleAuthenticationServiceTests
 
     private sealed class RecordingIssuer(RecordingNonceService nonce) : IAccessTokenIssuer
     {
-        public IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now)
+        public IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now, Guid? employeeSessionId)
         {
             nonce.Events.Add("issue");
             return new("access-token", 900);

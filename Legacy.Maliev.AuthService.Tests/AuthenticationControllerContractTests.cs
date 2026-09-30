@@ -105,7 +105,7 @@ public sealed class AuthenticationControllerContractTests
 
     private sealed class NoopIssuer : IAccessTokenIssuer
     {
-        public IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now) => new("unused", 900);
+        public IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now, Guid? employeeSessionId) => new("unused", 900);
     }
 
     private sealed class NoopStore : IRefreshSessionStore

@@ -19,8 +19,8 @@ public interface ILegacyIdentityReader
 /// <summary>Issues asymmetric short-lived access tokens.</summary>
 public interface IAccessTokenIssuer
 {
-    /// <summary>Issues an access token for a validated identity.</summary>
-    IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now);
+    /// <summary>Issues an access token bound to a persisted employee session, or an unbound customer token.</summary>
+    IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now, Guid? employeeSessionId);
 }
 
 /// <summary>Issues least-privilege tokens for configured machine identities.</summary>

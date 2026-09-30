@@ -23,8 +23,12 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
     }
 
     /// <inheritdoc />
-    public IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now)
+    public IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now, Guid? employeeSessionId)
     {
+        if (identity.Kind == IdentityKind.Employee && (employeeSessionId is null || employeeSessionId == Guid.Empty))
+            throw new ArgumentException("Employee token issuance requires a persisted session ID.", nameof(employeeSessionId));
+        if (identity.Kind != IdentityKind.Employee && employeeSessionId is not null)
+            throw new ArgumentException("Only employee tokens may carry an employee session ID.", nameof(employeeSessionId));
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, identity.Id),
@@ -47,6 +51,7 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
 
         if (identity.Kind == IdentityKind.Employee)
         {
+            claims.Add(new("sid", employeeSessionId!.Value.ToString("D")));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.CatalogMaterialsRead));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.CatalogMaterialsCreate));
             claims.Add(new("permissions", LegacyAccessTokenPermissions.CatalogMaterialsUpdate));
