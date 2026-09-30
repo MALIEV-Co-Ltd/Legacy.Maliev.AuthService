@@ -21,6 +21,8 @@ builder.Services.AddProblemDetails();
 builder.Services.AddControllers();
 builder.Services.AddSingleton<LoginAttemptRateLimiter>();
 builder.Services.AddSingleton<LoginRateLimitFilter>();
+builder.Services.AddScoped<QualificationIntrospectionBoundaryFilter>();
+builder.Services.AddSingleton<QualificationIntrospectionRateLimiter>();
 builder.Services.AddLegacyAuthInfrastructure(builder.Configuration);
 // Auth readiness must reflect every PostgreSQL store used by the service. The
 // infrastructure registrations above are intentionally explicit, so register
