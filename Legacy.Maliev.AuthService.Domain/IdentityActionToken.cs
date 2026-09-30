@@ -19,4 +19,11 @@ public sealed class IdentityActionToken
     public DateTimeOffset ExpiresAt { get; set; }
     /// <summary>Consumption timestamp.</summary>
     public DateTimeOffset? ConsumedAt { get; set; }
+    public int? RecoveryVersion { get; set; }
+    public string? OriginalTokenSha256 { get; set; }
+    public string? OwnerSubject { get; set; }
+    public string? BoundNormalizedEmail { get; set; }
+    public string? BoundSecurityStamp { get; set; }
+    public Guid? EffectActionId { get; set; }
+    public DateTimeOffset? FinalizedAt { get; set; }
 }

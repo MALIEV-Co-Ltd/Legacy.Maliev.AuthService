@@ -29,6 +29,7 @@ builder.Services.AddHealthChecks()
     .AddDbContextCheck<CustomerIdentityDbContext>("auth_customer_identity", tags: ["db", "ready"])
     .AddDbContextCheck<EmployeeIdentityDbContext>("auth_employee_identity", tags: ["db", "ready"])
     .AddDbContextCheck<RefreshSessionDbContext>("auth_refresh_sessions", tags: ["db", "ready"]);
+builder.Services.AddHealthChecks().AddCheck<EmployeeRecoveryHealthCheck>("auth_employee_recovery_schema", tags: ["db", "ready"]);
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
 builder.Services.AddSingleton<IConfigureOptions<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>, LegacyJwtBearerConfiguration>();
 builder.Services.AddAuthorizationBuilder().AddPolicy("LegacyEmployee", policy =>

@@ -50,6 +50,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICustomerLoginActionLifecycle>(provider => provider.GetRequiredService<CustomerSelfService>());
         services.AddScoped<ICustomerPasswordSetupIssuer>(provider => provider.GetRequiredService<CustomerSelfService>());
         services.AddScoped<EmployeeSelfService>();
+        services.AddSingleton(provider => provider.GetRequiredService<IConfiguration>().GetSection("EmployeeRecovery").Get<EmployeeRecoveryOptions>() ?? new EmployeeRecoveryOptions());
+        services.AddHostedService<EmployeeRecoveryWorker>();
 
         services.AddOptions<JwtOptions>()
             .Bind(configuration.GetSection(JwtOptions.SectionName))

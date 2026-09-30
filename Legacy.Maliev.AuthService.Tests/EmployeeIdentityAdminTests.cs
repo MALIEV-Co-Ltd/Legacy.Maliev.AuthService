@@ -17,7 +17,7 @@ public sealed class EmployeeIdentityAdminTests(PostgresFixture postgres)
     {
         await using var context = await postgres.CreateEmployeeContextAsync();
         var hasher = new PasswordHasher<LegacyIdentityRow>();
-        var service = new EmployeeIdentityAdminService(context, hasher);
+        var service = new EmployeeIdentityAdminService(context, hasher, new EmployeeRecoveryOptions { Enabled = true });
 
         var response = await service.CreateAsync(
             7,
@@ -55,7 +55,7 @@ public sealed class EmployeeIdentityAdminTests(PostgresFixture postgres)
     public async Task Update_RotatesSecurityStampAndDoesNotAcceptCustomerOnlyFields()
     {
         await using var context = await postgres.CreateEmployeeContextAsync();
-        var service = new EmployeeIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>());
+        var service = new EmployeeIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>(), new EmployeeRecoveryOptions { Enabled = true });
         await service.CreateAsync(
             7,
             new CreateEmployeeIdentityRequest("employee@maliev.com", "employee@maliev.com", "correct-password", true, null),

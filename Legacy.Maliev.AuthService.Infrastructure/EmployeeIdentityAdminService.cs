@@ -1,13 +1,15 @@
 using Legacy.Maliev.AuthService.Application;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 
 namespace Legacy.Maliev.AuthService.Infrastructure;
 
 /// <summary>Administers employee identities without changing the legacy ASP.NET Identity schema.</summary>
 public sealed class EmployeeIdentityAdminService(
     EmployeeIdentityDbContext dbContext,
-    IPasswordHasher<LegacyIdentityRow> passwordHasher) : IEmployeeIdentityAdminService
+    IPasswordHasher<LegacyIdentityRow> passwordHasher,
+    EmployeeRecoveryOptions? recoveryOptions = null) : IEmployeeIdentityAdminService
 {
     /// <inheritdoc />
     public async Task<EmployeeIdentityResponse?> CreateAsync(
@@ -64,42 +66,52 @@ public sealed class EmployeeIdentityAdminService(
         UpdateEmployeeIdentityRequest request,
         CancellationToken cancellationToken)
     {
-        var user = await dbContext.Users.SingleOrDefaultAsync(
-            value => value.DatabaseID == databaseId, cancellationToken);
-        if (user is null)
+        return await MutateAsync(databaseId, (context, user) =>
         {
-            return false;
-        }
-
-        user.UserName = request.UserName.Trim();
-        user.NormalizedUserName = user.UserName.ToUpperInvariant();
-        user.Email = request.Email.Trim();
-        user.NormalizedEmail = user.Email.ToUpperInvariant();
-        user.EmailConfirmed = request.EmailConfirmed;
-        user.PhoneNumber = request.PhoneNumber;
-        user.PhoneNumberConfirmed = request.PhoneNumberConfirmed;
-        user.TwoFactorEnabled = request.TwoFactorEnabled;
-        user.LockoutEnd = request.LockoutEnd;
-        user.LockoutEnabled = request.LockoutEnabled;
-        user.SecurityStamp = Guid.NewGuid().ToString();
-        user.ConcurrencyStamp = Guid.NewGuid().ToString();
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return true;
+            user.UserName = request.UserName.Trim();
+            user.NormalizedUserName = user.UserName.ToUpperInvariant();
+            user.Email = request.Email.Trim();
+            user.NormalizedEmail = user.Email.ToUpperInvariant();
+            user.EmailConfirmed = request.EmailConfirmed;
+            user.PhoneNumber = request.PhoneNumber;
+            user.PhoneNumberConfirmed = request.PhoneNumberConfirmed;
+            user.TwoFactorEnabled = request.TwoFactorEnabled;
+            user.LockoutEnd = request.LockoutEnd;
+            user.LockoutEnabled = request.LockoutEnabled;
+            user.SecurityStamp = Guid.NewGuid().ToString();
+            user.ConcurrencyStamp = Guid.NewGuid().ToString();
+        }, cancellationToken);
     }
 
     /// <inheritdoc />
     public async Task<bool> DeleteAsync(int databaseId, CancellationToken cancellationToken)
     {
-        var user = await dbContext.Users.SingleOrDefaultAsync(
-            value => value.DatabaseID == databaseId, cancellationToken);
-        if (user is null)
-        {
-            return false;
-        }
+        return await MutateAsync(databaseId, (context, user) => context.Users.Remove(user), cancellationToken);
+    }
 
-        dbContext.Users.Remove(user);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return true;
+    private async Task<bool> MutateAsync(int databaseId, Action<EmployeeIdentityDbContext, LegacyIdentityRow> mutation, CancellationToken cancellationToken)
+    {
+        if (recoveryOptions?.Enabled != true) throw new EmployeeRecoveryUnavailableException();
+        try
+        {
+            return await dbContext.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+            {
+                await using var fresh = new EmployeeIdentityDbContext((DbContextOptions<EmployeeIdentityDbContext>)dbContext.GetService<IDbContextOptions>());
+                await EmployeeRecoverySchema.EnsureEmployeeAsync(fresh, cancellationToken);
+                await using var transaction = await fresh.Database.BeginTransactionAsync(cancellationToken);
+                var user = await fresh.Users.FromSqlInterpolated($"SELECT * FROM \"AspNetUsers\" WHERE \"DatabaseID\" = {databaseId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken);
+                if (user is null) return false;
+                // Identity lock MUST precede this employee-local intent/receipt read. Never acquire an Auth lock here.
+                if (await fresh.RecoveryEffects.AnyAsync(x => x.IdentityId == user.Id && x.FinalizedAcknowledgedAt == null, cancellationToken)) throw new EmployeeRecoveryUnavailableException();
+                mutation(fresh, user);
+                await fresh.SaveChangesAsync(cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                return true;
+            });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (EmployeeRecoveryUnavailableException) { throw; }
+        catch { throw new EmployeeRecoveryUnavailableException(); }
     }
 
     private static EmployeeIdentityResponse Project(LegacyIdentityRow user) => new(

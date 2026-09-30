@@ -3,227 +3,282 @@ using Legacy.Maliev.AuthService.Domain;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using System.Security.Cryptography;
 using System.Text;
 
 namespace Legacy.Maliev.AuthService.Infrastructure;
 
-/// <summary>Owns employee confirmation and recovery without changing the legacy identity schema.</summary>
-public sealed class EmployeeSelfService(
-    EmployeeIdentityDbContext employees,
-    RefreshSessionDbContext state,
-    IPasswordHasher<LegacyIdentityRow> passwordHasher,
-    TimeProvider timeProvider)
+/// <summary>Coordinates employee recovery using an atomic identity receipt and retryable Auth finalization.</summary>
+public sealed class EmployeeSelfService(EmployeeIdentityDbContext employees, RefreshSessionDbContext state,
+    IPasswordHasher<LegacyIdentityRow> passwordHasher, TimeProvider timeProvider, EmployeeRecoveryOptions? options = null)
 {
-    private const string EmailConfirmation = "employee-email-confirmation";
-    private const string PasswordReset = "employee-password-reset";
-    private static readonly TimeSpan ActionLifetime = TimeSpan.FromHours(24);
+    internal const string EmailConfirmation = "employee-email-confirmation";
+    internal const string PasswordReset = "employee-password-reset";
+    private EmployeeIdentityDbContext NewEmployees() => new((DbContextOptions<EmployeeIdentityDbContext>)employees.GetService<IDbContextOptions>());
+    private RefreshSessionDbContext NewState() => new((DbContextOptions<RefreshSessionDbContext>)state.GetService<IDbContextOptions>());
 
-    /// <summary>Creates a confirmation challenge for a known unconfirmed employee.</summary>
-    public Task<EmployeeActionChallenge> RequestEmailConfirmationAsync(
-        EmployeeActionRequest request,
-        CancellationToken cancellationToken) =>
-        CreateChallengeAsync(request.Email, EmailConfirmation, requireUnconfirmed: true, cancellationToken);
+    public Task<EmployeeActionChallenge> RequestEmailConfirmationAsync(EmployeeActionRequest request, string ownerSubject, CancellationToken cancellationToken) =>
+        CreateChallengeAsync(request.Email, ownerSubject, EmailConfirmation, true, cancellationToken);
+    public Task<EmployeeActionChallenge> RequestPasswordResetAsync(EmployeeActionRequest request, string ownerSubject, CancellationToken cancellationToken) =>
+        CreateChallengeAsync(request.Email, ownerSubject, PasswordReset, false, cancellationToken);
+    public Task<bool> ConfirmEmailAsync(CompleteEmployeeActionRequest request, string ownerSubject, CancellationToken cancellationToken) =>
+        CompleteAsync(request.Email, request.Token, null, ownerSubject, EmailConfirmation, cancellationToken);
+    public Task<bool> CompletePasswordResetAsync(CompleteEmployeePasswordResetRequest request, string ownerSubject, CancellationToken cancellationToken) =>
+        CompleteAsync(request.Email, request.Token, request.Password, ownerSubject, PasswordReset, cancellationToken);
 
-    /// <summary>Creates a reset challenge without revealing missing employee identities.</summary>
-    public Task<EmployeeActionChallenge> RequestPasswordResetAsync(
-        EmployeeActionRequest request,
-        CancellationToken cancellationToken) =>
-        CreateChallengeAsync(request.Email, PasswordReset, requireUnconfirmed: false, cancellationToken);
-
-    /// <summary>Confirms an employee email using a single-use challenge.</summary>
-    public async Task<bool> ConfirmEmailAsync(
-        CompleteEmployeeActionRequest request,
-        CancellationToken cancellationToken)
+    private async Task EnsureReadyAsync(CancellationToken cancellationToken)
     {
-        var row = await FindAsync(request.Email, cancellationToken);
-        if (row is null || !await ConsumeAsync(row, EmailConfirmation, request.Token, cancellationToken))
-        {
-            return false;
-        }
-
-        row.EmailConfirmed = true;
-        RotateSecurityStamp(row);
-        await employees.SaveChangesAsync(cancellationToken);
-        return true;
+        if (options?.Enabled != true) throw new EmployeeRecoveryUnavailableException();
+        await using var employeeProbe = NewEmployees();
+        await using var stateProbe = NewState();
+        await EmployeeRecoverySchema.EnsureAsync(employeeProbe, stateProbe, cancellationToken);
     }
 
-    /// <summary>Replaces an employee password using a single-use challenge.</summary>
-    public async Task<bool> CompletePasswordResetAsync(
-        CompleteEmployeePasswordResetRequest request,
-        CancellationToken cancellationToken)
+    private async Task<EmployeeActionChallenge> CreateChallengeAsync(string email, string owner, string purpose, bool requireUnconfirmed, CancellationToken cancellationToken)
     {
-        var row = await FindAsync(request.Email, cancellationToken);
-        if (row is null || !await ConsumeAsync(row, PasswordReset, request.Token, cancellationToken))
+        if (!ValidOwner(owner)) throw new EmployeeRecoveryUnavailableException();
+        await EnsureReadyAsync(cancellationToken);
+        var normalized = Normalize(email);
+        // Bootstrap is a conditional write before the coordinator, never an overwrite of a winning admin/bootstrap.
+        await using var lookup = NewEmployees();
+        var observed = await lookup.Users.AsNoTracking().SingleOrDefaultAsync(x => x.NormalizedEmail == normalized, cancellationToken);
+        if (observed is null || (requireUnconfirmed && observed.EmailConfirmed)) return new(true, null);
+        if (string.IsNullOrWhiteSpace(observed.SecurityStamp))
         {
-            return false;
+            var initial = Guid.NewGuid().ToString();
+            var changed = await lookup.Users.Where(x => x.Id == observed.Id && x.SecurityStamp == observed.SecurityStamp && x.NormalizedEmail == normalized)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.SecurityStamp, initial), cancellationToken);
+            if (changed != 1) return new(true, null);
         }
-
-        row.PasswordHash = passwordHasher.HashPassword(row, request.Password);
-        row.AccessFailedCount = 0;
-        row.LockoutEnd = null;
-        RotateSecurityStamp(row);
-        await employees.SaveChangesAsync(cancellationToken);
-        await RevokeEmployeeRefreshSessionsAsync(row.Id, cancellationToken);
-        return true;
-    }
-
-    private async Task<EmployeeActionChallenge> CreateChallengeAsync(
-        string email,
-        string purpose,
-        bool requireUnconfirmed,
-        CancellationToken cancellationToken)
-    {
-        var row = await FindAsync(email, cancellationToken);
-        if (row is null || (requireUnconfirmed && row.EmailConfirmed)
-            || string.IsNullOrWhiteSpace(row.NormalizedEmail))
+        var acknowledgements = new List<Guid>();
+        var result = await state.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
         {
-            return new(true, null);
-        }
-
-        if (string.IsNullOrWhiteSpace(row.SecurityStamp))
-        {
-            var previousStamp = row.SecurityStamp;
-            var initialStamp = Guid.NewGuid().ToString();
-            var observedEmail = row.NormalizedEmail;
-            // Initialize only the exact migrated state observed; a concurrent admin update wins.
-            var initialized = await employees.Users.Where(value => value.Id == row.Id
-                    && value.SecurityStamp == previousStamp && value.NormalizedEmail == observedEmail)
-                .ExecuteUpdateAsync(setters => setters.SetProperty(value => value.SecurityStamp, initialStamp), cancellationToken);
-            await employees.Entry(row).ReloadAsync(cancellationToken);
-            if (initialized != 1 || employees.Entry(row).State == EntityState.Detached
-                || row.SecurityStamp != initialStamp || row.NormalizedEmail != observedEmail
-                || (requireUnconfirmed && row.EmailConfirmed))
+            acknowledgements.Clear();
+            await using var auth = NewState();
+            await using var transaction = await auth.Database.BeginTransactionAsync(cancellationToken);
+            await LockCoordinatorAsync(auth, observed.Id, cancellationToken);
+            // Reconcile committed effects before superseding; never acquire Auth locks while holding an identity lock.
+            await using (var reader = NewEmployees())
             {
-                return new(true, null);
+                var pending = await reader.RecoveryEffects.AsNoTracking().Where(x => x.IdentityId == observed.Id && x.FinalizedAcknowledgedAt == null)
+                    .OrderBy(x => x.AppliedAt).ToListAsync(cancellationToken);
+                foreach (var receipt in pending)
+                {
+                    await FinalizeAsync(auth, receipt, cancellationToken);
+                    acknowledgements.Add(receipt.ActionId);
+                }
             }
-        }
-
-        var token = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
-        var now = timeProvider.GetUtcNow();
-        await SupersedeActiveChallengesAsync(row.Id, purpose, now, cancellationToken);
-        state.IdentityActionTokens.Add(new()
-        {
-            Id = Guid.NewGuid(),
-            IdentityId = row.Id,
-            Purpose = purpose,
-            TokenHash = HashBoundToken(token, row),
-            CreatedAt = now,
-            ExpiresAt = now.Add(ActionLifetime),
+            await using var strategyContext = NewEmployees();
+            var locked = await strategyContext.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+            {
+                await using var fresh = NewEmployees();
+                await using var identityTransaction = await fresh.Database.BeginTransactionAsync(cancellationToken);
+                var row = await LockIdentityAsync(fresh, observed.Id, cancellationToken);
+                if (row is null || row.NormalizedEmail != normalized || string.IsNullOrWhiteSpace(row.SecurityStamp) || (requireUnconfirmed && row.EmailConfirmed)) return null;
+                await identityTransaction.CommitAsync(cancellationToken);
+                return row;
+            });
+            if (locked is null)
+            {
+                await transaction.CommitAsync(cancellationToken);
+                return new EmployeeActionChallenge(true, null);
+            }
+            var token = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+            var now = timeProvider.GetUtcNow();
+            await auth.IdentityActionTokens.Where(x => x.IdentityId == locked.Id && x.Purpose == purpose && x.ConsumedAt == null)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.ConsumedAt, now), cancellationToken);
+            auth.IdentityActionTokens.Add(new()
+            {
+                Id = Guid.NewGuid(),
+                IdentityId = locked.Id,
+                Purpose = purpose,
+                TokenHash = HashBoundToken(token, locked.SecurityStamp!, normalized),
+                OriginalTokenSha256 = HashToken(token),
+                OwnerSubject = owner,
+                BoundNormalizedEmail = normalized,
+                BoundSecurityStamp = locked.SecurityStamp,
+                RecoveryVersion = 1,
+                CreatedAt = now,
+                ExpiresAt = now.AddHours(24),
+            });
+            await auth.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return new EmployeeActionChallenge(true, token);
         });
-        await state.SaveChangesAsync(cancellationToken);
-        return new(true, token);
+        foreach (var id in acknowledgements) await AcknowledgeAsync(id, cancellationToken);
+        return result;
     }
 
-    private async Task RevokeEmployeeRefreshSessionsAsync(
-        string identityId,
-        CancellationToken cancellationToken)
+    private async Task<bool> CompleteAsync(string email, string token, string? password, string owner, string purpose, CancellationToken cancellationToken)
     {
+        if (!ValidOwner(owner)) return false;
+        await EnsureReadyAsync(cancellationToken);
+        var normalized = Normalize(email);
+        var digest = HashToken(token);
+        var attemptedFinalizations = new HashSet<Guid>();
+        Guid? acknowledgement = null;
+        try
+        {
+            // Auth retries use fresh contexts. The separate employee transaction always probes its durable receipt
+            // UNDER the identity lock before mutation, including unknown prior commit outcomes. Never blindly replay two DBs.
+            var result = await state.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+            {
+                await using var auth = NewState();
+                var candidate = await auth.IdentityActionTokens.AsNoTracking().SingleOrDefaultAsync(x => x.OriginalTokenSha256 == digest && x.Purpose == purpose && x.RecoveryVersion == 1, cancellationToken);
+                if (candidate is null || candidate.OwnerSubject != owner || candidate.BoundNormalizedEmail != normalized) return false;
+                await using var transaction = await auth.Database.BeginTransactionAsync(cancellationToken);
+                await LockCoordinatorAsync(auth, candidate.IdentityId, cancellationToken);
+                var action = await LockActionAsync(auth, candidate.Id, cancellationToken);
+                if (action is null || action.OwnerSubject != owner || action.BoundNormalizedEmail != normalized) return false;
+                await using var probe = NewEmployees();
+                var receipt = await probe.RecoveryEffects.AsNoTracking().SingleOrDefaultAsync(x => x.ActionId == action.Id, cancellationToken);
+                if (action.ConsumedAt is not null)
+                {
+                    // Confirm an unknown Auth commit from THIS call, not a later terminal replay.
+                    if (action.FinalizedAt is null || !attemptedFinalizations.Contains(action.Id) || receipt is null || !Matches(receipt, action, password)) return false;
+                    acknowledgement = action.Id;
+                    return true;
+                }
+                if (receipt is not null)
+                {
+                    if (!Matches(receipt, action, password)) return false;
+                }
+                else
+                {
+                    if (action.ExpiresAt <= timeProvider.GetUtcNow()) return false;
+                    // Nonterminal reservation precedes identity locking; a winning admin is re-read under FOR UPDATE.
+                    await auth.IdentityActionTokens.Where(x => x.Id == action.Id).ExecuteUpdateAsync(s => s.SetProperty(x => x.RecoveryVersion, 1), cancellationToken);
+                    receipt = await ApplyIdentityEffectAsync(action, password, cancellationToken);
+                    if (receipt is null || !Matches(receipt, action, password)) return false;
+                }
+                attemptedFinalizations.Add(action.Id);
+                await FinalizeAsync(auth, receipt, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+                acknowledgement = action.Id;
+                return true;
+            });
+            if (acknowledgement is { } id) await AcknowledgeAsync(id, cancellationToken);
+            return result;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (EmployeeRecoveryUnavailableException) { throw; }
+        catch { throw new EmployeeRecoveryUnavailableException(); }
+    }
+
+    private async Task<EmployeeRecoveryEffect?> ApplyIdentityEffectAsync(IdentityActionToken action, string? password, CancellationToken cancellationToken)
+    {
+        return await employees.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+        {
+            await using var identity = NewEmployees();
+            await using var transaction = await identity.Database.BeginTransactionAsync(cancellationToken);
+            var row = await LockIdentityAsync(identity, action.IdentityId, cancellationToken);
+            var existing = await identity.RecoveryEffects.AsNoTracking().SingleOrDefaultAsync(x => x.ActionId == action.Id, cancellationToken);
+            if (existing is not null) return existing;
+            if (row is null || row.NormalizedEmail != action.BoundNormalizedEmail || row.SecurityStamp != action.BoundSecurityStamp || string.IsNullOrWhiteSpace(row.SecurityStamp)) return null;
+            var outstanding = await identity.RecoveryEffects.AnyAsync(x => x.IdentityId == row.Id && x.FinalizedAcknowledgedAt == null, cancellationToken);
+            // Lock waits/database retries can outlive the preliminary check. Expiry gates only a NEW effect,
+            // at the fresh under-lock boundary after awaited reads; a committed receipt above still finalizes.
+            if (action.ExpiresAt <= timeProvider.GetUtcNow()) return null;
+            if (outstanding) throw new EmployeeRecoveryUnavailableException();
+            var before = row.SecurityStamp;
+            if (action.Purpose == PasswordReset)
+            {
+                if (password is null) return null;
+                row.PasswordHash = passwordHasher.HashPassword(row, password);
+                row.AccessFailedCount = 0;
+                row.LockoutEnd = null;
+            }
+            else if (action.Purpose == EmailConfirmation) row.EmailConfirmed = true;
+            else return null;
+            row.SecurityStamp = Guid.NewGuid().ToString();
+            row.ConcurrencyStamp = Guid.NewGuid().ToString();
+            var receipt = new EmployeeRecoveryEffect
+            {
+                ActionId = action.Id,
+                TokenSha256 = action.OriginalTokenSha256!,
+                Purpose = action.Purpose,
+                OwnerSubject = action.OwnerSubject!,
+                IdentityId = row.Id,
+                NormalizedEmail = action.BoundNormalizedEmail!,
+                BeforeSecurityStamp = before,
+                AfterSecurityStamp = row.SecurityStamp,
+                AfterConcurrencyStamp = row.ConcurrencyStamp,
+                PasswordPayloadHash = action.Purpose == PasswordReset ? row.PasswordHash : null,
+                AppliedAt = timeProvider.GetUtcNow(),
+            };
+            identity.RecoveryEffects.Add(receipt);
+            await identity.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return receipt;
+        });
+    }
+
+    private bool Matches(EmployeeRecoveryEffect receipt, IdentityActionToken action, string? password) =>
+        MatchesBinding(receipt, action) && (receipt.Purpose == EmailConfirmation ? password is null
+            : password is not null && receipt.PasswordPayloadHash is not null
+                && passwordHasher.VerifyHashedPassword(new LegacyIdentityRow { Id = receipt.IdentityId }, receipt.PasswordPayloadHash, password) != PasswordVerificationResult.Failed);
+
+    private static bool MatchesBinding(EmployeeRecoveryEffect receipt, IdentityActionToken action) =>
+        action.RecoveryVersion == 1 && receipt.ActionId == action.Id && receipt.TokenSha256 == action.OriginalTokenSha256
+        && receipt.OwnerSubject == action.OwnerSubject && receipt.Purpose == action.Purpose && receipt.IdentityId == action.IdentityId
+        && receipt.NormalizedEmail == action.BoundNormalizedEmail && receipt.BeforeSecurityStamp == action.BoundSecurityStamp;
+
+    private async Task FinalizeAsync(RefreshSessionDbContext auth, EmployeeRecoveryEffect receipt, CancellationToken cancellationToken)
+    {
+        var action = await LockActionAsync(auth, receipt.ActionId, cancellationToken);
+        if (action is null || !MatchesBinding(receipt, action)) throw new EmployeeRecoveryUnavailableException();
+        if (action.FinalizedAt is not null && action.EffectActionId == receipt.ActionId) return;
+        if (action.ConsumedAt is not null) throw new EmployeeRecoveryUnavailableException();
         var now = timeProvider.GetUtcNow();
-        var active = state.RefreshSessions.Where(value =>
-            value.IdentityId == identityId
-            && value.IdentityKind == IdentityKind.Employee
-            && value.RevokedAt == null);
-        if (state.Database.IsRelational())
+        if (receipt.Purpose == PasswordReset)
         {
-            await active.ExecuteUpdateAsync(
-                setters => setters.SetProperty(value => value.RevokedAt, now),
-                cancellationToken);
-            return;
+            // Explicit NULL handling for legacy sessions; preserve later/new generations.
+            await auth.RefreshSessions.Where(x => x.IdentityId == receipt.IdentityId && x.IdentityKind == IdentityKind.Employee && x.RevokedAt == null
+                && (x.SecurityStamp == receipt.BeforeSecurityStamp || x.SecurityStamp == null))
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, now), cancellationToken);
         }
-
-        foreach (var session in await active.ToListAsync(cancellationToken))
-        {
-            session.RevokedAt = now;
-        }
-
-        await state.SaveChangesAsync(cancellationToken);
+        await auth.IdentityActionTokens.Where(x => x.Id == action.Id && x.ConsumedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.ConsumedAt, now).SetProperty(x => x.FinalizedAt, now).SetProperty(x => x.EffectActionId, receipt.ActionId), cancellationToken);
     }
 
-    private async Task SupersedeActiveChallengesAsync(
-        string identityId,
-        string purpose,
-        DateTimeOffset now,
-        CancellationToken cancellationToken)
+    public async Task<int> ReconcileOutstandingAsync(CancellationToken cancellationToken)
     {
-        var active = state.IdentityActionTokens.Where(value =>
-            value.IdentityId == identityId
-            && value.Purpose == purpose
-            && value.ConsumedAt == null);
-        if (state.Database.IsRelational())
+        await EnsureReadyAsync(cancellationToken);
+        await using var reader = NewEmployees();
+        var receipts = await reader.RecoveryEffects.AsNoTracking().Where(x => x.FinalizedAcknowledgedAt == null).OrderBy(x => x.AppliedAt).Take(32).ToListAsync(cancellationToken);
+        var completed = 0;
+        foreach (var receipt in receipts)
         {
-            await active.ExecuteUpdateAsync(
-                setters => setters.SetProperty(value => value.ConsumedAt, now),
-                cancellationToken);
-            return;
+            await state.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+            {
+                await using var auth = NewState();
+                await using var transaction = await auth.Database.BeginTransactionAsync(cancellationToken);
+                await LockCoordinatorAsync(auth, receipt.IdentityId, cancellationToken);
+                await FinalizeAsync(auth, receipt, cancellationToken);
+                await transaction.CommitAsync(cancellationToken);
+            });
+            await AcknowledgeAsync(receipt.ActionId, cancellationToken);
+            completed++;
         }
-
-        foreach (var challenge in await active.ToListAsync(cancellationToken))
-        {
-            challenge.ConsumedAt = now;
-        }
+        return completed;
     }
 
-    private async Task<LegacyIdentityRow?> FindAsync(string email, CancellationToken cancellationToken)
+    private async Task AcknowledgeAsync(Guid actionId, CancellationToken cancellationToken)
     {
-        var normalized = email.Trim().ToUpperInvariant();
-        var row = await employees.Users.SingleOrDefaultAsync(
-            value => value.NormalizedEmail == normalized,
-            cancellationToken);
-        if (row is null)
-        {
-            return null;
-        }
-
-        // A tracked row may predate an admin change made through another context.
-        await employees.Entry(row).ReloadAsync(cancellationToken);
-        return employees.Entry(row).State == EntityState.Detached || row.NormalizedEmail != normalized ? null : row;
+        await using var fresh = NewEmployees();
+        await fresh.RecoveryEffects.Where(x => x.ActionId == actionId && x.FinalizedAcknowledgedAt == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.FinalizedAcknowledgedAt, timeProvider.GetUtcNow()), cancellationToken);
     }
 
-    private async Task<bool> ConsumeAsync(
-        LegacyIdentityRow identity,
-        string purpose,
-        string token,
-        CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(identity.SecurityStamp) || string.IsNullOrWhiteSpace(identity.NormalizedEmail))
-        {
-            return false;
-        }
-
-        var now = timeProvider.GetUtcNow();
-        var hash = HashBoundToken(token, identity);
-        var query = state.IdentityActionTokens.Where(value =>
-            value.IdentityId == identity.Id
-            && value.Purpose == purpose
-            && value.TokenHash == hash
-            && value.ConsumedAt == null
-            && value.ExpiresAt > now);
-        if (state.Database.IsRelational())
-        {
-            return await query.ExecuteUpdateAsync(
-                setters => setters.SetProperty(value => value.ConsumedAt, now),
-                cancellationToken) == 1;
-        }
-
-        var action = await query.SingleOrDefaultAsync(cancellationToken);
-        if (action is null)
-        {
-            return false;
-        }
-
-        action.ConsumedAt = now;
-        await state.SaveChangesAsync(cancellationToken);
-        return true;
-    }
-
-    private static string HashBoundToken(string token, LegacyIdentityRow identity) =>
-        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
-            $"{token}:{identity.SecurityStamp}:{identity.NormalizedEmail}")));
-
-    private static void RotateSecurityStamp(LegacyIdentityRow row)
-    {
-        row.SecurityStamp = Guid.NewGuid().ToString();
-        row.ConcurrencyStamp = Guid.NewGuid().ToString();
-    }
+    internal static async Task LockCoordinatorAsync(RefreshSessionDbContext auth, string identityId, CancellationToken cancellationToken) =>
+        await auth.Database.ExecuteSqlInterpolatedAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"employee-recovery:" + identityId}, 0))", cancellationToken);
+    internal static Task<LegacyIdentityRow?> LockIdentityAsync(EmployeeIdentityDbContext identity, string id, CancellationToken cancellationToken) =>
+        identity.Users.FromSqlInterpolated($"SELECT * FROM \"AspNetUsers\" WHERE \"Id\" = {id} FOR UPDATE").SingleOrDefaultAsync(cancellationToken);
+    private static Task<IdentityActionToken?> LockActionAsync(RefreshSessionDbContext auth, Guid id, CancellationToken cancellationToken) =>
+        auth.IdentityActionTokens.FromSqlInterpolated($"SELECT * FROM identity_action_tokens WHERE \"Id\" = {id} FOR UPDATE").AsNoTracking().SingleOrDefaultAsync(cancellationToken);
+    private static bool ValidOwner(string owner) => !string.IsNullOrWhiteSpace(owner) && owner.Length <= 256;
+    private static string Normalize(string email) => email.Trim().ToUpperInvariant();
+    private static string HashToken(string token) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+    private static string HashBoundToken(string token, string stamp, string email) => HashToken($"{token}:{stamp}:{email}");
 }

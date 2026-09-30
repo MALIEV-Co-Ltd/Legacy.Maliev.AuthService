@@ -17,38 +17,74 @@ public sealed class EmployeeSelfServiceController(EmployeeSelfService service) :
     /// <summary>Creates a one-time email confirmation challenge for delivery by the BFF.</summary>
     [HttpPost("email-confirmation/request")]
     [RequirePermission(EmployeeSelfServicePermissions.Use)]
-    public Task<EmployeeActionChallenge> RequestEmailConfirmation(
+    public async Task<ActionResult<EmployeeActionChallenge>> RequestEmailConfirmation(
         EmployeeActionRequest request,
-        CancellationToken cancellationToken) =>
-        service.RequestEmailConfirmationAsync(request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var owner = Owner();
+        if (owner is null) return BadRequest(InvalidAction());
+        try { return await service.RequestEmailConfirmationAsync(request, owner, cancellationToken); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch { return Unavailable(); }
+    }
 
     /// <summary>Consumes a one-time employee email confirmation challenge.</summary>
     [HttpPost("email-confirmation/complete")]
     [RequirePermission(EmployeeSelfServicePermissions.Use)]
     public async Task<IActionResult> ConfirmEmail(
         CompleteEmployeeActionRequest request,
-        CancellationToken cancellationToken) =>
-        await service.ConfirmEmailAsync(request, cancellationToken)
-            ? NoContent()
-            : BadRequest(InvalidAction());
+        CancellationToken cancellationToken)
+    {
+        var owner = Owner();
+        if (owner is null) return BadRequest(InvalidAction());
+        try { return await service.ConfirmEmailAsync(request, owner, cancellationToken) ? NoContent() : BadRequest(InvalidAction()); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch { return Unavailable(); }
+    }
 
     /// <summary>Creates a one-time employee password reset challenge for delivery by the BFF.</summary>
     [HttpPost("password-reset/request")]
     [RequirePermission(EmployeeSelfServicePermissions.Use)]
-    public Task<EmployeeActionChallenge> RequestPasswordReset(
+    public async Task<ActionResult<EmployeeActionChallenge>> RequestPasswordReset(
         EmployeeActionRequest request,
-        CancellationToken cancellationToken) =>
-        service.RequestPasswordResetAsync(request, cancellationToken);
+        CancellationToken cancellationToken)
+    {
+        var owner = Owner();
+        if (owner is null) return BadRequest(InvalidAction());
+        try { return await service.RequestPasswordResetAsync(request, owner, cancellationToken); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch { return Unavailable(); }
+    }
 
     /// <summary>Consumes a one-time employee password reset challenge and rotates security state.</summary>
     [HttpPost("password-reset/complete")]
     [RequirePermission(EmployeeSelfServicePermissions.Use)]
     public async Task<IActionResult> CompletePasswordReset(
         CompleteEmployeePasswordResetRequest request,
-        CancellationToken cancellationToken) =>
-        await service.CompletePasswordResetAsync(request, cancellationToken)
-            ? NoContent()
-            : BadRequest(InvalidAction());
+        CancellationToken cancellationToken)
+    {
+        var owner = Owner();
+        if (owner is null) return BadRequest(InvalidAction());
+        try { return await service.CompletePasswordResetAsync(request, owner, cancellationToken) ? NoContent() : BadRequest(InvalidAction()); }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch { return Unavailable(); }
+    }
+
+    private string? Owner()
+    {
+        var principal = ControllerContext.HttpContext?.User;
+        if (principal is null) return null;
+        var subjects = principal.FindAll("sub").ToArray();
+        return principal.Identity?.IsAuthenticated == true && subjects.Length == 1
+            && !string.IsNullOrWhiteSpace(subjects[0].Value) && subjects[0].Value.Length <= 256 ? subjects[0].Value : null;
+    }
+
+    private ObjectResult Unavailable() => StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+    {
+        Status = StatusCodes.Status503ServiceUnavailable,
+        Title = "Identity action unavailable",
+        Detail = "The identity action is temporarily unavailable. Please retry later.",
+    });
 
     private static ProblemDetails InvalidAction() => new()
     {

@@ -138,4 +138,30 @@ public sealed class CustomerIdentityCreateOperation
 
 /// <summary>Read-only employee identity context.</summary>
 public sealed class EmployeeIdentityDbContext(DbContextOptions<EmployeeIdentityDbContext> options)
-    : LegacyIdentityDbContext(options);
+    : LegacyIdentityDbContext(options)
+{
+    public DbSet<EmployeeRecoveryEffect> RecoveryEffects => Set<EmployeeRecoveryEffect>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+        var effect = modelBuilder.Entity<EmployeeRecoveryEffect>();
+        effect.ToTable("EmployeeRecoveryEffects", table =>
+        {
+            table.HasCheckConstraint("CK_EmployeeRecoveryEffects_PurposePayload", "(\"Purpose\" = 'employee-password-reset' AND \"PasswordPayloadHash\" IS NOT NULL) OR (\"Purpose\" = 'employee-email-confirmation' AND \"PasswordPayloadHash\" IS NULL)");
+            table.HasCheckConstraint("CK_EmployeeRecoveryEffects_Binding", "length(\"TokenSha256\") = 64 AND length(\"OwnerSubject\") > 0 AND length(\"BeforeSecurityStamp\") > 0 AND length(\"AfterSecurityStamp\") > 0");
+        });
+        effect.HasKey(x => x.ActionId);
+        effect.Property(x => x.TokenSha256).HasMaxLength(64).IsRequired();
+        effect.Property(x => x.Purpose).HasMaxLength(32).IsRequired();
+        effect.Property(x => x.OwnerSubject).HasMaxLength(256).IsRequired();
+        effect.Property(x => x.IdentityId).HasMaxLength(450).IsRequired();
+        effect.Property(x => x.NormalizedEmail).HasMaxLength(256).IsRequired();
+        effect.Property(x => x.BeforeSecurityStamp).IsRequired();
+        effect.Property(x => x.AfterSecurityStamp).IsRequired();
+        effect.Property(x => x.AfterConcurrencyStamp).IsRequired();
+        effect.HasIndex(x => new { x.TokenSha256, x.Purpose }).IsUnique();
+        effect.HasIndex(x => new { x.IdentityId, x.FinalizedAcknowledgedAt });
+        effect.HasIndex(x => new { x.FinalizedAcknowledgedAt, x.AppliedAt });
+    }
+}
