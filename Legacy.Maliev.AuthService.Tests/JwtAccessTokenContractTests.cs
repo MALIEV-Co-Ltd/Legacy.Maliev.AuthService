@@ -12,6 +12,28 @@ namespace Legacy.Maliev.AuthService.Tests;
 
 public sealed class JwtAccessTokenContractTests
 {
+    [Fact]
+    public void EmployeeToken_WithoutPersistedSessionId_RefusesIssuance()
+    {
+        using var fixture = new TokenFixture();
+        Assert.Throws<ArgumentException>(() => fixture.Issuer.Issue(EmployeeIdentity(), Now, null));
+    }
+
+    [Fact]
+    public void EmployeeToken_EmptyPersistedSessionId_RefusesIssuance()
+    {
+        using var fixture = new TokenFixture();
+        Assert.Throws<ArgumentException>(() => fixture.Issuer.Issue(EmployeeIdentity(), Now, Guid.Empty));
+    }
+
+    [Fact]
+    public void CustomerToken_SuppliedEmployeeSessionId_RefusesIssuance()
+    {
+        using var fixture = new TokenFixture();
+        Assert.Throws<ArgumentException>(() => fixture.Issuer.Issue(CustomerIdentity(), Now,
+            Guid.Parse("3700f80a-311f-4844-b1c8-96cf737ef9cb")));
+    }
+
     private const string CatalogMaterialsRead = "legacy-catalog.materials.read";
     private const string CatalogMaterialsCreate = "legacy-catalog.materials.create";
     private const string CatalogMaterialsUpdate = "legacy-catalog.materials.update";
@@ -213,7 +235,7 @@ public sealed class JwtAccessTokenContractTests
         using var fixture = new TokenFixture();
         var identity = CustomerIdentity() with { HasPassword = false };
 
-        var token = fixture.ReadAndValidate(fixture.Issuer.Issue(identity, Now).Value);
+        var token = fixture.ReadAndValidate(fixture.Issuer.Issue(identity, Now, null).Value);
 
         Assert.Equal("false", token.Claims.Single(claim => claim.Type == "has_password").Value);
     }

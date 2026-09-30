@@ -298,14 +298,14 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         {
             return tokenIssuer.Issue(
                 new LegacyIdentity("employee-7", "employee@maliev.com", "employee@maliev.com", IdentityKind.Employee, 7, "stamp"),
-                Now).Value;
+                Now, Guid.Parse("3700f80a-311f-4844-b1c8-96cf737ef9cb")).Value;
         }
 
         public string IssueCustomer()
         {
             return tokenIssuer.Issue(
                 new LegacyIdentity("customer-42", "customer@maliev.com", "customer@maliev.com", IdentityKind.Customer, 42, "stamp"),
-                Now).Value;
+                Now, null).Value;
         }
 
         public string IssueService(IReadOnlyList<string> permissions)

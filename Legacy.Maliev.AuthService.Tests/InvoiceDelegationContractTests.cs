@@ -204,7 +204,8 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
             issuer.IssueService(clientId, permissions ?? [LegacyAccessTokenPermissions.InvoiceDelegationIssue], DateTimeOffset.UtcNow).Value;
 
         public string IssueEmployee(string subject, IdentityKind kind = IdentityKind.Employee) =>
-            issuer.Issue(new LegacyIdentity(subject, "employee@maliev.com", "employee@maliev.com", kind, 7, "stamp"), DateTimeOffset.UtcNow).Value;
+            issuer.Issue(new LegacyIdentity(subject, "employee@maliev.com", "employee@maliev.com", kind, 7, "stamp"), DateTimeOffset.UtcNow,
+                kind == IdentityKind.Employee ? Guid.Parse("3700f80a-311f-4844-b1c8-96cf737ef9cb") : null).Value;
 
         public string IssueCustomEmployee(
             string subject,

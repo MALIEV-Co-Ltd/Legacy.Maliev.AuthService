@@ -70,7 +70,7 @@ public sealed class GoogleAuthenticationService(
         };
         await refreshSessionStore.CreateAsync(session, cancellationToken);
 
-        var access = accessTokenIssuer.Issue(identity, now);
+        var access = accessTokenIssuer.Issue(identity, now, session.Id);
         return new GoogleExchangeResult(
             true,
             new TokenResponse(access.Value, refreshToken, "Bearer", access.ExpiresInSeconds, session.ExpiresAt),

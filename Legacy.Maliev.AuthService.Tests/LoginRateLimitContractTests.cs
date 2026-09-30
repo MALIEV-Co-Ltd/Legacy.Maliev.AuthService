@@ -337,7 +337,7 @@ public sealed class LoginRateLimitContractTests
 
     private sealed class NoopTokenIssuer : IAccessTokenIssuer, IServiceAccessTokenIssuer
     {
-        public IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now) => new("unused", 900);
+        public IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now, Guid? employeeSessionId) => new("unused", 900);
 
         public IssuedAccessToken IssueService(
             string clientId,

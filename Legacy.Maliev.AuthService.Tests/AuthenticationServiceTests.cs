@@ -191,7 +191,7 @@ public sealed class AuthenticationServiceTests
 
     private sealed class StubTokenIssuer : IAccessTokenIssuer
     {
-        public IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now) => new("signed.jwt", 900);
+        public IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now, Guid? employeeSessionId) => new("signed.jwt", 900);
     }
 
     private sealed class StubLoginActions(string? token) : ICustomerLoginActionLifecycle

@@ -64,7 +64,7 @@ public sealed class AuthenticationService(
         var session = CreateSession(identity, Hash(rawRefreshToken), Guid.NewGuid(), now);
         await refreshSessionStore.CreateAsync(session, cancellationToken);
 
-        return AuthenticationResult.Success(CreateTokenResponse(identity, rawRefreshToken, session.ExpiresAt, now));
+        return AuthenticationResult.Success(CreateTokenResponse(identity, rawRefreshToken, session.Id, session.ExpiresAt, now));
     }
 
     /// <summary>Rotates a valid refresh token exactly once.</summary>
@@ -100,7 +100,7 @@ public sealed class AuthenticationService(
         }
 
         return AuthenticationResult.Success(
-            CreateTokenResponse(identity, replacementToken, replacement.ExpiresAt, now));
+            CreateTokenResponse(identity, replacementToken, replacement.Id, replacement.ExpiresAt, now));
     }
 
     /// <summary>Revokes the complete refresh-token family without revealing token validity.</summary>
@@ -110,10 +110,11 @@ public sealed class AuthenticationService(
     private TokenResponse CreateTokenResponse(
         LegacyIdentity identity,
         string refreshToken,
+        Guid sessionId,
         DateTimeOffset refreshExpiresAt,
         DateTimeOffset now)
     {
-        var accessToken = accessTokenIssuer.Issue(identity, now);
+        var accessToken = accessTokenIssuer.Issue(identity, now, identity.Kind == IdentityKind.Employee ? sessionId : null);
         return new TokenResponse(accessToken.Value, refreshToken, "Bearer", accessToken.ExpiresInSeconds, refreshExpiresAt);
     }
 
