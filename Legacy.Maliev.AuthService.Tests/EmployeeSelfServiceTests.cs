@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Time.Testing;
 using System.Reflection;
 
@@ -129,6 +130,214 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.True(currentResult);
     }
 
+    [Theory]
+    [InlineData(false, "stamp")]
+    [InlineData(true, "stamp")]
+    [InlineData(false, "email")]
+    [InlineData(true, "email")]
+    [InlineData(false, "admin")]
+    [InlineData(true, "admin")]
+    public async Task CompleteChallenge_ChangedIdentityStateRejectsOldLinkAndAllowsFreshLink(bool confirmation, string change)
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedEmployeeAsync(emailConfirmed: !confirmation);
+        var old = confirmation
+            ? await fixture.Service.RequestEmailConfirmationAsync(new("employee@example.com"), default)
+            : await fixture.Service.RequestPasswordResetAsync(new("employee@example.com"), default);
+        var row = await fixture.Employees.Users.SingleAsync();
+        if (change == "admin")
+        {
+            await using var adminContext = new EmployeeIdentityDbContext(
+                new DbContextOptionsBuilder<EmployeeIdentityDbContext>()
+                    .UseNpgsql(fixture.Employees.Database.GetConnectionString()).Options);
+            var admin = new EmployeeIdentityAdminService(adminContext, fixture.Hasher);
+            Assert.True(await admin.UpdateAsync(7, new(
+                row.UserName!, row.Email!, !confirmation, null, false, false, null, true), default));
+        }
+        else if (change == "stamp")
+        {
+            row.SecurityStamp = Guid.NewGuid().ToString();
+        }
+        else
+        {
+            row.Email = "changed@example.com";
+            row.NormalizedEmail = "CHANGED@EXAMPLE.COM";
+        }
+        await fixture.Employees.SaveChangesAsync();
+        var passwordHash = row.PasswordHash;
+        var stamp = (await fixture.Employees.Users.AsNoTracking().SingleAsync()).SecurityStamp;
+        var rejected = confirmation
+            ? await fixture.Service.ConfirmEmailAsync(new(row.Email!, old.Token!), default)
+            : await fixture.Service.CompletePasswordResetAsync(new(row.Email!, old.Token!, "stale-password"), default);
+        Assert.False(rejected);
+        var unchanged = await fixture.Employees.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(passwordHash, unchanged.PasswordHash);
+        Assert.Equal(stamp, unchanged.SecurityStamp);
+        Assert.Equal(!confirmation, unchanged.EmailConfirmed);
+        Assert.Null((await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync()).ConsumedAt);
+
+        var fresh = confirmation
+            ? await fixture.Service.RequestEmailConfirmationAsync(new(row.Email!), default)
+            : await fixture.Service.RequestPasswordResetAsync(new(row.Email!), default);
+        var accepted = confirmation
+            ? await fixture.Service.ConfirmEmailAsync(new(row.Email!, fresh.Token!), default)
+            : await fixture.Service.CompletePasswordResetAsync(new(row.Email!, fresh.Token!, "fresh-password"), default);
+        Assert.True(accepted);
+        Assert.False(confirmation
+            ? await fixture.Service.ConfirmEmailAsync(new(row.Email!, fresh.Token!), default)
+            : await fixture.Service.CompletePasswordResetAsync(new(row.Email!, fresh.Token!, "replayed-password"), default));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CompleteChallenge_PreviouslyIssuedUnboundLinkFailsClosed(bool confirmation)
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedEmployeeAsync(emailConfirmed: !confirmation);
+        const string oldToken = "legacy-opaque-token";
+        fixture.State.IdentityActionTokens.Add(new()
+        {
+            Id = Guid.NewGuid(),
+            IdentityId = "employee-id",
+            Purpose = confirmation ? "employee-email-confirmation" : "employee-password-reset",
+            TokenHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(oldToken))),
+            CreatedAt = DateTimeOffset.UtcNow,
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(24),
+        });
+        await fixture.State.SaveChangesAsync();
+        Assert.False(confirmation
+            ? await fixture.Service.ConfirmEmailAsync(new("employee@example.com", oldToken), default)
+            : await fixture.Service.CompletePasswordResetAsync(new("employee@example.com", oldToken, "new-password"), default));
+        Assert.Null((await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync()).ConsumedAt);
+    }
+
+    [Fact]
+    public async Task CompletePasswordReset_ConcurrentRequestsHaveOnlyOneWinner()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedEmployeeAsync();
+        var challenge = await fixture.Service.RequestPasswordResetAsync(new("employee@example.com"), default);
+        await using var employee2 = new EmployeeIdentityDbContext(new DbContextOptionsBuilder<EmployeeIdentityDbContext>()
+            .UseNpgsql(fixture.Employees.Database.GetConnectionString()).Options);
+        await using var state2 = new RefreshSessionDbContext(new DbContextOptionsBuilder<RefreshSessionDbContext>()
+            .UseNpgsql(fixture.State.Database.GetConnectionString()).Options);
+        var service2 = new EmployeeSelfService(employee2, state2, fixture.Hasher, TimeProvider.System);
+        var results = await Task.WhenAll(
+            fixture.Service.CompletePasswordResetAsync(new("employee@example.com", challenge.Token!, "winner-one"), default),
+            service2.CompletePasswordResetAsync(new("employee@example.com", challenge.Token!, "winner-two"), default));
+        Assert.Single(results, result => result);
+        var stored = await fixture.Employees.Users.AsNoTracking().SingleAsync();
+        var winner = results[0] ? "winner-one" : "winner-two";
+        Assert.Equal(PasswordVerificationResult.Success, fixture.Hasher.VerifyHashedPassword(stored, stored.PasswordHash!, winner));
+    }
+
+    [Theory]
+    [InlineData(false, null)]
+    [InlineData(false, "")]
+    [InlineData(false, "   ")]
+    [InlineData(true, null)]
+    [InlineData(true, "   ")]
+    public async Task RequestChallenge_MigratedMissingStampInitializesAndAllowsRecovery(bool confirmation, string? stamp)
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedEmployeeAsync(emailConfirmed: !confirmation);
+        var row = await fixture.Employees.Users.SingleAsync();
+        row.SecurityStamp = stamp;
+        await fixture.Employees.SaveChangesAsync();
+        var challenge = confirmation
+            ? await fixture.Service.RequestEmailConfirmationAsync(new("employee@example.com"), default)
+            : await fixture.Service.RequestPasswordResetAsync(new("employee@example.com"), default);
+        Assert.NotNull(challenge.Token);
+        Assert.False(string.IsNullOrWhiteSpace((await fixture.Employees.Users.AsNoTracking().SingleAsync()).SecurityStamp));
+        Assert.True(confirmation
+            ? await fixture.Service.ConfirmEmailAsync(new("employee@example.com", challenge.Token!), default)
+            : await fixture.Service.CompletePasswordResetAsync(new("employee@example.com", challenge.Token!, "fresh-password"), default));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task RequestChallenge_ConcurrentBootstrapOrAdminWinsWithoutBeingOverwritten(bool adminWins)
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedEmployeeAsync();
+        var row = await fixture.Employees.Users.SingleAsync();
+        row.SecurityStamp = null;
+        await fixture.Employees.SaveChangesAsync();
+        string? winningStamp = null;
+        var barrier = new BootstrapInterceptor(async () =>
+        {
+            if (adminWins)
+            {
+                var admin = new EmployeeIdentityAdminService(fixture.Employees, fixture.Hasher);
+                Assert.True(await admin.UpdateAsync(7, new("employee@example.com", "employee@example.com", true,
+                    null, false, false, null, true), default));
+            }
+            else
+            {
+                Assert.NotNull((await fixture.Service.RequestPasswordResetAsync(new("employee@example.com"), default)).Token);
+            }
+            winningStamp = (await fixture.Employees.Users.AsNoTracking().SingleAsync()).SecurityStamp;
+        });
+        await using var racingContext = new EmployeeIdentityDbContext(new DbContextOptionsBuilder<EmployeeIdentityDbContext>()
+            .UseNpgsql(fixture.Employees.Database.GetConnectionString()).AddInterceptors(barrier).Options);
+        await using var racingState = new RefreshSessionDbContext(new DbContextOptionsBuilder<RefreshSessionDbContext>()
+            .UseNpgsql(fixture.State.Database.GetConnectionString()).Options);
+        var racingService = new EmployeeSelfService(racingContext, racingState, fixture.Hasher, TimeProvider.System);
+        var result = await racingService.RequestPasswordResetAsync(new("employee@example.com"), default);
+        Assert.True(barrier.Triggered);
+        Assert.True(result.Accepted);
+        Assert.True(result.Token is null);
+        Assert.Equal(winningStamp, (await fixture.Employees.Users.AsNoTracking().SingleAsync()).SecurityStamp);
+        Assert.NotNull((await fixture.Service.RequestPasswordResetAsync(new("employee@example.com"), default)).Token);
+    }
+
+    [Fact]
+    public async Task CompletePasswordReset_IdentitySaveFailureIsNotSuccessAndFreshRequestCanRecover()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedEmployeeAsync();
+        var before = await fixture.Employees.Users.AsNoTracking().SingleAsync();
+        var challenge = await fixture.Service.RequestPasswordResetAsync(new("employee@example.com"), default);
+        await using var failingContext = new EmployeeIdentityDbContext(new DbContextOptionsBuilder<EmployeeIdentityDbContext>()
+            .UseNpgsql(fixture.Employees.Database.GetConnectionString()).AddInterceptors(new FailSaveInterceptor()).Options);
+        var failing = new EmployeeSelfService(failingContext, fixture.State, fixture.Hasher, TimeProvider.System);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => failing.CompletePasswordResetAsync(
+            new("employee@example.com", challenge.Token!, "not-persisted"), default));
+        var after = await fixture.Employees.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(before.PasswordHash, after.PasswordHash);
+        Assert.Equal(before.SecurityStamp, after.SecurityStamp);
+        Assert.NotNull((await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync()).ConsumedAt);
+        Assert.False(await fixture.Service.CompletePasswordResetAsync(new("employee@example.com", challenge.Token!, "replay"), default));
+        var fresh = await fixture.Service.RequestPasswordResetAsync(new("employee@example.com"), default);
+        Assert.True(await fixture.Service.CompletePasswordResetAsync(new("employee@example.com", fresh.Token!, "recovered"), default));
+    }
+
+    private sealed class BootstrapInterceptor(Func<Task> competingWrite) : DbCommandInterceptor
+    {
+        public bool Triggered { get; private set; }
+        public override async ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(
+            System.Data.Common.DbCommand command, CommandEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (!Triggered && command.CommandText.StartsWith("UPDATE", StringComparison.Ordinal)
+                && command.CommandText.Contains("SecurityStamp", StringComparison.Ordinal))
+            {
+                Triggered = true;
+                await competingWrite();
+            }
+            return result;
+        }
+    }
+
+    private sealed class FailSaveInterceptor : SaveChangesInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
+            DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default) =>
+            throw new InvalidOperationException("Synthetic employee identity persistence failure.");
+    }
+
     private sealed class Fixture : IAsyncDisposable
     {
         private Fixture(
@@ -199,8 +408,16 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
 
         public async ValueTask DisposeAsync()
         {
+            var employeeConnection = Employees.Database.GetConnectionString();
+            var stateConnection = State.Database.GetConnectionString();
             await Employees.DisposeAsync();
             await State.DisposeAsync();
+            // Each test owns unique disposable databases. Release their idle pools rather
+            // than accumulating one server connection per database across the full suite.
+            using var employeePool = new Npgsql.NpgsqlConnection(employeeConnection);
+            using var statePool = new Npgsql.NpgsqlConnection(stateConnection);
+            Npgsql.NpgsqlConnection.ClearPool(employeePool);
+            Npgsql.NpgsqlConnection.ClearPool(statePool);
         }
     }
 }
