@@ -37,7 +37,7 @@ public sealed class EmployeeSelfService(
         CancellationToken cancellationToken)
     {
         var row = await FindAsync(request.Email, cancellationToken);
-        if (row is null || !await ConsumeAsync(row.Id, EmailConfirmation, request.Token, cancellationToken))
+        if (row is null || !await ConsumeAsync(row, EmailConfirmation, request.Token, cancellationToken))
         {
             return false;
         }
@@ -54,7 +54,7 @@ public sealed class EmployeeSelfService(
         CancellationToken cancellationToken)
     {
         var row = await FindAsync(request.Email, cancellationToken);
-        if (row is null || !await ConsumeAsync(row.Id, PasswordReset, request.Token, cancellationToken))
+        if (row is null || !await ConsumeAsync(row, PasswordReset, request.Token, cancellationToken))
         {
             return false;
         }
@@ -75,9 +75,28 @@ public sealed class EmployeeSelfService(
         CancellationToken cancellationToken)
     {
         var row = await FindAsync(email, cancellationToken);
-        if (row is null || (requireUnconfirmed && row.EmailConfirmed))
+        if (row is null || (requireUnconfirmed && row.EmailConfirmed)
+            || string.IsNullOrWhiteSpace(row.NormalizedEmail))
         {
             return new(true, null);
+        }
+
+        if (string.IsNullOrWhiteSpace(row.SecurityStamp))
+        {
+            var previousStamp = row.SecurityStamp;
+            var initialStamp = Guid.NewGuid().ToString();
+            var observedEmail = row.NormalizedEmail;
+            // Initialize only the exact migrated state observed; a concurrent admin update wins.
+            var initialized = await employees.Users.Where(value => value.Id == row.Id
+                    && value.SecurityStamp == previousStamp && value.NormalizedEmail == observedEmail)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(value => value.SecurityStamp, initialStamp), cancellationToken);
+            await employees.Entry(row).ReloadAsync(cancellationToken);
+            if (initialized != 1 || employees.Entry(row).State == EntityState.Detached
+                || row.SecurityStamp != initialStamp || row.NormalizedEmail != observedEmail
+                || (requireUnconfirmed && row.EmailConfirmed))
+            {
+                return new(true, null);
+            }
         }
 
         var token = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
@@ -88,7 +107,7 @@ public sealed class EmployeeSelfService(
             Id = Guid.NewGuid(),
             IdentityId = row.Id,
             Purpose = purpose,
-            TokenHash = Hash(token),
+            TokenHash = HashBoundToken(token, row),
             CreatedAt = now,
             ExpiresAt = now.Add(ActionLifetime),
         });
@@ -145,24 +164,37 @@ public sealed class EmployeeSelfService(
         }
     }
 
-    private Task<LegacyIdentityRow?> FindAsync(string email, CancellationToken cancellationToken)
+    private async Task<LegacyIdentityRow?> FindAsync(string email, CancellationToken cancellationToken)
     {
         var normalized = email.Trim().ToUpperInvariant();
-        return employees.Users.SingleOrDefaultAsync(
+        var row = await employees.Users.SingleOrDefaultAsync(
             value => value.NormalizedEmail == normalized,
             cancellationToken);
+        if (row is null)
+        {
+            return null;
+        }
+
+        // A tracked row may predate an admin change made through another context.
+        await employees.Entry(row).ReloadAsync(cancellationToken);
+        return employees.Entry(row).State == EntityState.Detached || row.NormalizedEmail != normalized ? null : row;
     }
 
     private async Task<bool> ConsumeAsync(
-        string identityId,
+        LegacyIdentityRow identity,
         string purpose,
         string token,
         CancellationToken cancellationToken)
     {
+        if (string.IsNullOrWhiteSpace(identity.SecurityStamp) || string.IsNullOrWhiteSpace(identity.NormalizedEmail))
+        {
+            return false;
+        }
+
         var now = timeProvider.GetUtcNow();
-        var hash = Hash(token);
+        var hash = HashBoundToken(token, identity);
         var query = state.IdentityActionTokens.Where(value =>
-            value.IdentityId == identityId
+            value.IdentityId == identity.Id
             && value.Purpose == purpose
             && value.TokenHash == hash
             && value.ConsumedAt == null
@@ -185,8 +217,9 @@ public sealed class EmployeeSelfService(
         return true;
     }
 
-    private static string Hash(string token) =>
-        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+    private static string HashBoundToken(string token, LegacyIdentityRow identity) =>
+        Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(
+            $"{token}:{identity.SecurityStamp}:{identity.NormalizedEmail}")));
 
     private static void RotateSecurityStamp(LegacyIdentityRow row)
     {
