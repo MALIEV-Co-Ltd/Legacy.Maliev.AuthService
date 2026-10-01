@@ -27,7 +27,7 @@ Before this candidate, `CustomerSelfService.CreateChallengeForIdentityAsync` per
 
 | Boundary | Existing contract preserved |
 | --- | --- |
-| `POST /auth/v1/customer-self-service/email-confirmation/request` | Authenticated trusted-BFF `legacy-auth.customer-self-service.use`; body `{email}`; internal `{accepted,token}`. Unknown account remains accepted with no token/state. This is not a browser enumeration-safe envelope by itself; Web masks it. |
+| `POST /auth/v1/customer-self-service/email-confirmation/request` | Authenticated trusted-BFF `legacy-auth.customer-self-service`; body `{email}`; internal `{accepted,token}`. Unknown account remains accepted with no token/state. This is not a browser enumeration-safe envelope by itself; Web masks it. |
 | `POST .../email-confirmation/complete` | `{email,token}`; success204, invalid/expired400 generic ProblemDetails. |
 | `POST .../email/change` | Customer Bearer subject, current-password validation, existing credential-change rate limit; `{currentPassword,newEmail}` returns internal challenge. No identity selector supplied by browser. |
 | `POST .../email-change/validate` | BFF permission and `{email,token}`; existing `{databaseId,currentEmail,newEmail,completed}` or generic400. |
