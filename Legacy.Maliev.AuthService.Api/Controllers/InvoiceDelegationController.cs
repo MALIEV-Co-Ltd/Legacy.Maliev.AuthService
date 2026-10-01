@@ -5,6 +5,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.Options;
+using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Api.Controllers;
 
@@ -20,7 +23,8 @@ public sealed class InvoiceDelegationController(InvoiceDelegationService delegat
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status429TooManyRequests)]
-    public ActionResult<InvoiceDelegationTokenResponse> Exchange(InvoiceDelegationRequest request)
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<ActionResult<InvoiceDelegationTokenResponse>> Exchange(InvoiceDelegationRequest request)
     {
         if (request.QuotationId <= 0 ||
             !Guid.TryParseExact(request.OperationId, "D", out var operationId) ||
@@ -37,9 +41,19 @@ public sealed class InvoiceDelegationController(InvoiceDelegationService delegat
             return Forbid();
         }
 
-        var issued = delegation.Issue(subjects[0].Value, request);
-        return issued is null
-            ? Unauthorized(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "Authentication failed" })
-            : Ok(issued);
+        try
+        {
+            var issued = await delegation.IssueAsync(subjects[0].Value, request, HttpContext.RequestAborted);
+            return issued is null
+                ? Unauthorized(new ProblemDetails { Status = StatusCodes.Status401Unauthorized, Title = "Authentication failed" })
+                : Ok(issued);
+        }
+        catch (Exception exception) when (exception is NpgsqlException or RetryLimitExceededException or TimeoutException or OptionsValidationException)
+        {
+            HttpContext.RequestAborted.ThrowIfCancellationRequested();
+            // Keep authority/configuration details and supplied credentials out of responses and logs.
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new ProblemDetails { Status = StatusCodes.Status503ServiceUnavailable, Title = "Authentication authority unavailable" });
+        }
     }
 }

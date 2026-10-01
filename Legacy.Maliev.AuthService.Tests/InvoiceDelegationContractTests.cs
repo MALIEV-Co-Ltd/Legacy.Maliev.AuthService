@@ -17,6 +17,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using System.Reflection;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
@@ -168,10 +171,19 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
 
     private static string Claim(JwtSecurityToken token, string type) => Assert.Single(token.Claims, claim => claim.Type == type).Value;
 
-    public sealed class AuthApiFactory : WebApplicationFactory<Program>
+    public sealed class AuthApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         private readonly string privateKeyPem;
         private readonly RsaAccessTokenIssuer issuer;
+        private readonly PostgresFixture postgres = new();
+        private CustomerIdentityDbContext customers = null!;
+        private EmployeeIdentityDbContext employees = null!;
+        private RefreshSessionDbContext sessions = null!;
+        private static readonly Dictionary<string, Guid> SessionIds = new()
+        {
+            ["employee-7"] = Guid.Parse("3700f80a-311f-4844-b1c8-96cf737ef9cb"),
+            ["employee-8"] = Guid.Parse("3700f80a-311f-4844-b1c8-96cf737ef9cc"),
+        };
 
         public AuthApiFactory()
         {
@@ -183,15 +195,48 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
         public string Issuer => "https://auth.delegation.test";
         public string KeyId => "delegation-test-key";
 
+        public async Task InitializeAsync()
+        {
+            await postgres.InitializeAsync();
+            customers = await postgres.CreateCustomerContextAsync();
+            employees = await postgres.CreateEmployeeContextAsync();
+            sessions = await postgres.CreateStateContextAsync();
+            foreach (var (subject, sid) in SessionIds)
+            {
+                employees.Users.Add(new LegacyIdentityRow
+                {
+                    Id = subject,
+                    UserName = subject,
+                    NormalizedUserName = subject.ToUpperInvariant(),
+                    Email = "employee@maliev.com",
+                    EmailConfirmed = true,
+                    SecurityStamp = "stamp",
+                });
+                sessions.RefreshSessions.Add(new RefreshSession
+                {
+                    Id = sid,
+                    FamilyId = Guid.NewGuid(),
+                    IdentityId = subject,
+                    IdentityKind = IdentityKind.Employee,
+                    SecurityStamp = "stamp",
+                    TokenHash = new string(subject[^1], 64),
+                    CreatedAt = DateTimeOffset.UtcNow,
+                    ExpiresAt = DateTimeOffset.UtcNow.AddDays(1),
+                });
+            }
+            await employees.SaveChangesAsync();
+            await sessions.SaveChangesAsync();
+        }
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Testing");
             builder.UseSetting("CORS:AllowedOrigins", "https://localhost");
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
-                ["ConnectionStrings:CustomerIdentity"] = "Host=localhost;Database=unused;Username=unused;Password=unused",
-                ["ConnectionStrings:EmployeeIdentity"] = "Host=localhost;Database=unused;Username=unused;Password=unused",
-                ["ConnectionStrings:RefreshSessions"] = "Host=localhost;Database=unused;Username=unused;Password=unused",
+                ["ConnectionStrings:CustomerIdentity"] = customers.Database.GetConnectionString(),
+                ["ConnectionStrings:EmployeeIdentity"] = employees.Database.GetConnectionString(),
+                ["ConnectionStrings:RefreshSessions"] = sessions.Database.GetConnectionString(),
                 ["Jwt:Issuer"] = Issuer,
                 ["Jwt:Audience"] = "legacy-access-test",
                 ["Jwt:PrivateKeyPem"] = privateKeyPem,
@@ -205,7 +250,7 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
 
         public string IssueEmployee(string subject, IdentityKind kind = IdentityKind.Employee) =>
             issuer.Issue(new LegacyIdentity(subject, "employee@maliev.com", "employee@maliev.com", kind, 7, "stamp"), DateTimeOffset.UtcNow,
-                kind == IdentityKind.Employee ? Guid.Parse("3700f80a-311f-4844-b1c8-96cf737ef9cb") : null).Value;
+                kind == IdentityKind.Employee ? SessionIds[subject] : null).Value;
 
         public string IssueCustomEmployee(
             string subject,
@@ -267,6 +312,36 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
         {
             if (disposing) issuer.Dispose();
             base.Dispose(disposing);
+        }
+
+        Task IAsyncLifetime.DisposeAsync() => DisposeAsync().AsTask();
+
+        public override async ValueTask DisposeAsync()
+        {
+            var connections = new List<NpgsqlConnection>();
+            await using (var scope = Services.CreateAsyncScope())
+            {
+                var contexts = new DbContext[]
+                {
+                    scope.ServiceProvider.GetRequiredService<EmployeeIdentityDbContext>(),
+                    scope.ServiceProvider.GetRequiredService<CustomerIdentityDbContext>(),
+                    scope.ServiceProvider.GetRequiredService<RefreshSessionDbContext>(),
+                };
+                foreach (var context in contexts)
+                {
+                    await context.Database.OpenConnectionAsync();
+                    connections.Add((NpgsqlConnection)context.Database.GetDbConnection());
+                    await context.Database.CloseConnectionAsync();
+                }
+            }
+            await base.DisposeAsync();
+            foreach (var connection in connections) NpgsqlConnection.ClearPool(connection);
+            var originalConnections = new[] { (NpgsqlConnection)employees.Database.GetDbConnection(), (NpgsqlConnection)customers.Database.GetDbConnection(), (NpgsqlConnection)sessions.Database.GetDbConnection() };
+            await employees.DisposeAsync();
+            await customers.DisposeAsync();
+            await sessions.DisposeAsync();
+            foreach (var connection in originalConnections) NpgsqlConnection.ClearPool(connection);
+            await postgres.DisposeAsync();
         }
 
         private JwtOptions JwtSettings() => new()
