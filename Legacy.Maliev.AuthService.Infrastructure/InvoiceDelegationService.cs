@@ -3,6 +3,8 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using Legacy.Maliev.AuthService.Application;
+using Legacy.Maliev.AuthService.Domain;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
@@ -12,13 +14,17 @@ namespace Legacy.Maliev.AuthService.Infrastructure;
 public sealed class InvoiceDelegationService(
     IOptions<JwtOptions> options,
     IInvoiceDelegationTokenIssuer issuer,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    RefreshSessionDbContext sessions,
+    ILegacyIdentityReader identities)
 {
     /// <summary>Returns no token unless both the trusted service identity and employee token satisfy the contract.</summary>
-    public InvoiceDelegationTokenResponse? Issue(
+    public async Task<InvoiceDelegationTokenResponse?> IssueAsync(
         string? serviceSubject,
-        InvoiceDelegationRequest request)
+        InvoiceDelegationRequest request,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!string.Equals(serviceSubject, InvoiceDelegationContract.IntranetServiceSubject, StringComparison.Ordinal) ||
             request.QuotationId <= 0 ||
             request.EmployeeAccessToken is not { Length: > 0 and <= 16384 } ||
@@ -50,6 +56,7 @@ public sealed class InvoiceDelegationService(
         var subjects = employee.FindAll(JwtRegisteredClaimNames.Sub).ToArray();
         var kinds = employee.FindAll("identity_kind").ToArray();
         var issuedAt = employee.FindAll(JwtRegisteredClaimNames.Iat).ToArray();
+        var bindings = employee.FindAll("sid").ToArray();
         var now = timeProvider.GetUtcNow();
         if (subjects.Length != 1 || string.IsNullOrWhiteSpace(subjects[0].Value) || subjects[0].Value.Length > 256 ||
             subjects[0].Value.StartsWith("service:", StringComparison.Ordinal) ||
@@ -65,7 +72,24 @@ public sealed class InvoiceDelegationService(
             return null;
         }
 
-        var token = issuer.IssueInvoiceDelegation(subjects[0].Value, request.QuotationId, operationId, now);
+        var subject = subjects[0].Value;
+        if (employee.FindAll("user_id").Concat(employee.FindAll(ClaimTypes.NameIdentifier)).Any(claim => claim.Value != subject)
+            || bindings.Length != 1 || !Guid.TryParseExact(bindings[0].Value, "D", out var sessionId)
+            || sessionId == Guid.Empty || bindings[0].Value != sessionId.ToString("D")) return null;
+
+        var session = await sessions.RefreshSessions.AsNoTracking().SingleOrDefaultAsync(row => row.Id == sessionId, cancellationToken);
+        if (session is null || session.IdentityId != subject || session.IdentityKind != IdentityKind.Employee
+            || session.RevokedAt is not null || string.IsNullOrWhiteSpace(session.SecurityStamp)) return null;
+        var identity = await identities.FindActiveAsync(subject, IdentityKind.Employee, cancellationToken);
+        if (identity is null || string.IsNullOrWhiteSpace(identity.SecurityStamp) || identity.SecurityStamp != session.SecurityStamp) return null;
+        if (await sessions.RefreshSessions.AsNoTracking().AnyAsync(row => row.FamilyId == session.FamilyId && row.RevokedAt != null, cancellationToken)) return null;
+
+        cancellationToken.ThrowIfCancellationRequested();
+        now = timeProvider.GetUtcNow();
+        if (!jwt.Payload.ContainsKey("exp") || jwt.ValidTo == DateTime.MinValue
+            || now >= new DateTimeOffset(jwt.ValidTo, TimeSpan.Zero) || now >= session.ExpiresAt) return null;
+        cancellationToken.ThrowIfCancellationRequested();
+        var token = issuer.IssueInvoiceDelegation(subject, request.QuotationId, operationId, now);
         return new(token.Value, "Bearer", token.ExpiresInSeconds);
     }
 }
