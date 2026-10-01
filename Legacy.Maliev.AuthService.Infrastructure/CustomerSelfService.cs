@@ -569,6 +569,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         var now = timeProvider.GetUtcNow();
         var active = state.RefreshSessions.Where(value =>
             value.IdentityId == identityId
+            && value.IdentityKind == IdentityKind.Customer
             && value.RevokedAt == null);
         if (state.Database.IsRelational())
         {
