@@ -136,3 +136,26 @@ scanner findings above are disclosed and untouched. Publicationfalse was indepen
 observed. Protected exact-head/main CI and root integration are still required; no
 production-derived data, real browser/provider, deployment or distributed-atomicity
 acceptance is claimed. Cross-kind session revocation is separately tracked by Auth120.
+
+## Required-CI clock regression and deterministic correction
+
+Initial protected-head CI36835675932 failed one existing qualification expiry case
+(482 passed/1 failed/zero skips). That fixture constructed expiration from wall time
+but the service used its frozen injected clock: after slow setup, walltime-minus-one
+second can still be in the service clock's future. Root read both implementations and
+independently reproduced the same rejection-assertion failure without sleeps using a
+five-second controlled-clock lag (`TestResults/root-clock-red/clock-red.trx`, one RED).
+This is a fixture defect, not proof that runtime expiry checks accept expired sessions.
+
+Only that existing qualification test is corrected: expiration is relative to the
+injected clock, a fresh PostgreSQL read asserts expiration precedes that clock, and a
+delayed-setup case is retained. Existing deny/no-alternate-session/no-cache assertions
+are not weakened, skipped or retried. No qualification runtime code changed. Fresh
+direct Release0W0E, focused48 and full484 passed zero failures/skips, followed by whole
+format/diff checks (`TestResults/root-clock-green/root-clock-green.trx`,
+`TestResults/root-clock-full/root-full.trx`). All446 original cases remain and pass;
+one fixture now uses the correct clock, the other445 existing test cases are unchanged.
+Prior unexcluded483 coverage remains identified as historical evidence, not a new484
+coverage measurement. API80 remains explicitly tracked in Auth122. Corrected document
+permission is the exact existing `legacy-auth.customer-self-service` constant, not a
+new `.use` capability. Final exact-head/main CI must pass before integration.
