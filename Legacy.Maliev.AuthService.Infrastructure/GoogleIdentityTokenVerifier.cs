@@ -22,6 +22,7 @@ public sealed class GoogleIdentityTokenVerifier : IGoogleIdentityTokenVerifier
         string audience,
         CancellationToken cancellationToken)
     {
+        GoogleIdentityTokenAudienceGuard.EnsureMatches(credential, audience);
         var payload = await GoogleJsonWebSignature.ValidateAsync(
                 credential,
                 new GoogleJsonWebSignature.ValidationSettings { Audience = [audience] })
