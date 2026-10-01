@@ -321,6 +321,7 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
     [Theory]
     [InlineData("revoked")]
     [InlineData("expired")]
+    [InlineData("expired-delayed-setup")]
     [InlineData("kind")]
     [InlineData("owner")]
     [InlineData("stamp")]
@@ -342,7 +343,8 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         switch (mutation)
         {
             case "revoked": row.RevokedAt = DateTimeOffset.UtcNow; break;
-            case "expired": row.ExpiresAt = DateTimeOffset.UtcNow.AddSeconds(-1); break;
+            case "expired-delayed-setup": factory.Clock.Advance(TimeSpan.FromSeconds(-5)); goto case "expired";
+            case "expired": row.ExpiresAt = factory.Clock.GetUtcNow().AddSeconds(-1); break;
             case "kind": row.IdentityKind = IdentityKind.Customer; break;
             case "owner": row.IdentityId = "another-employee"; break;
             case "stamp": identity.SecurityStamp = "changed"; break;
@@ -356,6 +358,11 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         }
         await stores.Employees.SaveChangesAsync();
         await stores.State.SaveChangesAsync();
+        if (mutation is "expired" or "expired-delayed-setup")
+        {
+            var expired = await stores.State.RefreshSessions.AsNoTracking().SingleAsync();
+            Assert.True(expired.ExpiresAt < factory.Clock.GetUtcNow());
+        }
         // Another active family cannot rescue the exact binding.
         stores.State.RefreshSessions.Add(new RefreshSession { Id = Guid.NewGuid(), FamilyId = Guid.NewGuid(), IdentityId = "issuance-employee", IdentityKind = IdentityKind.Employee, SecurityStamp = "issuance-stamp", TokenHash = new string('C', 64), CreatedAt = DateTimeOffset.UtcNow, ExpiresAt = DateTimeOffset.UtcNow.AddDays(1) });
         await stores.State.SaveChangesAsync();
