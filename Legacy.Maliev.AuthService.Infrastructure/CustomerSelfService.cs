@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 namespace Legacy.Maliev.AuthService.Infrastructure;
 
@@ -512,6 +513,14 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         CancellationToken cancellationToken,
         TimeSpan? lifetime = null)
     {
+        var identity = await customers.Users.AsNoTracking().SingleOrDefaultAsync(
+            value => value.Id == identityId,
+            cancellationToken);
+        if (identity is null || string.IsNullOrWhiteSpace(identity.Email))
+        {
+            return new(true, null);
+        }
+
         var token = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
         var now = timeProvider.GetUtcNow();
         await SupersedeActiveChallengesAsync(identityId, purpose, now, cancellationToken);
@@ -522,6 +531,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
             Purpose = purpose,
             TargetEmail = targetEmail.Trim(),
             TokenHash = Hash(token),
+            BoundSecurityStamp = CreateCustomerEmailGenerationBinding(purpose, identity, targetEmail),
             CreatedAt = now,
             ExpiresAt = now.Add(lifetime ?? ActionLifetime),
         });
@@ -621,12 +631,12 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
             && value.ConsumedAt == null
             && value.ExpiresAt > now,
             cancellationToken);
-        if (action is null || EmailMatches(action.TargetEmail, email))
+        if (action is null)
         {
-            return action;
+            return null;
         }
 
-        if (!string.IsNullOrWhiteSpace(action.TargetEmail))
+        if (!EmailMatches(action.TargetEmail, email))
         {
             return null;
         }
@@ -634,7 +644,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         var identity = await customers.Users.AsNoTracking().SingleOrDefaultAsync(
             value => value.Id == action.IdentityId,
             cancellationToken);
-        return identity is not null && EmailMatches(identity.Email, email)
+        return identity is not null && CustomerEmailGenerationMatches(action, identity)
             ? action
             : null;
     }
@@ -664,7 +674,14 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
                 : null;
         }
 
-        return action.ExpiresAt > timeProvider.GetUtcNow() ? action : null;
+        var pendingIdentity = await customers.Users.AsNoTracking().SingleOrDefaultAsync(
+            value => value.Id == action.IdentityId,
+            cancellationToken);
+        return action.ExpiresAt > timeProvider.GetUtcNow()
+            && pendingIdentity is not null
+            && CustomerEmailGenerationMatches(action, pendingIdentity)
+            ? action
+            : null;
     }
 
     private async Task<IdentityActionToken?> FindSecurityStampBoundActionAsync(
@@ -720,6 +737,48 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         && string.Equals(actual.Trim(), expected.Trim(), StringComparison.OrdinalIgnoreCase);
     private static string Hash(string token) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
     private static string HashBoundToken(string token, string securityStamp) => Hash($"{token}:{securityStamp}");
+    private static string CreateCustomerEmailGenerationBinding(
+        string purpose, LegacyIdentityRow identity, string targetEmail)
+    {
+        if (purpose is not EmailConfirmation and not EmailChange)
+        {
+            throw new ArgumentOutOfRangeException(nameof(purpose));
+        }
+
+        var frame = JsonSerializer.SerializeToUtf8Bytes(new object?[]
+        {
+            "legacy-auth/customer-email-generation", 1, purpose, identity.Id,
+            identity.Email!.Trim().ToUpperInvariant(), targetEmail.Trim().ToUpperInvariant(),
+            identity.SecurityStamp,
+        });
+        return "ceg1:" + Convert.ToHexStringLower(SHA256.HashData(frame));
+    }
+
+    private static bool CustomerEmailGenerationMatches(
+        IdentityActionToken action, LegacyIdentityRow currentIdentity)
+    {
+        var binding = action.BoundSecurityStamp;
+        if (action.Purpose is not EmailConfirmation and not EmailChange
+            || string.IsNullOrWhiteSpace(currentIdentity.Email)
+            || string.IsNullOrWhiteSpace(action.TargetEmail)
+            || binding is null || binding.Length != 69
+            || !binding.StartsWith("ceg1:", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        foreach (var character in binding.AsSpan(5))
+        {
+            if (character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
+            {
+                return false;
+            }
+        }
+
+        var expected = CreateCustomerEmailGenerationBinding(action.Purpose, currentIdentity, action.TargetEmail);
+        return CryptographicOperations.FixedTimeEquals(
+            Convert.FromHexString(binding.AsSpan(5)), Convert.FromHexString(expected.AsSpan(5)));
+    }
     private static void RotateSecurityStamp(LegacyIdentityRow row)
     {
         row.SecurityStamp = Guid.NewGuid().ToString();
