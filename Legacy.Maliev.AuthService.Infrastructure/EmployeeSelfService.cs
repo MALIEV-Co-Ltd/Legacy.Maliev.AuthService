@@ -264,6 +264,88 @@ public sealed class EmployeeSelfService(EmployeeIdentityDbContext employees, Ref
         return completed;
     }
 
+    internal async Task<EmployeeRecoveryBatchResult> ReconcileWorkerBatchAsync(EmployeeRecoveryScanCursor cursor, CancellationToken cancellationToken)
+    {
+        await EnsureReadyAsync(cancellationToken);
+        await using var reader = NewEmployees();
+        if (cursor.Upper is null)
+        {
+            var upperRow = await reader.RecoveryEffects.AsNoTracking().Where(x => x.FinalizedAcknowledgedAt == null)
+                .OrderByDescending(x => x.AppliedAt).ThenByDescending(x => x.ActionId)
+                .Select(x => new { x.AppliedAt, x.ActionId }).FirstOrDefaultAsync(cancellationToken);
+            if (upperRow is null) { cursor.Reset(); return new(0, 0); }
+            cursor.Upper = new(upperRow.AppliedAt, upperRow.ActionId);
+        }
+        var upper = cursor.Upper.Value;
+        // PostgreSQL owns timestamp/UUID ordering. Do not compare Guid bytes/order in .NET
+        // or use OFFSET over a pending set that concurrent acknowledgments can shrink.
+        var query = cursor.After is { } after
+            ? reader.RecoveryEffects.FromSqlInterpolated($"""
+                SELECT * FROM "EmployeeRecoveryEffects"
+                WHERE "FinalizedAcknowledgedAt" IS NULL
+                  AND ("AppliedAt", "ActionId") > ({after.AppliedAt}, {after.ActionId})
+                  AND ("AppliedAt", "ActionId") <= ({upper.AppliedAt}, {upper.ActionId})
+                ORDER BY "AppliedAt", "ActionId" LIMIT 32
+                """)
+            : reader.RecoveryEffects.FromSqlInterpolated($"""
+                SELECT * FROM "EmployeeRecoveryEffects"
+                WHERE "FinalizedAcknowledgedAt" IS NULL
+                  AND ("AppliedAt", "ActionId") <= ({upper.AppliedAt}, {upper.ActionId})
+                ORDER BY "AppliedAt", "ActionId" LIMIT 32
+                """);
+        var receipts = await query.AsNoTracking().ToListAsync(cancellationToken);
+        if (receipts.Count == 0) { cursor.Reset(); return new(0, 0); }
+        var completed = 0;
+        var failed = 0;
+        foreach (var receipt in receipts)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var needsAcknowledgment = await state.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+                {
+                    await using var auth = NewState();
+                    await using var transaction = await auth.Database.BeginTransactionAsync(cancellationToken);
+                    await LockCoordinatorAsync(auth, receipt.IdentityId, cancellationToken);
+                    // Fresh identity-side proof; no identity row lock is held while acquiring Auth state.
+                    await using var identity = NewEmployees();
+                    var current = await identity.RecoveryEffects.AsNoTracking().SingleOrDefaultAsync(x => x.ActionId == receipt.ActionId, cancellationToken);
+                    if (current is null || !SameImmutableReceipt(current, receipt)) throw new EmployeeRecoveryUnavailableException();
+                    if (current.FinalizedAcknowledgedAt is not null) return false;
+                    await FinalizeAsync(auth, current, cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
+                    return true;
+                });
+                if (needsAcknowledgment)
+                {
+                    await using var identity = NewEmployees();
+                    var changed = await identity.RecoveryEffects.Where(x => x.ActionId == receipt.ActionId && x.FinalizedAcknowledgedAt == null)
+                        .ExecuteUpdateAsync(s => s.SetProperty(x => x.FinalizedAcknowledgedAt, timeProvider.GetUtcNow()), cancellationToken);
+                    if (changed == 1) completed++;
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch
+            {
+                // The receipt-local transaction/contexts have unwound before proceeding. Unknown
+                // commit/teardown/ack outcomes remain pending; only a later fresh proof may acknowledge.
+                cancellationToken.ThrowIfCancellationRequested();
+                failed++;
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            cursor.After = new(receipt.AppliedAt, receipt.ActionId);
+        }
+        if (cursor.After == cursor.Upper) cursor.Reset();
+        return new(completed, failed);
+    }
+
+    private static bool SameImmutableReceipt(EmployeeRecoveryEffect left, EmployeeRecoveryEffect right) =>
+        left.ActionId == right.ActionId && left.AppliedAt == right.AppliedAt && left.TokenSha256 == right.TokenSha256
+        && left.Purpose == right.Purpose && left.OwnerSubject == right.OwnerSubject && left.IdentityId == right.IdentityId
+        && left.NormalizedEmail == right.NormalizedEmail && left.BeforeSecurityStamp == right.BeforeSecurityStamp
+        && left.AfterSecurityStamp == right.AfterSecurityStamp && left.AfterConcurrencyStamp == right.AfterConcurrencyStamp
+        && left.PasswordPayloadHash == right.PasswordPayloadHash;
+
     private async Task AcknowledgeAsync(Guid actionId, CancellationToken cancellationToken)
     {
         await using var fresh = NewEmployees();
