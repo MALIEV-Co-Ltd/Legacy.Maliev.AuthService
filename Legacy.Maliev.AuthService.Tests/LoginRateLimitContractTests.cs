@@ -18,6 +18,7 @@ using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Mvc.ModelBinding;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 
@@ -271,6 +272,7 @@ public sealed class LoginRateLimitContractTests
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.WebHost.ConfigureKestrel(options => options.Listen(IPAddress.Loopback, 0));
+        builder.AddDefaultApiVersioning();
         builder.Services.AddControllers().AddApplicationPart(typeof(AuthenticationController).Assembly);
         builder.Services.AddSingleton(limiter);
         builder.Services.AddSingleton<LoginRateLimitFilter>();

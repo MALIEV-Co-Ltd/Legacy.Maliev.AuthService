@@ -41,11 +41,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAccessTokenIssuer, RsaAccessTokenIssuer>();
         services.AddSingleton<IServiceAccessTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
         services.AddSingleton<IInvoiceDelegationTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
+        services.AddSingleton<IQuotationInvoiceCapabilityTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<AuthenticationService>();
         services.AddScoped<GoogleAuthenticationService>();
         services.AddScoped<ServiceAuthenticationService>();
         services.AddScoped<InvoiceDelegationService>();
+        services.AddScoped<QuotationInvoiceCapabilityService>();
         services.AddScoped<IQualificationIntrospectionService, QualificationIntrospectionService>();
         services.AddScoped<IQualificationCallerAuthorizer, QualificationCallerAuthorizer>();
         services.AddOptions<QualificationIntrospectionOptions>()

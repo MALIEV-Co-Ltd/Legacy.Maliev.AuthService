@@ -9,7 +9,7 @@ using System.Security.Cryptography;
 namespace Legacy.Maliev.AuthService.Infrastructure;
 
 /// <summary>Issues RS256 access tokens whose private key is supplied only at runtime.</summary>
-public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTokenIssuer, IInvoiceDelegationTokenIssuer, IDisposable
+public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTokenIssuer, IInvoiceDelegationTokenIssuer, IQuotationInvoiceCapabilityTokenIssuer, IDisposable
 {
     private readonly JwtOptions options;
     private readonly RSA rsa;
@@ -140,6 +140,29 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
             new("operation_id", operationId.ToString("D")),
         };
         return Issue(claims, now, InvoiceDelegationContract.Audience, InvoiceDelegationContract.LifetimeSeconds);
+    }
+
+    /// <inheritdoc />
+    public IssuedAccessToken IssueQuotationInvoiceCapability(string employeeSubject, int quotationId, Guid operationId, DateTimeOffset now, int lifetimeSeconds)
+    {
+        if (string.IsNullOrWhiteSpace(employeeSubject) || employeeSubject.Length > 256 || employeeSubject.StartsWith("service:", StringComparison.Ordinal))
+            throw new ArgumentException("A valid employee subject is required.", nameof(employeeSubject));
+        if (quotationId <= 0) throw new ArgumentOutOfRangeException(nameof(quotationId));
+        if (operationId == Guid.Empty) throw new ArgumentException("A nonempty operation is required.", nameof(operationId));
+        if (lifetimeSeconds is < 1 or > QuotationInvoiceCapabilityContract.MaximumLifetimeSeconds)
+            throw new ArgumentOutOfRangeException(nameof(lifetimeSeconds));
+        Claim[] claims =
+        [
+            new(JwtRegisteredClaimNames.Sub, employeeSubject),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("D")),
+            new(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture), ClaimValueTypes.Integer64),
+            new("azp", QuotationInvoiceCapabilityContract.Requester),
+            new("executor", QuotationInvoiceCapabilityContract.Executor),
+            new("scope", QuotationInvoiceCapabilityContract.Scope),
+            new("quotation_id", quotationId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new("operation_id", operationId.ToString("D")),
+        ];
+        return Issue(claims, now, QuotationInvoiceCapabilityContract.Audience, lifetimeSeconds);
     }
 
     private IssuedAccessToken Issue(IEnumerable<Claim> claims, DateTimeOffset now, string? audience = null, int? lifetimeSeconds = null)
