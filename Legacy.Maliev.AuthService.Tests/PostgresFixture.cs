@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using Legacy.Maliev.AuthService.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -17,7 +18,17 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     public Task InitializeAsync() => postgres.StartAsync();
 
-    public async Task DisposeAsync() => await postgres.DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        var started = Stopwatch.GetTimestamp();
+        try { await postgres.DisposeAsync(); }
+        catch (Exception exception)
+        {
+            CleanupFailureObserver.Observe(exception, Stopwatch.GetElapsedTime(started),
+                () => (int)postgres.State, Console.Error.WriteLine);
+            throw;
+        }
+    }
 
     public async Task<CustomerIdentityDbContext> CreateCustomerContextAsync()
     {
