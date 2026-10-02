@@ -1,4 +1,5 @@
 using Legacy.Maliev.AuthService.Infrastructure;
+using Legacy.Maliev.AuthService.Api.Authorization;
 using Legacy.Maliev.AuthService.Api.Security;
 using Maliev.Aspire.ServiceDefaults;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -24,6 +25,7 @@ builder.Services.AddSingleton<LoginRateLimitFilter>();
 builder.Services.AddScoped<QualificationIntrospectionBoundaryFilter>();
 builder.Services.AddSingleton<QualificationIntrospectionRateLimiter>();
 builder.Services.AddLegacyAuthInfrastructure(builder.Configuration);
+builder.AddQuotationInvoiceLiveAuthority();
 // Auth readiness must reflect every PostgreSQL store used by the service. The
 // infrastructure registrations above are intentionally explicit, so register
 // their health checks here rather than relying on the shared helper.
