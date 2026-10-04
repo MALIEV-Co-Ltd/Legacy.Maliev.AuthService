@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RunSettings>
+  <RunConfiguration>
+    <MaxCpuCount>1</MaxCpuCount>
+  </RunConfiguration>
+  <xUnit>
+    <ParallelizeTestCollections>false</ParallelizeTestCollections>
+    <MaxParallelThreads>1</MaxParallelThreads>
+  </xUnit>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="XPlat Code Coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <Include>[Legacy.Maliev.AuthService.Api]*,[Legacy.Maliev.AuthService.Application]*,[Legacy.Maliev.AuthService.Domain]*,[Legacy.Maliev.AuthService.Infrastructure]*</Include>
+          <Exclude></Exclude>
+          <ExcludeByAttribute></ExcludeByAttribute>
+          <ExcludeByFile></ExcludeByFile>
+          <SkipAutoProps>false</SkipAutoProps>
+          <IncludeTestAssembly>false</IncludeTestAssembly>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+</RunSettings>

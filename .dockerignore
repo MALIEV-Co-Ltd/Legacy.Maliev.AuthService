@@ -3,6 +3,7 @@
 **/bin
 **/obj
 **/TestResults
+artifacts/
 *.user
 *.suo
 .vs

@@ -21,7 +21,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
-          ref: 5c5f9479313710fa576f83d3b396442997a2fcf4
+          ref: c40a7f82cea347b949444dcd7fb730f2b8dc3c0e
           path: .dependencies/Legacy.Maliev.ServiceDefaults
           persist-credentials: false
       - name: Check out Legacy.Maliev.CompatibilityContracts
@@ -32,7 +32,41 @@ jobs:
           path: .dependencies/Legacy.Maliev.CompatibilityContracts
           persist-credentials: false
       - name: Validate .NET solution
-        uses: MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@b856eb3dc57fe6597c7a491ecbf65b2938c330a1
+        uses: MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@e3a6093324a24968876782153286f52db8b29fd8
         with:
           solution: Legacy.Maliev.AuthService.slnx
           use-local-maliev-dependencies: 'true'
+      - name: Verify coverage gate and evidence controls
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path artifacts/coverage-evidence -Force | Out-Null
+          & ./eng/Test-RawCoverageGate.ps1 | Tee-Object -FilePath artifacts/coverage-evidence/checker-controls.log
+          & ./eng/Test-CoverageEvidence.ps1 | Tee-Object -FilePath artifacts/coverage-evidence/evidence-controls.log
+      - name: Collect raw owned production coverage
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore \
+            -p:UseLocalMalievDependencies=true \
+            --collect "XPlat Code Coverage" --settings eng/coverage.runsettings \
+            --logger "trx;LogFileName=owned-raw.trx" --results-directory artifacts/owned-raw
+      - name: Require raw coverage for each owned assembly
+        shell: pwsh
+        run: |
+          $reports = @(& ./eng/Get-OwnedCoverageReport.ps1 -ResultsDirectory artifacts/owned-raw)
+          if ($reports.Count -ne 1) { throw 'Expected exactly one complete owned coverage report.' }
+          & ./eng/Assert-OwnedCoverage.ps1 -CoveragePath $reports[0].FullName |
+            Tee-Object -FilePath artifacts/coverage-evidence/checker-results.log
+      - name: Prepare private validation evidence
+        if: always()
+        shell: pwsh
+        run: |
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/owned-raw -OutputDirectory artifacts/coverage-evidence
+      - name: Retain private validation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: owned-validation-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/coverage-evidence
+          if-no-files-found: error
+          retention-days: 3
