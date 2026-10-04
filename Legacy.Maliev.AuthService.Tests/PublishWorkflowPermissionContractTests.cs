@@ -9,7 +9,7 @@ public sealed class PublishWorkflowPermissionContractTests
     {
         var source = File.ReadAllText(Path.Combine(FindRoot(), ".github", "workflows", "_build-and-test.yml"));
         Assert.Contains(
-            "MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@b856eb3dc57fe6597c7a491ecbf65b2938c330a1",
+            "MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@e3a6093324a24968876782153286f52db8b29fd8",
             source,
             StringComparison.Ordinal);
         Assert.DoesNotContain(

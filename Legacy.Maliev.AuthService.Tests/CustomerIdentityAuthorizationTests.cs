@@ -265,9 +265,9 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
                 new Dictionary<string, string?>
                 {
-                    ["ConnectionStrings:CustomerIdentity"] = "Host=localhost;Database=unused;Username=unused;Password=unused",
-                    ["ConnectionStrings:EmployeeIdentity"] = "Host=localhost;Database=unused;Username=unused;Password=unused",
-                    ["ConnectionStrings:RefreshSessions"] = "Host=localhost;Database=unused;Username=unused;Password=unused",
+                    ["ConnectionStrings:CustomerIdentity"] = "Host=localhost;Database=unused;Username=unused",
+                    ["ConnectionStrings:EmployeeIdentity"] = "Host=localhost;Database=unused;Username=unused",
+                    ["ConnectionStrings:RefreshSessions"] = "Host=localhost;Database=unused;Username=unused",
                     ["Jwt:Issuer"] = "https://auth.authorization.test",
                     ["Jwt:Audience"] = "legacy-authorization-test",
                     ["Jwt:PrivateKeyPem"] = privateKeyPem,

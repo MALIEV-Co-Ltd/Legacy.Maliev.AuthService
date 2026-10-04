@@ -1,3 +1,5 @@
+using Npgsql;
+
 namespace Legacy.Maliev.AuthService.Tests;
 
 public sealed class CleanupFailureObserverTests
@@ -5,7 +7,8 @@ public sealed class CleanupFailureObserverTests
     [Fact]
     public void Format_ExcludesMessagesDataAndPaths_ReportsOnlyBoundedStructure()
     {
-        var exception = Capture();
+        var canary = Guid.NewGuid().ToString("N");
+        var exception = Capture(CreateConnectionString(canary));
         exception.Data["Password"] = "synthetic-secret";
         var report = CleanupFailureObserver.Format(exception, TimeSpan.FromMilliseconds(123), 2);
         Assert.Contains("TaskCanceledException", report);
@@ -15,6 +18,7 @@ public sealed class CleanupFailureObserverTests
         Assert.Contains("elapsed_ms=123", report);
         Assert.Contains("owned_state=2", report);
         Assert.DoesNotContain("synthetic-secret", report);
+        Assert.DoesNotContain(canary, report);
         Assert.DoesNotContain("Host=", report);
         Assert.DoesNotContain(".cs", report);
         Assert.DoesNotContain("Password", report);
@@ -65,7 +69,9 @@ public sealed class CleanupFailureObserverTests
     [Fact]
     public void Observe_WritesOneBoundedReportWithoutMutatingException()
     {
-        var original = Capture();
+        var canary = Guid.NewGuid().ToString("N");
+        var connectionString = CreateConnectionString(canary);
+        var original = Capture(connectionString);
         var count = 0;
         string? captured = null;
         CleanupFailureObserver.Observe(original, TimeSpan.Zero, () => 2, report =>
@@ -75,12 +81,16 @@ public sealed class CleanupFailureObserverTests
         });
         Assert.Equal(1, count);
         Assert.Contains("TaskCanceledException", captured);
-        Assert.Equal("Host=synthetic;Password=synthetic-secret", original.Message);
+        Assert.Equal(connectionString, original.Message);
+        Assert.DoesNotContain(canary, captured);
     }
 
-    private static Exception Capture()
+    private static string CreateConnectionString(string password) =>
+        new NpgsqlConnectionStringBuilder { Host = "synthetic", Password = password }.ConnectionString;
+
+    private static Exception Capture(string connectionString)
     {
-        try { throw new TaskCanceledException("Host=synthetic;Password=synthetic-secret"); }
+        try { throw new TaskCanceledException(connectionString); }
         catch (Exception exception) { return exception; }
     }
 

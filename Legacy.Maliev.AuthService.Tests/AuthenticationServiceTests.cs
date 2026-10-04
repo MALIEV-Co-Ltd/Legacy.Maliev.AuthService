@@ -184,7 +184,7 @@ public sealed class AuthenticationServiceTests
             CancellationToken cancellationToken)
         {
             UserName = userName;
-            Password = password;
+            this.Password = password;
             return Task.FromResult(result);
         }
     }
