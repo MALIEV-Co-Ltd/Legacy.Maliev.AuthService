@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using Legacy.Maliev.AuthService.Application;
 using Legacy.Maliev.AuthService.Domain;
 using Legacy.Maliev.AuthService.Infrastructure;
+using Maliev.Aspire.ServiceDefaults.IAM;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -220,6 +221,10 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores, missingLive: true);
         using var client = app.CreateObservedClient();
+        await using var normalScope = app.Services.CreateAsyncScope();
+        Assert.IsType<IamServiceClient>(normalScope.ServiceProvider.GetRequiredService<IIamServiceClient>());
+        using var normalIam = normalScope.ServiceProvider.GetRequiredService<IHttpClientFactory>().CreateClient("IAMService");
+        Assert.Equal(new Uri("https+http://IAMService"), normalIam.BaseAddress);
         var employee = await LoginAsync(client);
         var caller = await CallerAsync(client);
         using (var original = await SendAsync(client, caller, employee, "/auth/v1/exchange/invoice-create"))
@@ -230,6 +235,9 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Null(row.RevokedAt);
         using var response = await SendAsync(client, caller, employee);
         await AssertOpaqueAsync(response, HttpStatusCode.ServiceUnavailable, employee);
+        Assert.Equal(0, app.ExchangeRequests);
+        Assert.Equal(0, app.StandardAdmissionRequests);
+        Assert.Equal(0, app.IamRequests);
         Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
         Assert.Null((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
