@@ -1,8 +1,8 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Json;
-using System.Security.Cryptography;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Legacy.Maliev.AuthService.Application;
@@ -21,8 +21,8 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
@@ -65,7 +65,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         var parameters = factory.Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
             .Get(JwtBearerDefaults.AuthenticationScheme).TokenValidationParameters;
         var principal = new JwtSecurityTokenHandler { MapInboundClaims = false }.ValidateToken(tokens.AccessToken, parameters, out _);
-        Assert.Equal(ClaimTypes.Role, Assert.IsType<ClaimsIdentity>(principal.Identity).RoleClaimType);
+        Assert.Equal(ClaimTypes.Role, Assert.IsAssignableFrom<ClaimsIdentity>(principal.Identity).RoleClaimType);
         await using var scope = factory.Services.CreateAsyncScope();
         var authorization = scope.ServiceProvider.GetRequiredService<IAuthorizationService>();
         Assert.True((await authorization.AuthorizeAsync(principal, null,
@@ -168,8 +168,16 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         app.UseAuthorization();
         app.MapGet("/Employee", () => Results.NoContent()).RequireAuthorization(policy => policy.RequireRole("Employee"));
         app.MapGet("/Customer", () => Results.NoContent()).RequireAuthorization(policy => policy.RequireRole("Customer"));
-        await app.StartAsync();
-        return app;
+        try
+        {
+            await app.StartAsync();
+            return app;
+        }
+        catch
+        {
+            await app.DisposeAsync();
+            throw;
+        }
     }
 
     [Theory]
