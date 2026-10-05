@@ -25,12 +25,20 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
     /// <inheritdoc />
     public IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now, Guid? employeeSessionId)
     {
+        var role = identity.Kind switch
+        {
+            IdentityKind.Employee => "Employee",
+            IdentityKind.Customer => "Customer",
+            _ => throw new ArgumentOutOfRangeException(nameof(identity), "Unsupported interactive identity kind."),
+        };
         if (identity.Kind == IdentityKind.Employee && (employeeSessionId is null || employeeSessionId == Guid.Empty))
             throw new ArgumentException("Employee token issuance requires a persisted session ID.", nameof(employeeSessionId));
         if (identity.Kind != IdentityKind.Employee && employeeSessionId is not null)
             throw new ArgumentException("Only employee tokens may carry an employee session ID.", nameof(employeeSessionId));
         var claims = new List<Claim>
         {
+            new(ClaimTypes.Role, role),
+            new("role", role),
             new(JwtRegisteredClaimNames.Sub, identity.Id),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
             new(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
