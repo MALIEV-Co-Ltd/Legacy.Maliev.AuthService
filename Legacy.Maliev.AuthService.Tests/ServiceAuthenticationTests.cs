@@ -46,7 +46,7 @@ public sealed class ServiceAuthenticationTests
         Assert.True(result.Succeeded);
         Assert.Equal("service-token", result.Token?.AccessToken);
         Assert.Equal("legacy-web", issuer.ClientId);
-        Assert.Equal(["legacy-contact.messages.create", "legacy-quotation.quotations.create"], issuer.Permissions);
+        Assert.Equal(["legacy-contact.messages.create", "legacy-quotation.quotations.create", LegacyAccessTokenPermissions.CatalogCurrenciesRead], issuer.Permissions);
     }
 
     [Theory]
@@ -186,6 +186,64 @@ public sealed class ServiceAuthenticationTests
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "service");
         Assert.Contains(token.Claims, claim => claim.Type == "permissions" && claim.Value == "legacy-contact.messages.create");
         Assert.DoesNotContain(token.Claims, claim => claim.Type.Contains("secret", StringComparison.OrdinalIgnoreCase) || claim.Type.Contains("refresh", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData("legacy-other")]
+    [InlineData("LEGACY-WEB")]
+    [InlineData("legacy-web-other")]
+    public async Task Login_OtherConfiguredClient_DoesNotAcquireImplicitCurrencyRead(string clientId)
+    {
+        var issuer = new RecordingIssuer();
+        var service = new ServiceAuthenticationService(Options.Create(new ServiceClientOptions
+        {
+            Clients = { [clientId] = new ServiceClientCredential
+            {
+                SecretSha256 = ServiceClientCredential.HashSecret("configured-other-secret"),
+                Permissions = ["legacy-contact.messages.create"],
+            } },
+        }), issuer, TimeProvider.System);
+
+        Assert.True((await service.LoginAsync(new(clientId, "configured-other-secret"))).Succeeded);
+        Assert.Equal(["legacy-contact.messages.create"], issuer.Permissions);
+    }
+
+    [Fact]
+    public async Task Login_WebGrantRegistration_DeduplicatesWithoutMutatingConfiguredGrants()
+    {
+        var credential = new ServiceClientCredential
+        {
+            SecretSha256 = ServiceClientCredential.HashSecret("configured-web-secret"),
+            Permissions = ["legacy-contact.messages.create", "legacy-contact.messages.create"],
+        };
+        var before = credential.Permissions.ToArray();
+        var issuer = new RecordingIssuer();
+        var service = new ServiceAuthenticationService(Options.Create(new ServiceClientOptions
+        {
+            Clients = { ["legacy-web"] = credential },
+        }), issuer, TimeProvider.System);
+
+        Assert.True((await service.LoginAsync(new("legacy-web", "configured-web-secret"))).Succeeded);
+        Assert.Equal(before, credential.Permissions);
+        Assert.Equal(["legacy-contact.messages.create", LegacyAccessTokenPermissions.CatalogCurrenciesRead], issuer.Permissions);
+        Assert.Single(issuer.Permissions!, permission => permission == LegacyAccessTokenPermissions.CatalogCurrenciesRead);
+    }
+
+    [Fact]
+    public async Task Login_ConfiguredWildcardForWeb_RejectsBeforeRegisteredGrant()
+    {
+        var issuer = new RecordingIssuer();
+        var service = new ServiceAuthenticationService(Options.Create(new ServiceClientOptions
+        {
+            Clients = { ["legacy-web"] = new ServiceClientCredential
+            {
+                SecretSha256 = ServiceClientCredential.HashSecret("configured-web-secret"),
+                Permissions = ["*"],
+            } },
+        }), issuer, TimeProvider.System);
+
+        Assert.False((await service.LoginAsync(new("legacy-web", "configured-web-secret"))).Succeeded);
+        Assert.Null(issuer.ClientId);
     }
 
     private sealed class RecordingIssuer : IServiceAccessTokenIssuer
