@@ -136,6 +136,21 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }
 
+    [Fact]
+    public async Task NormalIssuer_UndefinedInteractiveKind_RefusesBeforeIssuance()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var identity = await scope.ServiceProvider.GetRequiredService<ILegacyIdentityReader>()
+            .FindActiveAsync("issuance-employee", IdentityKind.Employee, default);
+        Assert.NotNull(identity);
+        var issuer = scope.ServiceProvider.GetRequiredService<IAccessTokenIssuer>();
+        Assert.Throws<ArgumentOutOfRangeException>(() => issuer.Issue(
+            identity with { Kind = (IdentityKind)42 }, DateTimeOffset.UtcNow, null));
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+    }
+
     private static async Task<WebApplication> CreateDefaultsConsumerAsync(Factory factory, string audience = "issuance-test")
     {
         var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Production" });
