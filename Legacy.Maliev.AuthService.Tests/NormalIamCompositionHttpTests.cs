@@ -21,9 +21,30 @@ public sealed class NormalIamCompositionHttpTests
         var secondClient = Assert.IsType<IamServiceClient>(second.ServiceProvider.GetService<IIamServiceClient>());
         Assert.NotSame(firstClient, secondClient);
         Assert.Same(firstClient, first.ServiceProvider.GetRequiredService<IIamServiceClient>());
+        using var http = first.ServiceProvider.GetRequiredService<IHttpClientFactory>().CreateClient("IAMService");
+        Assert.Equal(new Uri("https://normal-auth-iam.invalid"), http.BaseAddress);
+        Assert.Equal(TimeSpan.FromSeconds(10), http.Timeout);
+        var handler = first.ServiceProvider.GetRequiredService<IHttpMessageHandlerFactory>().CreateHandler("IAMService");
+        while (handler is DelegatingHandler delegating && delegating.InnerHandler is not null)
+            handler = delegating.InnerHandler;
+        if (handler is SocketsHttpHandler sockets) Assert.False(sockets.AllowAutoRedirect);
+        else Assert.False(Assert.IsType<HttpClientHandler>(handler).AllowAutoRedirect);
     }
 
-    private sealed class Factory(string originKey) : WebApplicationFactory<Program>
+    [Theory]
+    [InlineData("http://non-loopback.invalid")]
+    [InlineData("https://normal-auth-iam.invalid/path")]
+    [InlineData("https://normal-auth-iam.invalid?query=value")]
+    [InlineData("https://normal-auth-iam.invalid#fragment")]
+    [InlineData(" https://normal-auth-iam.invalid")]
+    [InlineData("")]
+    public void UnapprovedOrigin_IsRejectedByNormalProgramBeforeSending(string origin)
+    {
+        using var app = new Factory("Services:IAMService:BaseUrl", origin);
+        Assert.ThrowsAny<InvalidOperationException>(() => app.Services);
+    }
+
+    private sealed class Factory(string originKey, string origin = "https://normal-auth-iam.invalid") : WebApplicationFactory<Program>
     {
         private readonly RSA signingKey = RSA.Create(2048);
 
@@ -31,7 +52,7 @@ public sealed class NormalIamCompositionHttpTests
         {
             builder.UseEnvironment("Testing");
             builder.UseSetting("CORS:AllowedOrigins", "https://localhost");
-            builder.UseSetting(originKey, "https://normal-auth-iam.invalid");
+            builder.UseSetting(originKey, origin);
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(
                 new Dictionary<string, string?>
                 {

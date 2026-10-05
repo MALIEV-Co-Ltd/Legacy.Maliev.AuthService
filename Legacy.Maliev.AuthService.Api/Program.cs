@@ -31,6 +31,7 @@ await PrivateStartupBoundary.RunAsync(async () =>
     builder.Services.AddSingleton<QualificationIntrospectionRateLimiter>();
     builder.Services.AddLegacyAuthInfrastructure(builder.Configuration);
     builder.AddQuotationInvoiceLiveAuthority();
+    builder.AddAuthIamClient();
     // Auth readiness must reflect every PostgreSQL store used by the service. The
     // infrastructure registrations above are intentionally explicit, so register
     // their health checks here rather than relying on the shared helper.
