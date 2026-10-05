@@ -202,7 +202,7 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Equal(42, result.DatabaseId);
         var stored = await fixture.Customers.Users.AsNoTracking().SingleAsync();
         Assert.Equal(42, stored.DatabaseID);
-        Assert.True(string.Equals(hash, stored.PasswordHash, StringComparison.Ordinal));
+        Assert.Equal(hash, stored.PasswordHash);
         Assert.NotEqual(securityStamp, stored.SecurityStamp);
         Assert.NotEqual(concurrencyStamp, stored.ConcurrencyStamp);
         var linkedStamp = stored.SecurityStamp;
@@ -214,7 +214,7 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         stored = await fixture.Customers.Users.AsNoTracking().SingleAsync();
         Assert.Equal(linkedStamp, stored.SecurityStamp);
         Assert.Equal(linkedConcurrencyStamp, stored.ConcurrencyStamp);
-        Assert.True(string.Equals(hash, stored.PasswordHash, StringComparison.Ordinal));
+        Assert.Equal(hash, stored.PasswordHash);
         Assert.Empty(await fixture.State.RefreshSessions.AsNoTracking().ToListAsync());
         Assert.Empty(await fixture.State.IdentityActionTokens.AsNoTracking().ToListAsync());
     }
