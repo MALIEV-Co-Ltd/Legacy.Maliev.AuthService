@@ -10,6 +10,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Json;
@@ -190,6 +191,41 @@ public sealed class LegacyWebCurrencyPermissionHttpTests(PostgresFixture postgre
         {
             base.Dispose(disposing);
             if (disposing) signer.Dispose();
+        }
+
+        public override async ValueTask DisposeAsync()
+        {
+            var pools = new List<NpgsqlConnection>
+            {
+                (NpgsqlConnection)employees.Database.GetDbConnection(),
+                (NpgsqlConnection)customers.Database.GetDbConnection(),
+                (NpgsqlConnection)sessions.Database.GetDbConnection(),
+            };
+            try
+            {
+                await using var scope = Services.CreateAsyncScope();
+                var contexts = new DbContext[]
+                {
+                    scope.ServiceProvider.GetRequiredService<EmployeeIdentityDbContext>(),
+                    scope.ServiceProvider.GetRequiredService<CustomerIdentityDbContext>(),
+                    scope.ServiceProvider.GetRequiredService<RefreshSessionDbContext>(),
+                };
+                foreach (var context in contexts)
+                {
+                    pools.Add((NpgsqlConnection)context.Database.GetDbConnection());
+                    await context.Database.OpenConnectionAsync();
+                    await context.Database.CloseConnectionAsync();
+                }
+            }
+            finally
+            {
+                try { await base.DisposeAsync(); }
+                finally
+                {
+                    signer.Dispose();
+                    foreach (var pool in pools) NpgsqlConnection.ClearPool(pool);
+                }
+            }
         }
     }
 }
