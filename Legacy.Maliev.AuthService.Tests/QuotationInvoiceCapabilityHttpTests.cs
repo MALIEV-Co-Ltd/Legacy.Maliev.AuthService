@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
@@ -7,6 +8,7 @@ using System.Security.Cryptography;
 using Legacy.Maliev.AuthService.Application;
 using Legacy.Maliev.AuthService.Domain;
 using Legacy.Maliev.AuthService.Infrastructure;
+using Maliev.Aspire.ServiceDefaults.IAM;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -35,7 +37,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = await LoginAsync(client);
         var original = await stores.State.RefreshSessions.SingleAsync();
         var otherId = Guid.NewGuid();
@@ -55,7 +57,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         using var response = await SendAsync(client, await CallerAsync(client), employee);
         await AssertOpaqueAsync(response, HttpStatusCode.Unauthorized, employee);
         Assert.Equal(0, app.IamRequests);
-        Assert.Equal(0, app.ExchangeRequests);
+        app.AssertStandardAdmissionOnly();
         Assert.Equal(2, await stores.State.RefreshSessions.CountAsync());
         Assert.All(await stores.State.RefreshSessions.AsNoTracking().ToListAsync(), x => Assert.Null(x.RevokedAt));
     }
@@ -67,7 +69,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = await LoginAsync(client);
         var caller = app.ChangeCaller(await CallerAsync(client), mutation);
         using var callerPayload = System.Text.Json.JsonDocument.Parse(Base64UrlEncoder.DecodeBytes(caller.Split('.')[1]));
@@ -77,7 +79,9 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         using var response = await SendAsync(client, caller, employee);
         await AssertOpaqueAsync(response, HttpStatusCode.Forbidden, employee);
         Assert.Equal(0, app.IamRequests);
-        Assert.Equal(0, app.ExchangeRequests);
+        app.AssertStandardAdmissionOnly();
+        Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
+        Assert.Null((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
     [Theory]
@@ -94,12 +98,12 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = app.ChangeNumericDate(await LoginAsync(client), field, mutation);
         using var response = await SendAsync(client, await CallerAsync(client), employee);
         await AssertOpaqueAsync(response, HttpStatusCode.Unauthorized, employee);
         Assert.Equal(0, app.IamRequests);
-        Assert.Equal(0, app.ExchangeRequests);
+        app.AssertStandardAdmissionOnly();
         Assert.Null((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
@@ -114,7 +118,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         await using var scope = app.Services.CreateAsyncScope();
         var service = scope.ServiceProvider.GetRequiredService<QuotationInvoiceCapabilityService>();
         var request = new QuotationInvoiceCapabilityRequest(
@@ -141,7 +145,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var signer = app.Services.GetRequiredService<IQuotationInvoiceCapabilityTokenIssuer>();
         Assert.ThrowsAny<ArgumentException>(() => signer.IssueQuotationInvoiceCapability(
             mutation == "empty-subject" ? "" : mutation == "service-subject" ? "service:legacy-intranet" : "capability-employee",
@@ -158,7 +162,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         await using var stores = await Stores.CreateAsync(postgres);
         var clock = new ReversibleTestClock(DateTimeOffset.UtcNow);
         await using var app = new Factory(stores, pauseIam: afterLive, clockOverride: clock);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = await LoginAsync(client);
         if (!afterLive) employee = app.InvalidEmployee(employee, "nbf-future");
         var pending = SendAsync(client, await CallerAsync(client), employee);
@@ -190,11 +194,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     [InlineData("iat-future")]
     [InlineData("user-id")]
     [InlineData("locked")]
-    public async Task InvalidEmployeeCredential_IsUnauthorizedBeforeAnyLiveTransport(string mutation)
+    public async Task InvalidEmployeeCredential_IsUnauthorizedBeforeEmployeeLiveAuthority(string mutation)
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = await LoginAsync(client);
         if (mutation == "locked")
         {
@@ -206,7 +210,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         else employee = app.InvalidEmployee(employee, mutation);
         using var response = await SendAsync(client, await CallerAsync(client), employee);
         await AssertOpaqueAsync(response, HttpStatusCode.Unauthorized, employee);
-        Assert.Equal(0, app.ExchangeRequests);
+        app.AssertStandardAdmissionOnly();
         Assert.Equal(0, app.IamRequests);
         Assert.Null((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
@@ -216,7 +220,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores, missingLive: true);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
+        await using var normalScope = app.Services.CreateAsyncScope();
+        Assert.IsType<IamServiceClient>(normalScope.ServiceProvider.GetRequiredService<IIamServiceClient>());
+        using var normalIam = normalScope.ServiceProvider.GetRequiredService<IHttpClientFactory>().CreateClient("IAMService");
+        Assert.Equal(new Uri("https+http://IAMService"), normalIam.BaseAddress);
         var employee = await LoginAsync(client);
         var caller = await CallerAsync(client);
         using (var original = await SendAsync(client, caller, employee, "/auth/v1/exchange/invoice-create"))
@@ -227,6 +235,9 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Null(row.RevokedAt);
         using var response = await SendAsync(client, caller, employee);
         await AssertOpaqueAsync(response, HttpStatusCode.ServiceUnavailable, employee);
+        Assert.Equal(0, app.ExchangeRequests);
+        Assert.Equal(0, app.StandardAdmissionRequests);
+        Assert.Equal(0, app.IamRequests);
         Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
         Assert.Null((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
@@ -239,7 +250,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = await LoginAsync(client);
         var caller = await CallerAsync(client);
         var session = await stores.State.RefreshSessions.SingleAsync();
@@ -273,7 +284,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = await LoginAsync(client);
         using var response = await SendAsync(client, await CallerAsync(client), employee, quote: quote, operation: operation);
         await AssertOpaqueAsync(response, HttpStatusCode.BadRequest, employee);
@@ -284,7 +295,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = await LoginAsync(client);
         using var response = await SendAsync(client, await CallerAsync(client, "legacy-accounting"), employee);
         await AssertOpaqueAsync(response, HttpStatusCode.Forbidden, employee);
@@ -295,7 +306,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = await LoginAsync(client);
         using var response = await SendAsync(client, null, employee);
         await AssertOpaqueAsync(response, HttpStatusCode.Unauthorized, employee);
@@ -306,7 +317,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = app.RemoveQuotationPermission(await LoginAsync(client));
         var caller = await CallerAsync(client);
         using (var original = await SendAsync(client, caller, employee, "/auth/v1/exchange/invoice-create"))
@@ -320,7 +331,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = await LoginAsync(client);
         var caller = await CallerAsync(client);
         using (var old = await SendAsync(client, caller, employee, "/auth/v1/exchange/invoice-create")) await AssertOriginalInvoiceAsync(old, app);
@@ -341,7 +352,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = await LoginAsync(client);
         if (bound == "employee") employee = app.ChangeEmployee(employee, lifetimeSeconds: 30);
         if (bound == "session")
@@ -359,12 +370,15 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Throws<SecurityTokenInvalidLifetimeException>(() => app.ValidateCapability(issued.AccessToken));
     }
 
-    [Fact]
-    public async Task RepeatedAuthorizedRequest_RechecksLiveAuthorityAndUsesFreshJti()
+    [Theory]
+    [InlineData(HttpStatusCode.NotFound, 1)]
+    [InlineData(HttpStatusCode.Unauthorized, 3)]
+    [InlineData(HttpStatusCode.Forbidden, 3)]
+    public async Task RepeatedAuthorizedRequest_RechecksLiveAuthorityAndPreservesWorkloadInvalidation(HttpStatusCode admissionStatus, int expectedExchanges)
     {
         await using var stores = await Stores.CreateAsync(postgres);
-        await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        await using var app = new Factory(stores, standardAdmissionStatus: admissionStatus);
+        using var client = app.CreateObservedClient();
         var employee = await LoginAsync(client);
         var caller = await CallerAsync(client);
         using var first = await SendAsync(client, caller, employee);
@@ -373,7 +387,8 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         var secondToken = await AssertCapabilityAsync(second, app, 120);
         Assert.NotEqual(app.ValidateCapability(firstToken.AccessToken).Id, app.ValidateCapability(secondToken.AccessToken).Id);
         Assert.Equal(2, app.IamRequests);
-        Assert.Equal(1, app.ExchangeRequests);
+        Assert.Equal(expectedExchanges, app.ExchangeRequests);
+        app.AssertRepeatedAuthorityOrder(expectedExchanges);
         Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
     }
 
@@ -386,7 +401,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores, body, iamStatus: (HttpStatusCode)upstreamStatus);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = await LoginAsync(client);
         using var response = await SendAsync(client, await CallerAsync(client), employee);
         await AssertOpaqueAsync(response, expected, employee);
@@ -398,17 +413,19 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     [InlineData("missing-grant")]
     [InlineData("wildcard-grant")]
     [InlineData("executor")]
-    public async Task SignedRequesterWithoutExactIssuanceAuthority_IsForbiddenBeforeIam(string change)
+    public async Task SignedRequesterWithoutExactIssuanceAuthority_IsForbiddenBeforeEmployeeLiveIam(string change)
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = await LoginAsync(client);
         var caller = app.ChangeCaller(await CallerAsync(client), change);
         using var response = await SendAsync(client, caller, employee);
         await AssertOpaqueAsync(response, HttpStatusCode.Forbidden, employee);
         Assert.Equal(0, app.IamRequests);
-        Assert.Equal(0, app.ExchangeRequests);
+        app.AssertStandardAdmissionOnly();
+        Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
+        Assert.Null((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
     [Theory]
@@ -418,7 +435,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = app.ChangeEmployee(await LoginAsync(client), removed == "accounting-permission" ? "legacy.accounting.create" : "legacy.quotations.update");
         using var response = await SendAsync(client, await CallerAsync(client), employee);
         await AssertOpaqueAsync(response, HttpStatusCode.Forbidden, employee);
@@ -438,7 +455,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores, pauseIam: true);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         var employee = await LoginAsync(client);
         // Expiry is before the independent transport deadline, so the intended recheck is not masked by timeout.
         if (change == "employee-expired") employee = app.ChangeEmployee(employee, lifetimeSeconds: 5);
@@ -487,7 +504,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores, pauseIam: true);
-        using var client = app.CreateClient();
+        using var client = app.CreateObservedClient();
         using var abort = new CancellationTokenSource();
         var employee = await LoginAsync(client);
         var pending = SendAsync(client, await CallerAsync(client), employee, cancellationToken: abort.Token);
@@ -596,13 +613,43 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     }
 
     private sealed class Factory(Stores stores, string iamBody = "{\"allowed\":true}", bool missingLive = false,
-        bool pauseIam = false, HttpStatusCode iamStatus = HttpStatusCode.OK, TimeProvider? clockOverride = null) : WebApplicationFactory<Program>
+        bool pauseIam = false, HttpStatusCode iamStatus = HttpStatusCode.OK, TimeProvider? clockOverride = null,
+        HttpStatusCode standardAdmissionStatus = HttpStatusCode.NotFound) : WebApplicationFactory<Program>
     {
         public const string Secret = "capability-disposable-service-credential";
         private readonly RSA key = RSA.Create(2048);
         public FakeTimeProvider Clock { get; } = new(DateTimeOffset.UtcNow);
+        // All machine workload exchanges, including standard service admission.
         public int ExchangeRequests { get; private set; }
+        // Scoped employee live authority is counted separately from standard route admission.
         public int IamRequests { get; private set; }
+        public int StandardAdmissionRequests { get; private set; }
+        private int standardAdmissionFailures;
+        private readonly ConcurrentQueue<string> boundaryOrder = new();
+        private readonly ConcurrentQueue<string> issuedWorkloadIds = new();
+        private readonly ConcurrentQueue<string> standardAdmissionFailureSites = new();
+        private string? observedAdmissionRoute;
+
+        public HttpClient CreateObservedClient() => CreateDefaultClient(new InboundRouteObserver(this));
+
+        public void AssertRepeatedAuthorityOrder(int expectedExchanges)
+        {
+            Assert.Equal(2, StandardAdmissionRequests);
+            Assert.Equal(expectedExchanges, issuedWorkloadIds.Count);
+            Assert.Equal(expectedExchanges, issuedWorkloadIds.Distinct(StringComparer.Ordinal).Count());
+            string[] expectedOrder = expectedExchanges == 1
+                ? ["workload-token", "standard-service-admission", "scoped-employee-live-authority", "standard-service-admission", "scoped-employee-live-authority"]
+                : ["workload-token", "standard-service-admission", "workload-token", "scoped-employee-live-authority", "standard-service-admission", "workload-token", "scoped-employee-live-authority"];
+            Assert.Equal(expectedOrder, boundaryOrder.ToArray());
+        }
+
+        public void AssertStandardAdmissionOnly()
+        {
+            Assert.Equal(1, ExchangeRequests);
+            Assert.Equal(1, StandardAdmissionRequests);
+            Assert.Equal(0, IamRequests);
+            Assert.Equal(["workload-token", "standard-service-admission"], boundaryOrder.ToArray());
+        }
         public TaskCompletionSource IamReached { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource IamRelease { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource IamCancelled { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -610,6 +657,8 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("CORS:AllowedOrigins", "https://localhost");
+            // The normal IAM origin is validated while Program composes the host.
+            if (!missingLive) builder.UseSetting("Services:IAMService:BaseUrl", "https://capability-iam.test");
             builder.ConfigureAppConfiguration((_, config) =>
             {
                 var values = new Dictionary<string, string?>
@@ -774,10 +823,47 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
             var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
             var parsed = Assert.IsType<ServiceTokenResponse>(System.Text.Json.JsonSerializer.Deserialize<ServiceTokenResponse>(bytes, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
             ValidateOwnMachine(parsed.AccessToken);
+            issuedWorkloadIds.Enqueue(new JwtSecurityTokenHandler().ReadJwtToken(parsed.AccessToken).Id);
+            boundaryOrder.Enqueue("workload-token");
             response.Content.Dispose();
             response.Content = new ByteArrayContent(bytes);
             response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
             return response;
+        }
+
+        private async Task<HttpResponseMessage> StandardAdmissionAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            try { return await ValidateStandardAdmissionAsync(request, cancellationToken); }
+            catch (Exception exception)
+            {
+                standardAdmissionFailures++;
+                standardAdmissionFailureSites.Enqueue(exception.StackTrace ?? exception.GetType().Name);
+                throw;
+            }
+        }
+
+        private async Task<HttpResponseMessage> ValidateStandardAdmissionAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            StandardAdmissionRequests++;
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Equal("https://capability-iam.test/iam/v1/auth/check-permission", request.RequestUri!.AbsoluteUri);
+            Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+            ValidateOwnMachine(request.Headers.Authorization.Parameter!);
+            Assert.False(request.Headers.Contains("X-Maliev-IAM-Live-Check-Key"));
+            using var body = System.Text.Json.JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+            var root = body.RootElement;
+            Assert.Contains(root.GetProperty("principalId").GetString(), new[] { "service:legacy-intranet", "service:legacy-accounting" });
+            var route = observedAdmissionRoute;
+            Assert.Contains(route, new[] { Endpoint, "/auth/v1/exchange/invoice-create" });
+            Assert.Equal(route == Endpoint ? QuotationInvoiceCapabilityContract.IssuePermission : LegacyAccessTokenPermissions.InvoiceDelegationIssue,
+                root.GetProperty("permissionId").GetString());
+            Assert.Equal("global", root.GetProperty("resourcePath").GetString());
+            Assert.False(root.GetProperty("bypassCache").GetBoolean());
+            // Default 404 models an unavailable route, without a grant or cached denial.
+            // Explicit 401/403 controls retain real token invalidation
+            // before the separate scoped live check. No production token policy is replaced.
+            boundaryOrder.Enqueue("standard-service-admission");
+            return new(standardAdmissionStatus);
         }
 
         private async Task<HttpResponseMessage> IamAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -793,6 +879,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
             Assert.Equal("legacy.quotations.update", body.RootElement.GetProperty("permissionId").GetString());
             Assert.Equal("/quotations/84", body.RootElement.GetProperty("resourcePath").GetString());
             Assert.True(body.RootElement.GetProperty("bypassCache").GetBoolean());
+            boundaryOrder.Enqueue("scoped-employee-live-authority");
             IamReached.TrySetResult();
             if (pauseIam)
             {
@@ -812,8 +899,22 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
                 next(builder);
                 if (builder.Name == "LegacyAuthServiceTokenExchange") builder.PrimaryHandler = new BoundaryHandler(app.ExchangeAsync);
                 if (builder.Name == "QuotationInvoiceLiveAuthority") builder.PrimaryHandler = new BoundaryHandler(app.IamAsync);
+                if (builder.Name == "IAMService") builder.PrimaryHandler = new BoundaryHandler(app.StandardAdmissionAsync);
             };
         }
+        // Observe the actual test-client HTTP route before normal Program processes it.
+        // Nested real workload login must not overwrite the admitted route. No server
+        // service or authorization component is replaced by this client-side observer.
+        private sealed class InboundRouteObserver(Factory app) : DelegatingHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                var route = request.RequestUri!.AbsolutePath;
+                if (route is Endpoint or "/auth/v1/exchange/invoice-create") app.observedAdmissionRoute = route;
+                return base.SendAsync(request, cancellationToken);
+            }
+        }
+
         private sealed class BoundaryHandler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send) : HttpMessageHandler
         {
             protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) => send(request, cancellationToken);
@@ -844,23 +945,33 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         public override async ValueTask DisposeAsync()
         {
             var connections = new List<NpgsqlConnection>();
-            await using (var scope = Services.CreateAsyncScope())
+            try
             {
-                foreach (var context in new DbContext[]
+                await using var scope = Services.CreateAsyncScope();
+                var contexts = new DbContext[]
                 {
                     scope.ServiceProvider.GetRequiredService<EmployeeIdentityDbContext>(),
                     scope.ServiceProvider.GetRequiredService<CustomerIdentityDbContext>(),
                     scope.ServiceProvider.GetRequiredService<RefreshSessionDbContext>(),
-                })
+                };
+                connections.AddRange(contexts.Select(context => (NpgsqlConnection)context.Database.GetDbConnection()));
+                foreach (var context in contexts)
                 {
                     await context.Database.OpenConnectionAsync();
-                    connections.Add((NpgsqlConnection)context.Database.GetDbConnection());
                     await context.Database.CloseConnectionAsync();
                 }
             }
-            await base.DisposeAsync();
-            key.Dispose();
-            foreach (var connection in connections) NpgsqlConnection.ClearPool(connection);
+            finally
+            {
+                try { await base.DisposeAsync(); }
+                finally
+                {
+                    key.Dispose();
+                    foreach (var connection in connections) NpgsqlConnection.ClearPool(connection);
+                }
+            }
+            Assert.True(standardAdmissionFailures == 0,
+                "Controlled standard admission assertion failed at: " + string.Join(Environment.NewLine, standardAdmissionFailureSites));
         }
     }
 

@@ -36,6 +36,14 @@ jobs:
         with:
           solution: Legacy.Maliev.AuthService.slnx
           use-local-maliev-dependencies: 'true'
+      - name: Verify normal IAM composition and workload boundary
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore \
+            -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~NormalIam|FullyQualifiedName~QuotationInvoiceCapabilityHttpTests" \
+            --logger "trx;LogFileName=normal-iam.trx" --results-directory artifacts/normal-iam
       - name: Verify coverage gate and evidence controls
         shell: pwsh
         run: |
