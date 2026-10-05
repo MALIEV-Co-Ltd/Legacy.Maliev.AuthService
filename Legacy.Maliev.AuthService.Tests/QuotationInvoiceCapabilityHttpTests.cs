@@ -370,11 +370,14 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Throws<SecurityTokenInvalidLifetimeException>(() => app.ValidateCapability(issued.AccessToken));
     }
 
-    [Fact]
-    public async Task RepeatedAuthorizedRequest_RechecksLiveAuthorityAndUsesFreshJti()
+    [Theory]
+    [InlineData(HttpStatusCode.NotFound, 1)]
+    [InlineData(HttpStatusCode.Unauthorized, 3)]
+    [InlineData(HttpStatusCode.Forbidden, 3)]
+    public async Task RepeatedAuthorizedRequest_RechecksLiveAuthorityAndPreservesWorkloadInvalidation(HttpStatusCode admissionStatus, int expectedExchanges)
     {
         await using var stores = await Stores.CreateAsync(postgres);
-        await using var app = new Factory(stores);
+        await using var app = new Factory(stores, standardAdmissionStatus: admissionStatus);
         using var client = app.CreateObservedClient();
         var employee = await LoginAsync(client);
         var caller = await CallerAsync(client);
@@ -384,7 +387,8 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         var secondToken = await AssertCapabilityAsync(second, app, 120);
         Assert.NotEqual(app.ValidateCapability(firstToken.AccessToken).Id, app.ValidateCapability(secondToken.AccessToken).Id);
         Assert.Equal(2, app.IamRequests);
-        Assert.Equal(1, app.ExchangeRequests);
+        Assert.Equal(expectedExchanges, app.ExchangeRequests);
+        app.AssertRepeatedAuthorityOrder(expectedExchanges);
         Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
     }
 
@@ -609,7 +613,8 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     }
 
     private sealed class Factory(Stores stores, string iamBody = "{\"allowed\":true}", bool missingLive = false,
-        bool pauseIam = false, HttpStatusCode iamStatus = HttpStatusCode.OK, TimeProvider? clockOverride = null) : WebApplicationFactory<Program>
+        bool pauseIam = false, HttpStatusCode iamStatus = HttpStatusCode.OK, TimeProvider? clockOverride = null,
+        HttpStatusCode standardAdmissionStatus = HttpStatusCode.NotFound) : WebApplicationFactory<Program>
     {
         public const string Secret = "capability-disposable-service-credential";
         private readonly RSA key = RSA.Create(2048);
@@ -621,10 +626,22 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         public int StandardAdmissionRequests { get; private set; }
         private int standardAdmissionFailures;
         private readonly ConcurrentQueue<string> boundaryOrder = new();
+        private readonly ConcurrentQueue<string> issuedWorkloadIds = new();
         private readonly ConcurrentQueue<string> standardAdmissionFailureSites = new();
         private string? observedAdmissionRoute;
 
         public HttpClient CreateObservedClient() => CreateDefaultClient(new InboundRouteObserver(this));
+
+        public void AssertRepeatedAuthorityOrder(int expectedExchanges)
+        {
+            Assert.Equal(2, StandardAdmissionRequests);
+            Assert.Equal(expectedExchanges, issuedWorkloadIds.Count);
+            Assert.Equal(expectedExchanges, issuedWorkloadIds.Distinct(StringComparer.Ordinal).Count());
+            string[] expectedOrder = expectedExchanges == 1
+                ? ["workload-token", "standard-service-admission", "scoped-employee-live-authority", "standard-service-admission", "scoped-employee-live-authority"]
+                : ["workload-token", "standard-service-admission", "workload-token", "scoped-employee-live-authority", "standard-service-admission", "workload-token", "scoped-employee-live-authority"];
+            Assert.Equal(expectedOrder, boundaryOrder.ToArray());
+        }
 
         public void AssertStandardAdmissionOnly()
         {
@@ -806,6 +823,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
             var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
             var parsed = Assert.IsType<ServiceTokenResponse>(System.Text.Json.JsonSerializer.Deserialize<ServiceTokenResponse>(bytes, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
             ValidateOwnMachine(parsed.AccessToken);
+            issuedWorkloadIds.Enqueue(new JwtSecurityTokenHandler().ReadJwtToken(parsed.AccessToken).Id);
             boundaryOrder.Enqueue("workload-token");
             response.Content.Dispose();
             response.Content = new ByteArrayContent(bytes);
@@ -841,10 +859,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
                 root.GetProperty("permissionId").GetString());
             Assert.Equal("global", root.GetProperty("resourcePath").GetString());
             Assert.False(root.GetProperty("bypassCache").GetBoolean());
-            // Refuse upstream admission without granting a fixture permission or caching
-            // a denial across factories. The unchanged standard policy uses signed claims.
+            // Default 404 models an unavailable route, without a grant or cached denial.
+            // Explicit 401/403 controls retain real token invalidation
+            // before the separate scoped live check. No production token policy is replaced.
             boundaryOrder.Enqueue("standard-service-admission");
-            return new(HttpStatusCode.Unauthorized);
+            return new(standardAdmissionStatus);
         }
 
         private async Task<HttpResponseMessage> IamAsync(HttpRequestMessage request, CancellationToken cancellationToken)
