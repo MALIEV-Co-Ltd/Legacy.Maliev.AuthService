@@ -31,6 +31,80 @@ namespace Legacy.Maliev.AuthService.Tests;
 public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
 {
     [Theory]
+    [InlineData(IdentityKind.Employee)]
+    [InlineData(IdentityKind.Customer)]
+    public async Task NormalHistoricalSecurity_IdentityIdPasswordDeniesWithoutMutation_RealPasswordIssuesBoundActor(IdentityKind kind)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores);
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+        var identities = await SnapshotIdentitiesAsync(stores);
+        var id = kind == IdentityKind.Employee ? "issuance-employee" : "issuance-customer";
+        var login = Login(kind);
+        using var denied = await client.PostAsJsonAsync("/auth/v1/login", login with { Password = id });
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        var problem = await denied.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(id, problem, StringComparison.Ordinal);
+        Assert.DoesNotContain(login.UserName, problem, StringComparison.Ordinal);
+        Assert.DoesNotContain(login.Password, problem, StringComparison.Ordinal);
+        Assert.DoesNotContain("accessToken", problem, StringComparison.Ordinal);
+        Assert.Equal(identities, await SnapshotIdentitiesAsync(stores));
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+
+        var tokens = await LoginAsync(client, kind);
+        var jwt = ReadJwt(tokens.AccessToken, factory);
+        var role = kind == IdentityKind.Employee ? "Employee" : "Customer";
+        Assert.Equal(id, Assert.Single(jwt.Claims, claim => claim.Type == "sub").Value);
+        Assert.Equal(kind.ToString().ToLowerInvariant(), Assert.Single(jwt.Claims, claim => claim.Type == "identity_kind").Value);
+        Assert.Equal(role, Assert.Single(jwt.Claims, claim => claim.Type == ClaimTypes.Role).Value);
+        Assert.Equal(role, Assert.Single(jwt.Claims, claim => claim.Type == "role").Value);
+        var session = Assert.Single(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+        Assert.Equal(id, session.IdentityId);
+        Assert.Equal(kind, session.IdentityKind);
+        Assert.Equal(Hash(tokens.RefreshToken), session.TokenHash);
+        Assert.Equal(identities, await SnapshotIdentitiesAsync(stores));
+    }
+
+    [Theory]
+    [InlineData("validate")]
+    [InlineData("longlived")]
+    public async Task NormalHistoricalSecurity_RetiredCredentialRoutesRemainAbsentWithoutIdentityOrSessionMutation(string route)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores);
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+        var identities = await SnapshotIdentitiesAsync(stores);
+        var login = Login(IdentityKind.Employee);
+        using var request = route == "validate"
+            ? new HttpRequestMessage(HttpMethod.Get, "/auth/validate?username=" + Uri.EscapeDataString(login.UserName)
+                + "&password=" + Uri.EscapeDataString(login.Password))
+            : new HttpRequestMessage(HttpMethod.Post, "/auth/token/longlived");
+        if (route == "longlived")
+            request.Headers.Authorization = new("Basic", Convert.ToBase64String(Encoding.UTF8.GetBytes(login.UserName + ":" + login.Password)));
+        using var absent = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.NotFound, absent.StatusCode);
+        var body = await absent.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(login.UserName, body, StringComparison.Ordinal);
+        Assert.DoesNotContain(login.Password, body, StringComparison.Ordinal);
+        Assert.DoesNotContain("accessToken", body, StringComparison.Ordinal);
+        if (request.Headers.Authorization is not null)
+            Assert.DoesNotContain(request.Headers.Authorization.Parameter!, body, StringComparison.Ordinal);
+        Assert.Equal(identities, await SnapshotIdentitiesAsync(stores));
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+        var tokens = await LoginAsync(client, IdentityKind.Employee);
+        Assert.Equal("employee", Assert.Single(ReadJwt(tokens.AccessToken, factory).Claims, claim => claim.Type == "identity_kind").Value);
+        Assert.Single(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+    }
+
+    private static async Task<string> SnapshotIdentitiesAsync(Stores stores) => JsonSerializer.Serialize(new
+    {
+        Employees = await stores.Employees.Users.AsNoTracking().OrderBy(row => row.Id).ToListAsync(),
+        Customers = await stores.Customers.Users.AsNoTracking().OrderBy(row => row.Id).ToListAsync(),
+    });
+
+    [Theory]
     [InlineData(IdentityKind.Employee, false)]
     [InlineData(IdentityKind.Employee, true)]
     [InlineData(IdentityKind.Customer, false)]
