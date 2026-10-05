@@ -176,6 +176,17 @@ public sealed class DeliveryContractTests
             permissions);
     }
 
+    [Fact]
+    public void DeploymentContract_RegistersOnlyWebCurrencyReadAsSourceOwnedGrant()
+    {
+        var contract = File.ReadAllText(Path.Combine(FindRepositoryRoot(), "deploy", "README.md"));
+        var paragraph = System.Text.RegularExpressions.Regex.Match(contract,
+            "normal Auth source registry adds only `(?<permission>[^`]+)` to credential-verified `legacy-web`");
+        Assert.True(paragraph.Success);
+        Assert.Equal(Legacy.Maliev.AuthService.Application.LegacyAccessTokenPermissions.CatalogCurrenciesRead,
+            paragraph.Groups["permission"].Value);
+    }
+
     private static string FindRepositoryRoot()
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
