@@ -11,7 +11,7 @@ namespace Legacy.Maliev.AuthService.Tests;
 
 public sealed class NativeLoggingConsumerContractTests
 {
-    private const string SharedLoggingCommit = "c40a7f82cea347b949444dcd7fb730f2b8dc3c0e";
+    private const string SharedLoggingCommit = "7edcd961024868513fd5f373cab3dcb261197f77";
 
     [Fact]
     public void AuthHostAndDelivery_ConsumePinnedSharedLoggingWithoutNativeLogging()
