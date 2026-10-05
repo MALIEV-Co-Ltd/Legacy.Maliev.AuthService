@@ -44,6 +44,14 @@ jobs:
             -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~NormalIam|FullyQualifiedName~QuotationInvoiceCapabilityHttpTests|FullyQualifiedName~InvoiceDelegationContractTests|FullyQualifiedName~NativeLoggingConsumerContractTests|FullyQualifiedName~DeliveryContractTests" \
             --logger "trx;LogFileName=normal-iam.trx" --results-directory artifacts/normal-iam
+      - name: Verify interactive actor roles and scoped token isolation
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore \
+            -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~EmployeeSessionIssuanceHttpTests" \
+            --logger "trx;LogFileName=actor-roles.trx" --results-directory artifacts/actor-roles
       - name: Verify offline Auth manifest review scripts
         shell: pwsh
         run: ./eng/Test-AuthManifestReview.ps1

@@ -2,12 +2,18 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Security.Claims;
+using System.Text;
 using System.Text.Json;
 using Legacy.Maliev.AuthService.Application;
 using Legacy.Maliev.AuthService.Domain;
 using Legacy.Maliev.AuthService.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization.Infrastructure;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +22,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Hosting;
 using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
@@ -23,6 +30,133 @@ namespace Legacy.Maliev.AuthService.Tests;
 [Collection(PostgresCollection.Name)]
 public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
 {
+    [Theory]
+    [InlineData(IdentityKind.Employee, false)]
+    [InlineData(IdentityKind.Employee, true)]
+    [InlineData(IdentityKind.Customer, false)]
+    [InlineData(IdentityKind.Customer, true)]
+    public async Task NormalLoginAndRefresh_PersistedActorRole_ReachesNormalRoleAuthorization(IdentityKind kind, bool refresh)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores);
+        using var client = factory.CreateClient();
+        var tokens = await LoginAsync(client, kind);
+        var original = ReadJwt(tokens.AccessToken, factory);
+        if (refresh)
+        {
+            using var response = await client.PostAsJsonAsync("/auth/v1/refresh", new RefreshRequest(tokens.RefreshToken));
+            tokens = await ReadTokensAsync(response);
+        }
+        var token = ReadJwt(tokens.AccessToken, factory);
+        var expectedRole = kind == IdentityKind.Employee ? "Employee" : "Customer";
+        var oppositeRole = kind == IdentityKind.Employee ? "Customer" : "Employee";
+        await using var consumer = await CreateDefaultsConsumerAsync(factory);
+        using var consumerClient = consumer.GetTestClient();
+        consumerClient.DefaultRequestHeaders.Authorization = new("Bearer", tokens.AccessToken);
+        using var accepted = await consumerClient.GetAsync("/" + expectedRole);
+        using var refused = await consumerClient.GetAsync("/" + oppositeRole);
+        Assert.Equal(HttpStatusCode.NoContent, accepted.StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+        Assert.Equal(expectedRole, Assert.Single(token.Claims, claim => claim.Type == ClaimTypes.Role).Value);
+        Assert.Equal(expectedRole, Assert.Single(token.Claims, claim => claim.Type == "role").Value);
+        Assert.Equal(kind.ToString().ToLowerInvariant(), Assert.Single(token.Claims, claim => claim.Type == "identity_kind").Value);
+        Assert.Equal(original.Claims.Where(claim => claim.Type == "permissions").Select(claim => claim.Value),
+            token.Claims.Where(claim => claim.Type == "permissions").Select(claim => claim.Value));
+        var parameters = factory.Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
+            .Get(JwtBearerDefaults.AuthenticationScheme).TokenValidationParameters;
+        var principal = new JwtSecurityTokenHandler { MapInboundClaims = false }.ValidateToken(tokens.AccessToken, parameters, out _);
+        Assert.Equal(ClaimTypes.Role, Assert.IsType<ClaimsIdentity>(principal.Identity).RoleClaimType);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var authorization = scope.ServiceProvider.GetRequiredService<IAuthorizationService>();
+        Assert.True((await authorization.AuthorizeAsync(principal, null,
+            new[] { new RolesAuthorizationRequirement([expectedRole]) })).Succeeded);
+        Assert.False((await authorization.AuthorizeAsync(principal, null,
+            new[] { new RolesAuthorizationRequirement([oppositeRole]) })).Succeeded);
+        var persisted = await stores.State.RefreshSessions.AsNoTracking().SingleAsync(row => row.TokenHash == Hash(tokens.RefreshToken));
+        Assert.Equal(kind, persisted.IdentityKind);
+        Assert.Equal(kind == IdentityKind.Employee ? "issuance-employee" : "issuance-customer", persisted.IdentityId);
+        if (kind == IdentityKind.Employee)
+            Assert.Equal(persisted.Id.ToString("D"), Assert.Single(token.Claims, claim => claim.Type == "sid").Value);
+        else
+            Assert.DoesNotContain(token.Claims, claim => claim.Type is "sid" or "permissions");
+    }
+
+    [Fact]
+    public async Task NormalServiceExchange_DoesNotBecomeAnInteractiveActor()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores);
+        using var client = factory.CreateClient();
+        using var response = await client.PostAsJsonAsync("/auth/v1/service/login", new ServiceLoginRequest("issuance-test", Factory.ServiceSecret));
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var token = (await response.Content.ReadFromJsonAsync<ServiceTokenResponse>())!;
+        var parameters = factory.Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
+            .Get(JwtBearerDefaults.AuthenticationScheme).TokenValidationParameters;
+        var principal = new JwtSecurityTokenHandler { MapInboundClaims = false }.ValidateToken(token.AccessToken, parameters, out _);
+        Assert.DoesNotContain(principal.Claims, claim => claim.Type is ClaimTypes.Role or "role" or "sid");
+        await using var consumer = await CreateDefaultsConsumerAsync(factory);
+        using var consumerClient = consumer.GetTestClient();
+        consumerClient.DefaultRequestHeaders.Authorization = new("Bearer", token.AccessToken);
+        using var denied = await consumerClient.GetAsync("/Employee");
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var authorization = scope.ServiceProvider.GetRequiredService<IAuthorizationService>();
+        Assert.False((await authorization.AuthorizeAsync(principal, null,
+            new[] { new RolesAuthorizationRequirement(["Employee", "Customer"]) })).Succeeded);
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NormalScopedIssuers_DoNotBecomeInteractiveActors(bool capability)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores);
+        await using var scope = factory.Services.CreateAsyncScope();
+        var now = DateTimeOffset.UtcNow;
+        var issued = capability
+            ? scope.ServiceProvider.GetRequiredService<IQuotationInvoiceCapabilityTokenIssuer>()
+                .IssueQuotationInvoiceCapability("issuance-employee", 1, Guid.NewGuid(), now, 60)
+            : scope.ServiceProvider.GetRequiredService<IInvoiceDelegationTokenIssuer>()
+                .IssueInvoiceDelegation("issuance-employee", 1, Guid.NewGuid(), now);
+        var parameters = factory.Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
+            .Get(JwtBearerDefaults.AuthenticationScheme).TokenValidationParameters.Clone();
+        parameters.ValidAudience = capability ? QuotationInvoiceCapabilityContract.Audience : InvoiceDelegationContract.Audience;
+        var principal = new JwtSecurityTokenHandler { MapInboundClaims = false }.ValidateToken(issued.Value, parameters, out _);
+        Assert.DoesNotContain(principal.Claims, claim => claim.Type is ClaimTypes.Role or "role" or "sid");
+        await using var consumer = await CreateDefaultsConsumerAsync(factory, parameters.ValidAudience);
+        using var consumerClient = consumer.GetTestClient();
+        consumerClient.DefaultRequestHeaders.Authorization = new("Bearer", issued.Value);
+        using var denied = await consumerClient.GetAsync("/Employee");
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        var authorization = scope.ServiceProvider.GetRequiredService<IAuthorizationService>();
+        Assert.False((await authorization.AuthorizeAsync(principal, null,
+            new[] { new RolesAuthorizationRequirement(["Employee", "Customer"]) })).Succeeded);
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+    }
+
+    private static async Task<WebApplication> CreateDefaultsConsumerAsync(Factory factory, string audience = "issuance-test")
+    {
+        var builder = WebApplication.CreateBuilder(new WebApplicationOptions { EnvironmentName = "Production" });
+        builder.WebHost.UseTestServer();
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Jwt:Issuer"] = "https://issuance.test",
+            ["Jwt:Audience"] = audience,
+            ["Jwt:PublicKey"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(factory.PublicKey)),
+        });
+        builder.AddJwtAuthentication();
+        builder.Services.AddAuthorization();
+        var app = builder.Build();
+        app.UseAuthentication();
+        app.UseAuthorization();
+        app.MapGet("/Employee", () => Results.NoContent()).RequireAuthorization(policy => policy.RequireRole("Employee"));
+        app.MapGet("/Customer", () => Results.NoContent()).RequireAuthorization(policy => policy.RequireRole("Customer"));
+        await app.StartAsync();
+        return app;
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -231,6 +365,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
     {
         public const string ServiceSecret = "issuance-test-only-secret-0123456789";
         private readonly RSA signing = RSA.Create(2048);
+        public string PublicKey => signing.ExportSubjectPublicKeyInfoPem();
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
