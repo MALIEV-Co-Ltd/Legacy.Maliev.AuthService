@@ -79,6 +79,8 @@ public sealed class NormalIamWorkloadBoundaryTests(PostgresFixture postgres)
         var unprivileged = await app.LoginServiceAsync(client, "legacy-accounting", deadline.Token);
         using var wrongCaller = await SendAsync(client, unprivileged, employee.AccessToken, deadline.Token);
         Assert.Equal(HttpStatusCode.Forbidden, wrongCaller.StatusCode);
+        Assert.Equal(2, app.IamRequests);
+        Assert.Equal(1, app.WorkloadExchanges);
         Assert.Equal(0, app.UnmatchedRequests);
     }
 

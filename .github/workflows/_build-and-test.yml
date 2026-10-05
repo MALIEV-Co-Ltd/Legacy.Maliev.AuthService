@@ -42,7 +42,7 @@ jobs:
           dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
             --configuration Release --no-build --no-restore \
             -p:UseLocalMalievDependencies=true \
-            --filter "FullyQualifiedName~NormalIam" \
+            --filter "FullyQualifiedName~NormalIam|FullyQualifiedName~QuotationInvoiceCapabilityHttpTests" \
             --logger "trx;LogFileName=normal-iam.trx" --results-directory artifacts/normal-iam
       - name: Verify coverage gate and evidence controls
         shell: pwsh
