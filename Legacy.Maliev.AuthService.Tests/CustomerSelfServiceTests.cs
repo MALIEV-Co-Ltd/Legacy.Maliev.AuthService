@@ -157,6 +157,69 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
     }
 
     [Fact]
+    public async Task ResolveRegistration_DifferentCustomerAndVerifiedPassword_PreservesEveryIdentityProperty()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(databaseId: 92, password: "committed-password");
+        var before = fixture.Customers.Entry(await fixture.Customers.Users.SingleAsync()).CurrentValues.Clone();
+
+        var result = await fixture.Service.ResolveRegistrationAsync(
+            new ResolveCustomerIdentityRequest(42, "customer@example.com", "committed-password"),
+            default);
+
+        Assert.False(result.Succeeded);
+        Assert.False(result.Created);
+        Assert.Null(result.IdentityId);
+        Assert.Null(result.DatabaseId);
+        Assert.Null(result.Email);
+        var after = fixture.Customers.Entry(await fixture.Customers.Users.AsNoTracking().SingleAsync()).CurrentValues;
+        Assert.All(before.Properties, property =>
+            Assert.True(Equals(before[property], after[property]), $"Identity property changed: {property.Name}"));
+        Assert.Empty(await fixture.State.RefreshSessions.AsNoTracking().ToListAsync());
+        Assert.Empty(await fixture.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData(0)]
+    public async Task ResolveRegistration_UnlinkedIdentityAndVerifiedPassword_LinksOnceWithoutReplacingCredential(int? databaseId)
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync(password: "committed-password");
+        var identity = await fixture.Customers.Users.SingleAsync();
+        identity.DatabaseID = databaseId;
+        await fixture.Customers.SaveChangesAsync();
+        var hash = identity.PasswordHash;
+        var securityStamp = identity.SecurityStamp;
+        var concurrencyStamp = identity.ConcurrencyStamp;
+
+        var result = await fixture.Service.ResolveRegistrationAsync(
+            new ResolveCustomerIdentityRequest(42, "customer@example.com", "committed-password"),
+            default);
+
+        Assert.True(result.Succeeded);
+        Assert.True(result.Created);
+        Assert.Equal(42, result.DatabaseId);
+        var stored = await fixture.Customers.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(42, stored.DatabaseID);
+        Assert.True(string.Equals(hash, stored.PasswordHash, StringComparison.Ordinal));
+        Assert.NotEqual(securityStamp, stored.SecurityStamp);
+        Assert.NotEqual(concurrencyStamp, stored.ConcurrencyStamp);
+        var linkedStamp = stored.SecurityStamp;
+        var linkedConcurrencyStamp = stored.ConcurrencyStamp;
+
+        Assert.True((await fixture.Service.ResolveRegistrationAsync(
+            new ResolveCustomerIdentityRequest(42, "customer@example.com", "committed-password"),
+            default)).Succeeded);
+        stored = await fixture.Customers.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(linkedStamp, stored.SecurityStamp);
+        Assert.Equal(linkedConcurrencyStamp, stored.ConcurrencyStamp);
+        Assert.True(string.Equals(hash, stored.PasswordHash, StringComparison.Ordinal));
+        Assert.Empty(await fixture.State.RefreshSessions.AsNoTracking().ToListAsync());
+        Assert.Empty(await fixture.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
     public async Task ResolveRegistration_NoCandidate_ReturnsNonDisclosingFailure()
     {
         await using var fixture = await Fixture.CreateAsync(postgres);
