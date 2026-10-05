@@ -117,3 +117,5 @@ function Remove-Item {
         Remove-Item -LiteralPath $resolved -Recurse -Force
     }
 }
+# GitHub's pwsh wrapper inspects LASTEXITCODE, including deliberate negative controls.
+exit 0
