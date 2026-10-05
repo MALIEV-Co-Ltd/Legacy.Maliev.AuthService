@@ -52,6 +52,14 @@ jobs:
             -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~EmployeeSessionIssuanceHttpTests" \
             --logger "trx;LogFileName=actor-roles.trx" --results-directory artifacts/actor-roles
+      - name: Verify exact employee recovery callback token boundaries
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore \
+            -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~NormalRecovery_CallbackRoundtripPreservesExactToken_AlteredEncodingsNeverConsumeIt" \
+            --logger "trx;LogFileName=recovery-callback.trx" --results-directory artifacts/recovery-callback
       - name: Verify offline Auth manifest review scripts
         shell: pwsh
         run: ./eng/Test-AuthManifestReview.ps1
@@ -81,6 +89,7 @@ jobs:
         shell: pwsh
         run: |
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/owned-raw -OutputDirectory artifacts/coverage-evidence
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/recovery-callback -OutputDirectory artifacts/coverage-evidence/recovery-callback
       - name: Retain private validation evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
