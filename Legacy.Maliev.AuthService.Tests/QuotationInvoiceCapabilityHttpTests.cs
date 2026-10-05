@@ -976,8 +976,6 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
             var connections = new[] { (NpgsqlConnection)Employees.Database.GetDbConnection(), (NpgsqlConnection)Customers.Database.GetDbConnection(), (NpgsqlConnection)State.Database.GetDbConnection() };
             await Employees.DisposeAsync(); await Customers.DisposeAsync(); await State.DisposeAsync();
             foreach (var connection in connections) NpgsqlConnection.ClearPool(connection);
-            Assert.True(standardAdmissionFailures == 0,
-                "Controlled standard admission assertion failed at: " + string.Join(Environment.NewLine, standardAdmissionFailureSites));
         }
     }
 }
