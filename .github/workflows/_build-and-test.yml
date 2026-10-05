@@ -36,13 +36,13 @@ jobs:
         with:
           solution: Legacy.Maliev.AuthService.slnx
           use-local-maliev-dependencies: 'true'
-      - name: Verify normal IAM composition, workload and empty-grant delegation boundary
+      - name: Verify normal IAM composition, workload, delegation and Web currency-grant boundaries
         shell: bash
         run: |
           dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
             --configuration Release --no-build --no-restore \
             -p:UseLocalMalievDependencies=true \
-            --filter "FullyQualifiedName~NormalIam|FullyQualifiedName~QuotationInvoiceCapabilityHttpTests|FullyQualifiedName~InvoiceDelegationContractTests|FullyQualifiedName~NativeLoggingConsumerContractTests|FullyQualifiedName~DeliveryContractTests" \
+            --filter "FullyQualifiedName~NormalIam|FullyQualifiedName~QuotationInvoiceCapabilityHttpTests|FullyQualifiedName~InvoiceDelegationContractTests|FullyQualifiedName~NativeLoggingConsumerContractTests|FullyQualifiedName~DeliveryContractTests|FullyQualifiedName~ServiceAuthenticationTests|FullyQualifiedName~LegacyWebCurrencyPermissionHttpTests" \
             --logger "trx;LogFileName=normal-iam.trx" --results-directory artifacts/normal-iam
       - name: Verify offline Auth manifest review scripts
         shell: pwsh

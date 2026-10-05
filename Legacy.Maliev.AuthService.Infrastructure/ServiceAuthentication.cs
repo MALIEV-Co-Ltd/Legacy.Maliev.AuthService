@@ -51,7 +51,8 @@ public sealed class ServiceAuthenticationService(IOptions<ServiceClientOptions> 
             return Task.FromResult(ServiceAuthenticationResult.Failed());
         }
 
-        return Task.FromResult(ServiceAuthenticationResult.Success(issuer.IssueService(request.ClientId, permissions, timeProvider.GetUtcNow())));
+        var registered = LegacyServicePermissionRegistry.ResolveAuthenticatedClientPermissions(request.ClientId, permissions);
+        return Task.FromResult(ServiceAuthenticationResult.Success(issuer.IssueService(request.ClientId, registered, timeProvider.GetUtcNow())));
     }
 
     private static bool TryDecode(string value, out byte[] bytes)
