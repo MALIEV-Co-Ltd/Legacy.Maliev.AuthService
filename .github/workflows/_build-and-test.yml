@@ -92,6 +92,9 @@ jobs:
           if ($reports.Count -ne 1) { throw 'Expected exactly one complete owned coverage report.' }
           & ./eng/Assert-OwnedCoverage.ps1 -CoveragePath $reports[0].FullName |
             Tee-Object -FilePath artifacts/coverage-evidence/checker-results.log
+      - name: Verify offline PostgreSQL design-time context discovery
+        shell: pwsh
+        run: ./eng/Test-IdentityDesignTime.ps1
       - name: Prepare private validation evidence
         if: always()
         shell: pwsh
