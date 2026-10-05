@@ -68,6 +68,14 @@ jobs:
             -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~NormalHistoricalSecurity_" \
             --logger "trx;LogFileName=historical-security.trx" --results-directory artifacts/historical-security
+      - name: Verify confirmation recovery rechecks current customer lockout
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore \
+            -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~EmailConfirmationRecovery_" \
+            --logger "trx;LogFileName=confirmation-lockout.trx" --results-directory artifacts/confirmation-lockout
       - name: Verify offline Auth manifest review scripts
         shell: pwsh
         run: ./eng/Test-AuthManifestReview.ps1
@@ -102,6 +110,7 @@ jobs:
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/owned-raw -OutputDirectory artifacts/coverage-evidence
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/recovery-callback -OutputDirectory artifacts/coverage-evidence/recovery-callback
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-security -OutputDirectory artifacts/coverage-evidence/historical-security
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/confirmation-lockout -OutputDirectory artifacts/coverage-evidence/confirmation-lockout
       - name: Retain private validation evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

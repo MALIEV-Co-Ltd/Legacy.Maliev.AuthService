@@ -203,7 +203,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
             request.Email,
             request.Token,
             cancellationToken);
-        if (recovery is null || !await TryConsumeAsync(recovery, cancellationToken))
+        if (recovery is null)
         {
             return new(false, null);
         }
@@ -211,7 +211,13 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         var row = await customers.Users.AsNoTracking().SingleOrDefaultAsync(
             value => value.Id == recovery.IdentityId,
             cancellationToken);
-        if (row is null || row.EmailConfirmed || string.IsNullOrWhiteSpace(row.Email))
+        if (row is null || row.EmailConfirmed || string.IsNullOrWhiteSpace(row.Email)
+            || (row.LockoutEnabled && row.LockoutEnd > timeProvider.GetUtcNow()))
+        {
+            return new(false, null);
+        }
+
+        if (!await TryConsumeAsync(recovery, cancellationToken))
         {
             return new(false, null);
         }

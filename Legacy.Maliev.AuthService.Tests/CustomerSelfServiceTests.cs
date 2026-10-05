@@ -575,6 +575,55 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
                 && token.TokenHash != first.Token);
     }
 
+    [Theory]
+    [InlineData(true, 5, false)]
+    [InlineData(true, -1, true)]
+    [InlineData(false, 5, true)]
+    public async Task EmailConfirmationRecovery_CurrentLockoutIsCheckedBeforeConsumingGrant(
+        bool lockoutEnabled,
+        int lockoutMinutes,
+        bool accepted)
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 6, 0, 0, 0, TimeSpan.Zero));
+        await using var fixture = await Fixture.CreateAsync(postgres, clock);
+        await fixture.SeedCustomerAsync(emailConfirmed: false);
+        var identity = await fixture.Customers.Users.SingleAsync();
+        var recovery = await fixture.Service.IssueEmailConfirmationRecoveryAsync(
+            identity.Id, identity.Email!, identity.SecurityStamp!, default);
+        Assert.NotNull(recovery);
+        identity.LockoutEnabled = lockoutEnabled;
+        identity.LockoutEnd = clock.GetUtcNow().AddMinutes(lockoutMinutes);
+        identity.AccessFailedCount = 4;
+        await fixture.Customers.SaveChangesAsync();
+        var before = fixture.Customers.Entry(identity).CurrentValues.Clone();
+
+        var result = await fixture.Service.RecoverEmailConfirmationAsync(
+            new CompleteCustomerActionRequest("customer@example.com", recovery), default);
+
+        Assert.Equal(accepted, result.Accepted);
+        Assert.Equal(accepted, result.Token is not null);
+        var storedRecovery = await fixture.State.IdentityActionTokens.AsNoTracking()
+            .SingleAsync(value => value.Purpose == "email-confirmation-recovery");
+        Assert.Equal(accepted, storedRecovery.ConsumedAt is not null);
+        Assert.Equal(accepted ? 1 : 0, await fixture.State.IdentityActionTokens
+            .CountAsync(value => value.Purpose == "email-confirmation"));
+        var after = fixture.Customers.Entry(await fixture.Customers.Users.AsNoTracking().SingleAsync()).CurrentValues;
+        Assert.All(before.Properties, property =>
+            Assert.True(Equals(before[property], after[property]), $"Identity property changed: {property.Name}"));
+        Assert.Empty(await fixture.State.RefreshSessions.AsNoTracking().ToListAsync());
+
+        if (!accepted)
+        {
+            clock.Advance(TimeSpan.FromMinutes(6));
+            var retry = await fixture.Service.RecoverEmailConfirmationAsync(
+                new CompleteCustomerActionRequest("customer@example.com", recovery), default);
+            Assert.True(retry.Accepted);
+            Assert.NotNull(retry.Token);
+            Assert.False((await fixture.Service.RecoverEmailConfirmationAsync(
+                new CompleteCustomerActionRequest("customer@example.com", recovery), default)).Accepted);
+        }
+    }
+
     [Fact]
     public async Task EmailConfirmationRecovery_ExpiredOrWrongEmailFailsWithoutIssuingConfirmation()
     {
