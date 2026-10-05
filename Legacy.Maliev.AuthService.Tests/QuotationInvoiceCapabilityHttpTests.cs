@@ -632,6 +632,8 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("CORS:AllowedOrigins", "https://localhost");
+            // The normal IAM origin is validated while Program composes the host.
+            if (!missingLive) builder.UseSetting("Services:IAMService:BaseUrl", "https://capability-iam.test");
             builder.ConfigureAppConfiguration((_, config) =>
             {
                 var values = new Dictionary<string, string?>
