@@ -124,8 +124,10 @@ public sealed class NormalIamWorkloadBoundaryTests(PostgresFixture postgres)
                 ["ConnectionStrings:EmployeeIdentity"] = employees.Database.GetConnectionString(),
                 ["ConnectionStrings:CustomerIdentity"] = customers.Database.GetConnectionString(),
                 ["ConnectionStrings:RefreshSessions"] = sessions.Database.GetConnectionString(),
-                ["Jwt:Issuer"] = Issuer, ["Jwt:Audience"] = Audience,
-                ["Jwt:PrivateKeyPem"] = key.ExportPkcs8PrivateKeyPem(), ["Jwt:KeyId"] = "normal-iam-workload-test",
+                ["Jwt:Issuer"] = Issuer,
+                ["Jwt:Audience"] = Audience,
+                ["Jwt:PrivateKeyPem"] = key.ExportPkcs8PrivateKeyPem(),
+                ["Jwt:KeyId"] = "normal-iam-workload-test",
                 ["ServiceAuthentication:ClientId"] = "legacy-auth",
                 ["ServiceAuthentication:ClientSecret"] = credentials["legacy-auth"],
                 ["ServiceClients:Clients:legacy-intranet:Permissions:0"] = LegacyAccessTokenPermissions.InvoiceDelegationIssue,
@@ -150,10 +152,14 @@ public sealed class NormalIamWorkloadBoundaryTests(PostgresFixture postgres)
         public System.Security.Claims.ClaimsPrincipal Validate(string token, string audience) =>
             new JwtSecurityTokenHandler { MapInboundClaims = false }.ValidateToken(token, new TokenValidationParameters
             {
-                ValidateIssuer = true, ValidIssuer = Issuer,
-                ValidateAudience = true, ValidAudience = audience,
-                ValidateIssuerSigningKey = true, IssuerSigningKey = new RsaSecurityKey(key),
-                ValidateLifetime = true, ClockSkew = TimeSpan.Zero,
+                ValidateIssuer = true,
+                ValidIssuer = Issuer,
+                ValidateAudience = true,
+                ValidAudience = audience,
+                ValidateIssuerSigningKey = true,
+                IssuerSigningKey = new RsaSecurityKey(key),
+                ValidateLifetime = true,
+                ClockSkew = TimeSpan.Zero,
                 ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
             }, out _);
 
@@ -196,8 +202,15 @@ public sealed class NormalIamWorkloadBoundaryTests(PostgresFixture postgres)
                     Interlocked.Increment(ref app.IamRequests);
                     return new(HttpStatusCode.OK)
                     {
-                        Content = JsonContent.Create(new { principalId = principal, permissionId = LegacyAccessTokenPermissions.InvoiceDelegationIssue,
-                            resourcePath = "global", allowed, fromCache = false, latencyMs = 0 }),
+                        Content = JsonContent.Create(new
+                        {
+                            principalId = principal,
+                            permissionId = LegacyAccessTokenPermissions.InvoiceDelegationIssue,
+                            resourcePath = "global",
+                            allowed,
+                            fromCache = false,
+                            latencyMs = 0
+                        }),
                     };
                 }
                 Interlocked.Increment(ref app.UnmatchedRequests);
