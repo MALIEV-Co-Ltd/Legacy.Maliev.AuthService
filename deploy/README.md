@@ -20,3 +20,22 @@ These manifests are planning artifacts only. Deployment stays disabled until the
 - Initial replica and resource requests are deliberately small to preserve existing cluster capacity. Scaling requires measured capacity evidence and cannot create infrastructure cost.
 
 The authoritative CloudNativePG cluster, backup, secret projection and environment overlays belong in `MALIEV-Co-Ltd/maliev-gitops`, not this service repository.
+
+## Offline manifest review
+
+Run `pwsh -File deploy/Invoke-AuthManifestReview.ps1 -Image registry.example/legacy/auth@sha256:<64-hex-digest>`
+to review an immutable image against the planning Deployment. The script renders a unique temporary copy,
+runs the offline boundary reviewer, propagates its native process status, and removes the rendered copy
+on success or failure. It never modifies the tracked template or invokes cloud authentication, image
+publication, Kubernetes, or secret/configuration writes. Child output and exception details are omitted.
+
+The reviewer requires ordinal equality of decoded text with the approved tracked Deployment after exactly one
+immutable image substitution. This retains namespace, single replica, resource bounds, non-root/read-only
+runtime, health paths and private runtime-secret reference, rejecting extra fields, comments and duplicates.
+These are scoped template boundary checks, not Kubernetes schema validation or deployment acceptance.
+Historical source resource settings are not authority to resize the current deployment. Project/identity
+database compatibility and shared deployment activation gates remain independently owned.
+
+`eng/Test-AuthManifestReview.ps1` exercises real child-process failure propagation, throwaway cleanup,
+immutable-image rejection, missing-placeholder and namespace failure, and unchanged source bytes with
+synthetic local inputs. Docker context excludes private environment files, logs and rendered manifests.

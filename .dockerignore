@@ -8,3 +8,10 @@ artifacts/
 *.suo
 .vs
 .idea
+**/*.env
+**/.env
+**/.env.*
+**/*.log
+**/*.tmp
+**/*.nupkg
+deploy/
