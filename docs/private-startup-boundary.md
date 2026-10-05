@@ -2,7 +2,7 @@
 
 Auth wraps the complete host entry point, beginning with `WebApplication.CreateBuilder` and ending with `RunAsync`, in `Maliev.Aspire.ServiceDefaults.Diagnostics.PrivateStartupBoundary.RunAsync`. Existing middleware order is retained. The built-in `AddOpenApi("v1")` registration follows the shared versioned registration so this assembly's generated XML comment transformers participate in the served document.
 
-CI and the container build consume ServiceDefaults commit `c40a7f82cea347b949444dcd7fb730f2b8dc3c0e`. CompatibilityContracts remains pinned to `78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7`. The host uses the shared boundary rather than adding a separate Auth failure formatter.
+CI and the container build consume ServiceDefaults commit `7edcd961024868513fd5f373cab3dcb261197f77`. CompatibilityContracts remains pinned to `78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7`. The host uses the shared boundary rather than adding a separate Auth failure formatter.
 
 When host initialization throws, the boundary emits fixed private metadata: EventName `StartupFailure`, Operation `HostInitialization`, Critical severity, event ID5102, and exception type. It sets exit code1 without emitting the exception message or stack trace. Required runtime settings remain required. This boundary does not replace request exception handling, correlation, authentication, readiness or rate limiting.
 
