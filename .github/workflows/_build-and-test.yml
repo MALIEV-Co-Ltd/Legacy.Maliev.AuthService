@@ -44,6 +44,9 @@ jobs:
             -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~NormalIam|FullyQualifiedName~QuotationInvoiceCapabilityHttpTests" \
             --logger "trx;LogFileName=normal-iam.trx" --results-directory artifacts/normal-iam
+      - name: Verify offline Auth manifest review scripts
+        shell: pwsh
+        run: ./eng/Test-AuthManifestReview.ps1
       - name: Verify coverage gate and evidence controls
         shell: pwsh
         run: |
