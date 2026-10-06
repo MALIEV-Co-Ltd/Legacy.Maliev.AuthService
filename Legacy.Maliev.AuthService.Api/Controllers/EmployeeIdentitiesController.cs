@@ -9,7 +9,7 @@ namespace Legacy.Maliev.AuthService.Api.Controllers;
 /// <summary>Employee-authorized administration of employee identities.</summary>
 [ApiController]
 [Route("auth/v1/employee-identities")]
-public sealed class EmployeeIdentitiesController(IEmployeeIdentityAdminService service) : ControllerBase
+public sealed class EmployeeIdentitiesController(IEmployeeIdentityAdminService service, IEmployeeProfileBindingClient profiles) : ControllerBase
 {
     /// <summary>Creates an employee identity with the initial password accepted only in JSON.</summary>
     [HttpPost("{databaseId:int}")]
@@ -27,7 +27,13 @@ public sealed class EmployeeIdentitiesController(IEmployeeIdentityAdminService s
         if (!AdministrativeIdentityPolicy.Accepts(request.UserName, request.Email))
             return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Invalid identity fields" });
 
-        var identity = await service.CreateAsync(databaseId, request, cancellationToken);
+        var selected = await profiles.ReadAsync(databaseId, cancellationToken);
+        if (selected.Status == EmployeeProfileBindingStatus.Missing) return NotFound();
+        if (selected.Status != EmployeeProfileBindingStatus.Verified || selected.Profile is not { } profile
+            || profile.Id != databaseId) return Unavailable();
+        var bound = request with { Email = profile.Email, PhoneNumber = profile.PhoneNumber };
+        if (!AdministrativeIdentityPolicy.Accepts(bound.UserName, bound.Email)) return Unavailable();
+        var identity = await service.CreateAsync(profile.Id, bound, cancellationToken);
         return identity is null
             ? Conflict(new ProblemDetails { Status = StatusCodes.Status409Conflict, Title = "Identity already exists" })
             : CreatedAtAction(nameof(Get), new { databaseId }, identity);
