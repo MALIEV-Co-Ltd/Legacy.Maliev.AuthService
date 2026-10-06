@@ -32,6 +32,21 @@ including a surrogate pair, matching the original Identity character semantics.
 Only the existing external Google credential validator remains controlled; the
 fixture opt-in adds two test service permissions without replacing auth services.
 
+The Web HTTP witness exposed a separate normal-DI transaction defect: identity
+contexts enable retries, while registration and resolve opened explicit
+transactions outside the execution strategy. The resulting generic non-validation
+400 hid the failure before any password write. These two endpoints now create a
+fresh context for the same configured PostgreSQL store, retain command timeout
+120 and the existing advisory transaction lock, and omit automatic retries.
+An uncertain commit is not replayed blindly; the caller's existing resolve path
+still requires the committed password and current compatible customer link.
+The normal injected context retains its retry configuration for other callers.
+The same HTTP witness checks that production retries remain configured, then
+requires registration 201, same-customer credential resolution 200, wrong-password
+and different-positive-link 404 with every identity property unchanged. The
+existing direct registration/concurrency and nine resolve regression cases remain
+required. See [EF Core transaction/retry semantics](https://learn.microsoft.com/en-us/ef/core/miscellaneous/connection-resiliency).
+
 Intranet's current `CustomerIdentityCreationClient` posts the same request and
 durable Idempotency-Key to `/auth/v1/customer-identities/{id}/reconcile-create`.
 No consumer body, success receipt, authorization, hashing format, schema, role,

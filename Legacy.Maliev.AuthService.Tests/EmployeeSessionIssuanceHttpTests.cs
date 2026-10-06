@@ -106,6 +106,8 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         await using var factory = new Factory(stores, identityAdministration: true);
         using var client = factory.CreateClient();
         await AuthorizeAdministrationAsync(client, service: true);
+        await using (var scope = factory.Services.CreateAsyncScope())
+            Assert.True(scope.ServiceProvider.GetRequiredService<CustomerIdentityDbContext>().Database.CreateExecutionStrategy().RetriesOnFailure);
         using var registered = await client.PostAsJsonAsync("/auth/v1/customer-self-service/register",
             new RegisterCustomerIdentityRequest(72, "web-policy@example.com", "aabbccdd"));
         if (registered.StatusCode != HttpStatusCode.Created)
@@ -133,6 +135,24 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal(PasswordVerificationResult.Success,
             new PasswordHasher<LegacyIdentityRow>().VerifyHashedPassword(identity, identity.PasswordHash!, "aabbccdd"));
         Assert.False(identity.EmailConfirmed);
+        Assert.Empty(await stores.Customers.CreateOperations.AsNoTracking().ToListAsync());
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+        var committed = await SnapshotIdentitiesAsync(stores);
+        using var wrongLink = await client.PostAsJsonAsync("/auth/v1/customer-self-service/register/resolve",
+            new ResolveCustomerIdentityRequest(73, "web-policy@example.com", "aabbccdd"));
+        Assert.Equal(HttpStatusCode.NotFound, wrongLink.StatusCode);
+        using var wrongPassword = await client.PostAsJsonAsync("/auth/v1/customer-self-service/register/resolve",
+            new ResolveCustomerIdentityRequest(72, "web-policy@example.com", "wrong-password"));
+        Assert.Equal(HttpStatusCode.NotFound, wrongPassword.StatusCode);
+        using var resolved = await client.PostAsJsonAsync("/auth/v1/customer-self-service/register/resolve",
+            new ResolveCustomerIdentityRequest(72, "web-policy@example.com", "aabbccdd"));
+        Assert.Equal(HttpStatusCode.OK, resolved.StatusCode);
+        var result = (await resolved.Content.ReadFromJsonAsync<CustomerSelfServiceResult>())!;
+        Assert.True(result.Succeeded);
+        Assert.True(result.Created);
+        Assert.Equal(identity.Id, result.IdentityId);
+        Assert.Equal(72, result.DatabaseId);
+        Assert.Equal(committed, await SnapshotIdentitiesAsync(stores));
         Assert.Empty(await stores.Customers.CreateOperations.AsNoTracking().ToListAsync());
         Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }

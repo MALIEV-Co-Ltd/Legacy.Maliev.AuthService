@@ -25,9 +25,10 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
     {
         var email = request.Email.Trim();
         var normalized = email.ToUpperInvariant();
-        await using var transaction = await customers.Database.BeginTransactionAsync(cancellationToken);
-        await LockNormalizedEmailAsync(normalized, cancellationToken);
-        var exists = await customers.Users.AnyAsync(
+        await using var identity = NewRegistrationContext();
+        await using var transaction = await identity.Database.BeginTransactionAsync(cancellationToken);
+        await LockNormalizedEmailAsync(identity, normalized, cancellationToken);
+        var exists = await identity.Users.AnyAsync(
             value => value.DatabaseID == request.DatabaseId
                 || value.NormalizedEmail == normalized
                 || value.NormalizedUserName == normalized,
@@ -54,8 +55,8 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
             ConcurrencyStamp = Guid.NewGuid().ToString(),
         };
         row.PasswordHash = passwordHasher.HashPassword(row, request.Password);
-        customers.Users.Add(row);
-        await customers.SaveChangesAsync(cancellationToken);
+        identity.Users.Add(row);
+        await identity.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return new(true, row.Id, row.DatabaseID, row.Email, Created: true);
     }
@@ -66,9 +67,10 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         CancellationToken cancellationToken)
     {
         var normalized = request.Email.Trim().ToUpperInvariant();
-        await using var transaction = await customers.Database.BeginTransactionAsync(cancellationToken);
-        await LockNormalizedEmailAsync(normalized, cancellationToken);
-        var row = await customers.Users
+        await using var identity = NewRegistrationContext();
+        await using var transaction = await identity.Database.BeginTransactionAsync(cancellationToken);
+        await LockNormalizedEmailAsync(identity, normalized, cancellationToken);
+        var row = await identity.Users
             .Where(value => value.NormalizedEmail == normalized
                 || value.NormalizedUserName == normalized)
             .OrderByDescending(value => value.DatabaseID > 0)
@@ -96,15 +98,22 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
             row.DatabaseID = request.DatabaseId;
             row.SecurityStamp = Guid.NewGuid().ToString();
             row.ConcurrencyStamp = Guid.NewGuid().ToString();
-            await customers.SaveChangesAsync(cancellationToken);
+            await identity.SaveChangesAsync(cancellationToken);
         }
 
         await transaction.CommitAsync(cancellationToken);
         return new(true, row.Id, row.DatabaseID, row.Email, Created: passwordWasCommitted);
     }
 
-    private Task<int> LockNormalizedEmailAsync(string normalizedEmail, CancellationToken cancellationToken) =>
-        customers.Database.ExecuteSqlInterpolatedAsync(
+    private CustomerIdentityDbContext NewRegistrationContext() => new(
+        new DbContextOptionsBuilder<CustomerIdentityDbContext>()
+            // Never automatically retry an uncertain identity/link commit. The caller's
+            // existing resolve endpoint verifies the committed credential and current link.
+            .UseNpgsql(customers.Database.GetConnectionString(), options => options.CommandTimeout(120))
+            .Options);
+
+    private static Task<int> LockNormalizedEmailAsync(CustomerIdentityDbContext identity, string normalizedEmail, CancellationToken cancellationToken) =>
+        identity.Database.ExecuteSqlInterpolatedAsync(
             $"SELECT pg_advisory_xact_lock(hashtextextended({normalizedEmail}, 0))",
             cancellationToken);
 
