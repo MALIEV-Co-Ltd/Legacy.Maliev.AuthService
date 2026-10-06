@@ -45,6 +45,10 @@ public sealed class CustomerIdentitiesController(
             CustomerIdentityCreateOutcome.Created => StatusCode(StatusCodes.Status201Created,
                 new CustomerIdentityCreateReceipt(databaseId, "created")),
             CustomerIdentityCreateOutcome.Replayed => Ok(new CustomerIdentityCreateReceipt(databaseId, "replayed")),
+            CustomerIdentityCreateOutcome.InvalidPassword => BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest, Title = "Invalid initial password",
+            }),
             _ => Conflict(new ProblemDetails { Status = StatusCodes.Status409Conflict, Title = "Identity operation conflicts" }),
         };
     }
@@ -59,6 +63,9 @@ public sealed class CustomerIdentitiesController(
         CreateCustomerIdentityRequest request,
         CancellationToken cancellationToken)
     {
+        if (!AdministrativePasswordPolicy.Accepts(request.Password))
+            return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Invalid initial password" });
+
         var identity = await service.CreateAsync(databaseId, request, cancellationToken);
         return identity is null
             ? Conflict(new ProblemDetails { Status = StatusCodes.Status409Conflict, Title = "Identity already exists" })

@@ -40,6 +40,11 @@ public sealed class CustomerIdentityAdminService(
                 : await ReconcileAsync(existing, databaseId, request, cancellationToken);
         }
 
+        if (!AdministrativePasswordPolicy.Accepts(request.Password))
+        {
+            return new(CustomerIdentityCreateOutcome.InvalidPassword, databaseId);
+        }
+
         var user = NewUser(databaseId, request);
         var salt = RandomNumberGenerator.GetBytes(16);
         dbContext.Users.Add(user);
@@ -102,6 +107,8 @@ public sealed class CustomerIdentityAdminService(
         CreateCustomerIdentityRequest request,
         CancellationToken cancellationToken)
     {
+        if (!AdministrativePasswordPolicy.Accepts(request.Password)) return null;
+
         var normalizedUserName = request.UserName.Trim().ToUpperInvariant();
         var normalizedEmail = request.Email.Trim().ToUpperInvariant();
         var exists = await dbContext.Users.AnyAsync(

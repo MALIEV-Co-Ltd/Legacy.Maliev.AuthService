@@ -34,6 +34,168 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
     [Theory]
     [InlineData(IdentityKind.Employee, false)]
     [InlineData(IdentityKind.Customer, false)]
+    [InlineData(IdentityKind.Customer, true)]
+    public async Task NormalAdministrativePasswordPolicy_NewCreationRejectsLowDistinctAndAcceptsSixCharacterBoundary(
+        IdentityKind kind, bool reconcile)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores, identityAdministration: true);
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, reconcile);
+        var identities = await SnapshotIdentitiesAsync(stores);
+        var sessionCount = await stores.State.RefreshSessions.CountAsync();
+        var key = Guid.NewGuid();
+        var route = $"/auth/v1/{kind.ToString().ToLowerInvariant()}-identities/71" + (reconcile ? "/reconcile-create" : "");
+        if (reconcile) client.DefaultRequestHeaders.Add("Idempotency-Key", key.ToString());
+        const string email = "new-admin@example.com";
+        foreach (var invalid in new string?[] { "aaabbbccc", "abcde", string.Empty, null, "abcdef" + new string('a', 1019) })
+        {
+            await using var scope = factory.Services.CreateAsyncScope();
+            if (kind == IdentityKind.Employee)
+                Assert.Null(await scope.ServiceProvider.GetRequiredService<IEmployeeIdentityAdminService>()
+                    .CreateAsync(71, (CreateEmployeeIdentityRequest)AdministrativeRequest(kind, email, invalid), default));
+            else if (reconcile)
+                Assert.Equal(CustomerIdentityCreateOutcome.InvalidPassword,
+                    (await scope.ServiceProvider.GetRequiredService<ICustomerIdentityAdminService>().CreateOrReconcileAsync(
+                        71, "service:issuance-test", key, (CreateCustomerIdentityRequest)AdministrativeRequest(kind, email, invalid), default)).Outcome);
+            else
+                Assert.Null(await scope.ServiceProvider.GetRequiredService<ICustomerIdentityAdminService>()
+                    .CreateAsync(71, (CreateCustomerIdentityRequest)AdministrativeRequest(kind, email, invalid), default));
+            using var rejected = await client.PostAsJsonAsync(route, AdministrativeRequest(kind, email, invalid));
+            Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+            var body = await rejected.Content.ReadAsStringAsync();
+            Assert.DoesNotContain(email, body, StringComparison.Ordinal);
+            if (!string.IsNullOrEmpty(invalid)) Assert.DoesNotContain(invalid, body, StringComparison.Ordinal);
+            Assert.Equal(identities, await SnapshotIdentitiesAsync(stores));
+            Assert.Empty(await stores.Customers.CreateOperations.AsNoTracking().ToListAsync());
+            Assert.Equal(sessionCount, await stores.State.RefreshSessions.CountAsync());
+        }
+        using var created = await client.PostAsJsonAsync(route, AdministrativeRequest(kind, email, "abcdef"));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        if (reconcile)
+        {
+            using var replay = await client.PostAsJsonAsync(route, AdministrativeRequest(kind, email, "abcdef"));
+            Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+            var receipt = await replay.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(["databaseId", "status"], receipt.EnumerateObject().Select(value => value.Name).Order().ToArray());
+            Assert.Equal(71, receipt.GetProperty("databaseId").GetInt32());
+            Assert.Equal("replayed", receipt.GetProperty("status").GetString());
+        }
+        var users = kind == IdentityKind.Employee ? stores.Employees.Users : stores.Customers.Users;
+        var identity = await users.AsNoTracking().SingleAsync(value => value.DatabaseID == 71);
+        Assert.Equal(PasswordVerificationResult.Success,
+            new PasswordHasher<LegacyIdentityRow>().VerifyHashedPassword(identity, identity.PasswordHash!, "abcdef"));
+        client.DefaultRequestHeaders.Authorization = null;
+        using var login = await client.PostAsJsonAsync("/auth/v1/login", new LoginRequest(email, "abcdef", kind));
+        var tokens = await ReadTokensAsync(login);
+        var jwt = ReadJwt(tokens.AccessToken, factory);
+        Assert.Equal(identity.Id, Assert.Single(jwt.Claims, value => value.Type == "sub").Value);
+        Assert.Equal(kind.ToString().ToLowerInvariant(), Assert.Single(jwt.Claims, value => value.Type == "identity_kind").Value);
+        Assert.Equal(kind == IdentityKind.Employee ? "Employee" : "Customer", Assert.Single(jwt.Claims, value => value.Type == ClaimTypes.Role).Value);
+        var session = await stores.State.RefreshSessions.AsNoTracking().SingleAsync(value => value.IdentityId == identity.Id);
+        Assert.Equal(kind, session.IdentityKind);
+        Assert.Equal(identity.SecurityStamp, session.SecurityStamp);
+        Assert.Equal(Hash(tokens.RefreshToken), session.TokenHash);
+    }
+
+    [Fact]
+    public async Task NormalAdministrativePasswordPolicy_WebRegistrationKeepsEightCharacterLowDistinctPolicy()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores, identityAdministration: true);
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, service: true);
+        using var registered = await client.PostAsJsonAsync("/auth/v1/customer-self-service/register",
+            new RegisterCustomerIdentityRequest(72, "web-policy@example.com", "aabbccdd"));
+        Assert.Equal(HttpStatusCode.Created, registered.StatusCode);
+        var identity = await stores.Customers.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        Assert.Equal(PasswordVerificationResult.Success,
+            new PasswordHasher<LegacyIdentityRow>().VerifyHashedPassword(identity, identity.PasswordHash!, "aabbccdd"));
+        Assert.False(identity.EmailConfirmed);
+        Assert.Empty(await stores.Customers.CreateOperations.AsNoTracking().ToListAsync());
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task NormalAdministrativePasswordPolicy_PreviouslyCommittedWeakPasswordReceiptRemainsReplayable()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        const string email = "legacy-admin@example.com";
+        var identity = new LegacyIdentityRow
+        {
+            Id = "legacy-admin-policy", DatabaseID = 73, UserName = email, NormalizedUserName = email.ToUpperInvariant(),
+            Email = email, NormalizedEmail = email.ToUpperInvariant(), EmailConfirmed = true,
+            SecurityStamp = "legacy-admin-stamp", ConcurrencyStamp = "legacy-admin-concurrency", LockoutEnabled = true,
+        };
+        identity.PasswordHash = new PasswordHasher<LegacyIdentityRow>().HashPassword(identity, "aaaaaaaa");
+        var key = Guid.NewGuid();
+        stores.Customers.Users.Add(identity);
+        stores.Customers.CreateOperations.Add(new CustomerIdentityCreateOperation
+        {
+            ServiceSubject = "service:issuance-test", OperationKey = key, DatabaseId = 73, IdentityId = identity.Id,
+            PayloadSalt = Enumerable.Range(0, 16).Select(value => (byte)value).ToArray(),
+            // Independent Python PBKDF2-SHA256/210000/32 fixture over the original Pascal-case request JSON.
+            PayloadHash = Convert.FromHexString("10971819444ebc3d554c2229c8840bb783dab70386418b83b39d5d6c03a755bb"),
+        });
+        await stores.Customers.SaveChangesAsync();
+        var before = await SnapshotIdentitiesAsync(stores);
+        var operationBefore = JsonSerializer.Serialize(await stores.Customers.CreateOperations.AsNoTracking().SingleAsync());
+        await using var factory = new Factory(stores, identityAdministration: true);
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, service: true);
+        client.DefaultRequestHeaders.Add("Idempotency-Key", key.ToString());
+        const string route = "/auth/v1/customer-identities/73/reconcile-create";
+        using var replay = await client.PostAsJsonAsync(route, AdministrativeRequest(IdentityKind.Customer, email, "aaaaaaaa"));
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        var receipt = await replay.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(["databaseId", "status"], receipt.EnumerateObject().Select(value => value.Name).Order().ToArray());
+        Assert.Equal("replayed", receipt.GetProperty("status").GetString());
+        using var conflict = await client.PostAsJsonAsync(route, AdministrativeRequest(IdentityKind.Customer, email, "abcdef"));
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        Assert.Equal(before, await SnapshotIdentitiesAsync(stores));
+        Assert.Equal(operationBefore, JsonSerializer.Serialize(await stores.Customers.CreateOperations.AsNoTracking().SingleAsync()));
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NormalAdministrativePasswordPolicy_LengthMaximumAndUtf16DistinctBoundaryUseActualWrite(bool unicode)
+    {
+        var password = unicode ? "abc\uD83D\uDE00d" : "abcdef" + new string('a', 1018);
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores);
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, service: false);
+        using var created = await client.PostAsJsonAsync("/auth/v1/employee-identities/74",
+            AdministrativeRequest(IdentityKind.Employee, "boundary-admin@example.com", password));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var identity = await stores.Employees.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 74);
+        Assert.Equal(PasswordVerificationResult.Success,
+            new PasswordHasher<LegacyIdentityRow>().VerifyHashedPassword(identity, identity.PasswordHash!, password));
+        Assert.Equal(unicode ? 6 : 1024, password.Length);
+    }
+
+    private static object AdministrativeRequest(IdentityKind kind, string email, string? password) => kind == IdentityKind.Employee
+        ? new CreateEmployeeIdentityRequest(email, email, password!, true, null)
+        : new CreateCustomerIdentityRequest(email, email, password!, true, null, null, null);
+
+    private static async Task AuthorizeAdministrationAsync(HttpClient client, bool service)
+    {
+        string token;
+        if (service)
+        {
+            using var response = await client.PostAsJsonAsync("/auth/v1/service/login", new ServiceLoginRequest("issuance-test", Factory.ServiceSecret));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            token = (await response.Content.ReadFromJsonAsync<ServiceTokenResponse>())!.AccessToken;
+        }
+        else token = (await LoginAsync(client, IdentityKind.Employee)).AccessToken;
+        client.DefaultRequestHeaders.Authorization = new("Bearer", token);
+    }
+
+    [Theory]
+    [InlineData(IdentityKind.Employee, false)]
+    [InlineData(IdentityKind.Customer, false)]
     [InlineData(IdentityKind.Employee, true)]
     [InlineData(IdentityKind.Customer, true)]
     public async Task NormalHistoricalPasswordFormat_LegacyHashAuthenticatesWithoutRehashOrIdentityMutation(IdentityKind kind, bool versionThree)
@@ -510,7 +672,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         }
     }
 
-    private sealed class Factory(Stores stores, RejectSave? fault = null) : WebApplicationFactory<Program>
+    private sealed class Factory(Stores stores, RejectSave? fault = null, bool identityAdministration = false) : WebApplicationFactory<Program>
     {
         public const string ServiceSecret = "issuance-test-only-secret-0123456789";
         private readonly RSA signing = RSA.Create(2048);
@@ -519,19 +681,28 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("CORS:AllowedOrigins", "https://localhost");
-            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            builder.ConfigureAppConfiguration((_, configuration) =>
             {
-                ["ConnectionStrings:EmployeeIdentity"] = stores.Employees.Database.GetConnectionString(),
-                ["ConnectionStrings:CustomerIdentity"] = stores.Customers.Database.GetConnectionString(),
-                ["ConnectionStrings:RefreshSessions"] = stores.State.Database.GetConnectionString(),
-                ["Jwt:Issuer"] = "https://issuance.test",
-                ["Jwt:Audience"] = "issuance-test",
-                ["Jwt:PrivateKeyPem"] = signing.ExportPkcs8PrivateKeyPem(),
-                ["Jwt:KeyId"] = "issuance-test",
-                ["Jwt:AccessTokenLifetimeSeconds"] = "900",
-                ["ServiceClients:Clients:issuance-test:SecretSha256"] = ServiceClientCredential.HashSecret(ServiceSecret),
-                ["ServiceClients:Clients:issuance-test:Permissions:0"] = "legacy-contact.messages.create",
-            }));
+                var settings = new Dictionary<string, string?>
+                {
+                    ["ConnectionStrings:EmployeeIdentity"] = stores.Employees.Database.GetConnectionString(),
+                    ["ConnectionStrings:CustomerIdentity"] = stores.Customers.Database.GetConnectionString(),
+                    ["ConnectionStrings:RefreshSessions"] = stores.State.Database.GetConnectionString(),
+                    ["Jwt:Issuer"] = "https://issuance.test",
+                    ["Jwt:Audience"] = "issuance-test",
+                    ["Jwt:PrivateKeyPem"] = signing.ExportPkcs8PrivateKeyPem(),
+                    ["Jwt:KeyId"] = "issuance-test",
+                    ["Jwt:AccessTokenLifetimeSeconds"] = "900",
+                    ["ServiceClients:Clients:issuance-test:SecretSha256"] = ServiceClientCredential.HashSecret(ServiceSecret),
+                    ["ServiceClients:Clients:issuance-test:Permissions:0"] = "legacy-contact.messages.create",
+                };
+                if (identityAdministration)
+                {
+                    settings["ServiceClients:Clients:issuance-test:Permissions:1"] = LegacyAccessTokenPermissions.CustomerIdentitiesReconcileCreate;
+                    settings["ServiceClients:Clients:issuance-test:Permissions:2"] = CustomerSelfServicePermissions.Use;
+                }
+                configuration.AddInMemoryCollection(settings);
+            });
             builder.ConfigureTestServices(services =>
             {
                 // Only Google's external credential validation is controlled. The

@@ -68,6 +68,13 @@ jobs:
             -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~NormalHistoricalSecurity_" \
             --logger "trx;LogFileName=historical-security.trx" --results-directory artifacts/historical-security
+      - name: Verify administrative password creation through normal HTTP
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~NormalAdministrativePasswordPolicy_" \
+            --logger "trx;LogFileName=administrative-password-policy.trx" --results-directory artifacts/administrative-password-policy
       - name: Verify historical Identity password formats through normal HTTP
         shell: bash
         run: |
@@ -76,6 +83,14 @@ jobs:
             -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~NormalHistoricalPasswordFormat_" \
             --logger "trx;LogFileName=historical-password-formats.trx" --results-directory artifacts/historical-password-formats
+      - name: Verify customer registration recovery preserves established links
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore \
+            -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~ResolveRegistration_" \
+            --logger "trx;LogFileName=registration-links.trx" --results-directory artifacts/registration-links
       - name: Verify offline Auth manifest review scripts
         shell: pwsh
         run: ./eng/Test-AuthManifestReview.ps1
@@ -111,6 +126,8 @@ jobs:
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/recovery-callback -OutputDirectory artifacts/coverage-evidence/recovery-callback
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-security -OutputDirectory artifacts/coverage-evidence/historical-security
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-password-formats -OutputDirectory artifacts/coverage-evidence/historical-password-formats
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-password-policy -OutputDirectory artifacts/coverage-evidence/administrative-password-policy
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/registration-links -OutputDirectory artifacts/coverage-evidence/registration-links
       - name: Retain private validation evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
