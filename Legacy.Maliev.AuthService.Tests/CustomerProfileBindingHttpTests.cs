@@ -2,6 +2,7 @@ extern alias CustomerProducer;
 
 using System.IdentityModel.Tokens.Jwt;
 using System.Net;
+using System.Data.Common;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
@@ -20,6 +21,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -441,6 +443,10 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
             }));
             builder.ConfigureTestServices(services =>
             {
+                var pools = new OwnedPoolCapture(stores);
+                services.AddDbContext<CustomerIdentityDbContext>(options => options.AddInterceptors(pools));
+                services.AddDbContext<EmployeeIdentityDbContext>(options => options.AddInterceptors(pools));
+                services.AddDbContext<RefreshSessionDbContext>(options => options.AddInterceptors(pools));
                 services.PostConfigure<ApiBehaviorOptions>(options =>
                 {
                     var original = options.InvalidModelStateResponseFactory;
@@ -493,13 +499,7 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         {
             try
             {
-                try { if (customer is not null) await customer.DisposeAsync(); }
-                finally
-                {
-                    await using var scope = Services.CreateAsyncScope();
-                    foreach (var context in new DbContext[] { scope.ServiceProvider.GetRequiredService<CustomerIdentityDbContext>(), scope.ServiceProvider.GetRequiredService<EmployeeIdentityDbContext>(), scope.ServiceProvider.GetRequiredService<RefreshSessionDbContext>() })
-                        stores.RegisterPool((NpgsqlConnection)context.Database.GetDbConnection());
-                }
+                if (customer is not null) await customer.DisposeAsync();
             }
             finally
             {
@@ -523,15 +523,21 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
                 ["Jwt:Issuer"] = "https://customer-binding.test", ["Jwt:Audience"] = "customer-binding-test",
                 ["Features:ResourceScopedAuthEnabled"] = "true", ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "",
             }) builder.UseSetting(setting.Key, setting.Value);
+            builder.ConfigureTestServices(services => services.AddDbContext<CustomerDbContext>(options => options.AddInterceptors(new OwnedPoolCapture(stores))));
         }
-        public override async ValueTask DisposeAsync()
+    }
+
+    private sealed class OwnedPoolCapture(Stores stores) : DbConnectionInterceptor
+    {
+        public override InterceptionResult ConnectionOpening(DbConnection connection, ConnectionEventData eventData, InterceptionResult result)
         {
-            try
-            {
-                await using var scope = Services.CreateAsyncScope();
-                stores.RegisterPool((NpgsqlConnection)scope.ServiceProvider.GetRequiredService<CustomerDbContext>().Database.GetDbConnection());
-            }
-            finally { await base.DisposeAsync(); }
+            stores.RegisterPool((NpgsqlConnection)connection);
+            return result;
+        }
+        public override ValueTask<InterceptionResult> ConnectionOpeningAsync(DbConnection connection, ConnectionEventData eventData, InterceptionResult result, CancellationToken cancellationToken = default)
+        {
+            stores.RegisterPool((NpgsqlConnection)connection);
+            return ValueTask.FromResult(result);
         }
     }
 
@@ -560,8 +566,9 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         public RefreshSessionDbContext State { get; private set; } = null!;
         public CustomerDbContext Profiles { get; private set; } = null!;
         private readonly List<DbContext> owned = [];
-        private readonly List<NpgsqlConnection> pools = [];
-        public void RegisterPool(NpgsqlConnection connection) => pools.Add(connection);
+        private readonly HashSet<NpgsqlConnection> pools = [];
+        private readonly object poolGate = new();
+        public void RegisterPool(NpgsqlConnection connection) { lock (poolGate) pools.Add(connection); }
         public static async Task<Stores> CreateAsync(PostgresFixture postgres)
         {
             var stores = new Stores();
