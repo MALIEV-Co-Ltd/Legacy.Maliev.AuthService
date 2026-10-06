@@ -39,7 +39,7 @@ public sealed class CustomerCanonicalWriteTests(PostgresFixture postgres) : IAsy
         var connection = new Npgsql.NpgsqlConnectionStringBuilder(schema.Database.GetConnectionString()) { MaxPoolSize = 1 };
         await using var context = TrackPool(new CustomerIdentityDbContext(new DbContextOptionsBuilder<CustomerIdentityDbContext>()
             .UseNpgsql(connection.ConnectionString).Options));
-        var service = NewService(context);
+        var service = NewService(context, "cafe\u0301@identity.test");
         var request = new CreateCustomerIdentityRequest("customer-user", "cafe\u0301@identity.test", "abcdef", false, null, null, null);
         var key = Guid.NewGuid();
         Assert.Equal(CustomerIdentityCreateOutcome.Created,
@@ -79,16 +79,16 @@ public sealed class CustomerCanonicalWriteTests(PostgresFixture postgres) : IAsy
         if (keyed)
         {
             var results = await Task.WhenAll(
-                NewService(first).CreateOrReconcileAsync(42, "service:legacy-intranet", Guid.NewGuid(), firstRequest, deadline.Token),
-                NewService(second).CreateOrReconcileAsync(43, "service:legacy-intranet", Guid.NewGuid(), secondRequest, deadline.Token));
+                NewService(first, firstRequest.Email).CreateOrReconcileAsync(42, "service:legacy-intranet", Guid.NewGuid(), firstRequest, deadline.Token),
+                NewService(second, secondRequest.Email, 43).CreateOrReconcileAsync(43, "service:legacy-intranet", Guid.NewGuid(), secondRequest, deadline.Token));
             Assert.Single(results, value => value.Outcome == CustomerIdentityCreateOutcome.Created);
             Assert.Single(results, value => value.Outcome == CustomerIdentityCreateOutcome.Conflict);
             Assert.Single(await first.CreateOperations.AsNoTracking().ToListAsync(deadline.Token));
         }
         else
         {
-            var results = await Task.WhenAll(NewService(first).CreateAsync(42, firstRequest, deadline.Token),
-                NewService(second).CreateAsync(43, secondRequest, deadline.Token));
+            var results = await Task.WhenAll(NewService(first, firstRequest.Email).CreateAsync(42, firstRequest, deadline.Token),
+                NewService(second, secondRequest.Email, 43).CreateAsync(43, secondRequest, deadline.Token));
             Assert.Single(results, value => value is not null);
             Assert.Empty(await first.CreateOperations.AsNoTracking().ToListAsync(deadline.Token));
         }
@@ -96,8 +96,8 @@ public sealed class CustomerCanonicalWriteTests(PostgresFixture postgres) : IAsy
         Assert.Equal("CAF\u00c9@IDENTITY.TEST", stored.NormalizedEmail);
     }
 
-    private static CustomerIdentityAdminService NewService(CustomerIdentityDbContext context) =>
-        new(context, new PasswordHasher<LegacyIdentityRow>());
+    private static CustomerIdentityAdminService NewService(CustomerIdentityDbContext context, string storedEmail, int id = 42) =>
+        new(context, new PasswordHasher<LegacyIdentityRow>(), new FixedCustomerProfileBinding(new CustomerProfileBinding(id, storedEmail, null, null, null)));
 
     [Theory]
     [InlineData(false)]
@@ -110,7 +110,7 @@ public sealed class CustomerCanonicalWriteTests(PostgresFixture postgres) : IAsy
         await using var state = await postgres.CreateStateContextAsync(RegisterPool);
         var self = new CustomerSelfService(second, state, new PasswordHasher<LegacyIdentityRow>(), TimeProvider.System);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        var admin = NewService(first).CreateAsync(42,
+        var admin = NewService(first, sameProfile ? "admin@identity.test" : "\u212a@identity.test").CreateAsync(42,
             new("admin-user", sameProfile ? "admin@identity.test" : "\u212a@identity.test", "abcdef", false, null, null, null), deadline.Token);
         var web = self.RegisterAsync(new(sameProfile ? 42 : 43,
             sameProfile ? "web@identity.test" : "k@identity.test", "correct-password"), deadline.Token);

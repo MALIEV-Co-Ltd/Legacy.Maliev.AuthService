@@ -22,6 +22,8 @@
     <ProjectReference Include="..\Legacy.Maliev.AuthService.Application\Legacy.Maliev.AuthService.Application.csproj" />
     <ProjectReference Include="..\Legacy.Maliev.AuthService.Domain\Legacy.Maliev.AuthService.Domain.csproj" />
     <ProjectReference Include="..\Legacy.Maliev.AuthService.Infrastructure\Legacy.Maliev.AuthService.Infrastructure.csproj" />
+    <!-- Test-only exact Customer producer join; Program remains explicitly aliased. -->
+    <ProjectReference Include="$(MalievWorkspaceRoot)\Legacy.Maliev.CustomerService\Legacy.Maliev.CustomerService.Api\Legacy.Maliev.CustomerService.Api.csproj" Aliases="CustomerProducer" />
   </ItemGroup>
   <ItemGroup Condition="'$(GITHUB_ACTIONS)' != 'true' Or '$(UseLocalMalievDependencies)' == 'true'">
     <ProjectReference Include="$(MalievWorkspaceRoot)\Legacy.Maliev.ServiceDefaults\src\Legacy.Maliev.ServiceDefaults\Legacy.Maliev.ServiceDefaults.csproj" />

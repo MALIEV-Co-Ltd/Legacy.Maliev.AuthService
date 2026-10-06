@@ -38,8 +38,16 @@ public sealed class CustomerIdentitiesController(
             return Forbid();
         }
 
-        var result = await service.CreateOrReconcileAsync(
-            databaseId, subject, operationKey, request, cancellationToken);
+        CustomerIdentityCreateResult result;
+        try
+        {
+            result = await service.CreateOrReconcileAsync(
+                databaseId, subject, operationKey, request, cancellationToken);
+        }
+        catch (CustomerProfileBindingException exception)
+        {
+            return ProfileFailure(exception);
+        }
         return result.Outcome switch
         {
             CustomerIdentityCreateOutcome.Created => StatusCode(StatusCodes.Status201Created,
@@ -75,10 +83,25 @@ public sealed class CustomerIdentitiesController(
         if (!AdministrativeIdentityPolicy.Accepts(request.UserName, request.Email))
             return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Invalid identity fields" });
 
-        var identity = await service.CreateAsync(databaseId, request, cancellationToken);
+        CustomerIdentityResponse? identity;
+        try
+        {
+            identity = await service.CreateAsync(databaseId, request, cancellationToken);
+        }
+        catch (CustomerProfileBindingException exception)
+        {
+            return ProfileFailure(exception);
+        }
         return identity is null
             ? Conflict(new ProblemDetails { Status = StatusCodes.Status409Conflict, Title = "Identity already exists" })
             : CreatedAtAction(nameof(Get), new { databaseId }, identity);
+    }
+
+    private ObjectResult ProfileFailure(CustomerProfileBindingException exception)
+    {
+        var status = exception.Status == CustomerProfileBindingStatus.Missing
+            ? StatusCodes.Status404NotFound : StatusCodes.Status503ServiceUnavailable;
+        return StatusCode(status, new ProblemDetails { Status = status, Title = "Customer profile unavailable" });
     }
 
     /// <summary>Creates a single-use setup challenge for an explicitly classified bootstrap identity.</summary>
