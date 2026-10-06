@@ -885,6 +885,130 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal(1, control.Attempts);
     }
 
+    [Theory]
+    [InlineData(IdentityKind.Employee)]
+    [InlineData(IdentityKind.Customer)]
+    public async Task NormalCanonicalIdentityWriter_HistoricalCollisionDeniesEffectsAndSameOwnerUsesCanonicalKey(IdentityKind kind)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores, identityAdministration: true, identityValidation: true);
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, false);
+        LegacyIdentityDbContext identity = kind == IdentityKind.Employee ? stores.Employees : stores.Customers;
+        const string historicalEmail = "A\u030a\u0301@identity.test";
+        identity.Users.Add(new()
+        {
+            Id = "historical-canonical-collision", DatabaseID = 17, UserName = "\u212a-user@identity.test",
+            NormalizedUserName = "\u212a-USER@IDENTITY.TEST", Email = historicalEmail,
+            NormalizedEmail = historicalEmail.ToUpperInvariant(), SecurityStamp = "retained-security",
+            ConcurrencyStamp = "retained-concurrency",
+        });
+        await identity.SaveChangesAsync();
+        identity.ChangeTracker.Clear();
+        var route = $"/auth/v1/{kind.ToString().ToLowerInvariant()}-identities";
+        const string rawEmail = "cafe\u0301@identity.test";
+        using var created = await client.PostAsJsonAsync(route + "/72",
+            AdministrativeIdentityRequest(kind, "new-user@identity.test", rawEmail));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var newRow = await identity.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        Assert.Equal(rawEmail, newRow.Email);
+        Assert.Equal("CAF\u00c9@IDENTITY.TEST", newRow.NormalizedEmail);
+        using var projected = await client.GetAsync(route + "/72");
+        var version = projected.Headers.ETag!.ToString();
+        var before = await AdministrativeSnapshotAsync(stores);
+        using var conflictingCreate = await client.PostAsJsonAsync(route + "/73",
+            AdministrativeIdentityRequest(kind, "another-user@identity.test", "\u01fa@identity.test"));
+        Assert.Equal(HttpStatusCode.Conflict, conflictingCreate.StatusCode);
+        Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        using var conflictingUserName = await client.PostAsJsonAsync(route + "/74",
+            AdministrativeIdentityRequest(kind, "k-user@identity.test", "otherwise-unique@identity.test"));
+        Assert.Equal(HttpStatusCode.Conflict, conflictingUserName.StatusCode);
+        Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        using var conflictingUpdate = new HttpRequestMessage(HttpMethod.Put, route + "/72/versioned")
+        {
+            Content = JsonContent.Create(AdministrativeUpdateRequest(kind, "new-user@identity.test", "\u01fa@identity.test")),
+        };
+        conflictingUpdate.Headers.TryAddWithoutValidation("If-Match", version);
+        using var rejected = await client.SendAsync(conflictingUpdate);
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        using var sameOwner = new HttpRequestMessage(HttpMethod.Put, route + "/72/versioned")
+        {
+            Content = JsonContent.Create(AdministrativeUpdateRequest(kind, "new-user@identity.test", rawEmail)),
+        };
+        sameOwner.Headers.TryAddWithoutValidation("If-Match", version);
+        using var updated = await client.SendAsync(sameOwner);
+        Assert.Equal(HttpStatusCode.NoContent, updated.StatusCode);
+        var after = await identity.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        Assert.Equal(rawEmail, after.Email);
+        Assert.Equal("CAF\u00c9@IDENTITY.TEST", after.NormalizedEmail);
+        Assert.Equal(newRow.PasswordHash, after.PasswordHash);
+        var retained = await identity.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 17);
+        Assert.Equal(historicalEmail.ToUpperInvariant(), retained.NormalizedEmail);
+        Assert.Equal("retained-security", retained.SecurityStamp);
+        Assert.Equal("retained-concurrency", retained.ConcurrencyStamp);
+    }
+
+    [Fact]
+    public async Task NormalCanonicalIdentityWriter_RawCustomerReceiptReplayRejectsEquivalentChangedPayload()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores, identityAdministration: true, identityValidation: true);
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, true);
+        var key = Guid.NewGuid();
+        var route = "/auth/v1/customer-identities/72/reconcile-create";
+        var payload = new CreateCustomerIdentityRequest("receipt-user@identity.test", "cafe\u0301@identity.test", "abcdef", true, null, null, null);
+        async Task<HttpResponseMessage> SendAsync(CreateCustomerIdentityRequest request)
+        {
+            using var message = new HttpRequestMessage(HttpMethod.Post, route) { Content = JsonContent.Create(request) };
+            message.Headers.TryAddWithoutValidation("Idempotency-Key", key.ToString("D"));
+            return await client.SendAsync(message);
+        }
+        using var created = await SendAsync(payload);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var before = await AdministrativeSnapshotAsync(stores);
+        using var replay = await SendAsync(payload);
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        using var changed = await SendAsync(payload with { Email = "caf\u00e9@identity.test" });
+        Assert.Equal(HttpStatusCode.Conflict, changed.StatusCode);
+        Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        Assert.Equal("CAF\u00c9@IDENTITY.TEST",
+            (await stores.Customers.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72)).NormalizedEmail);
+    }
+
+    [Fact]
+    public async Task NormalCanonicalIdentityWriter_UnversionedCustomerUnknownCommitReturns503WithoutRetry()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var control = new ConditionalAckState(IdentityKind.Customer);
+        await using var factory = new Factory(stores, identityAdministration: true, identityValidation: true,
+            conditionalFaults: [new ConditionalCommandAckLoss(control), new ConditionalCommitAckLoss(control)]);
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, false);
+        const string route = "/auth/v1/customer-identities/72";
+        using var created = await client.PostAsJsonAsync(route,
+            AdministrativeIdentityRequest(IdentityKind.Customer, "before-ack@identity.test", "before-ack@identity.test"));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var before = await stores.Customers.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        control.Enabled = true;
+        using var response = await client.PutAsJsonAsync(route,
+            AdministrativeUpdateRequest(IdentityKind.Customer, "after-ack@identity.test", "cafe\u0301@identity.test"));
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, response.StatusCode);
+        Assert.True(control.Injected);
+        Assert.False(control.ObservedRetries ?? true);
+        Assert.Equal(1, control.Attempts);
+        Assert.Equal(1, control.CompletedWrites);
+        var after = await stores.Customers.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        Assert.Equal("after-ack@identity.test", after.UserName);
+        Assert.Equal("CAF\u00c9@IDENTITY.TEST", after.NormalizedEmail);
+        Assert.Equal(before.PasswordHash, after.PasswordHash);
+        Assert.NotEqual(before.SecurityStamp, after.SecurityStamp);
+        Assert.NotEqual(before.ConcurrencyStamp, after.ConcurrencyStamp);
+        Assert.DoesNotContain("Synthetic", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+    }
+
     private sealed class ConditionalAckState(IdentityKind kind)
     {
         public IdentityKind Kind { get; } = kind;
@@ -911,17 +1035,6 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
             }
             return ValueTask.FromResult(result);
         }
-        public override ValueTask<int> NonQueryExecutedAsync(DbCommand command, CommandExecutedEventData eventData,
-            int result, CancellationToken cancellationToken = default)
-        {
-            if (Matches(command) && result == 1)
-            {
-                state.CompletedWrites++;
-                state.Injected = true;
-                throw ConditionalAckState.Failure();
-            }
-            return ValueTask.FromResult(result);
-        }
     }
 
     private sealed class ConditionalCommitAckLoss(ConditionalAckState state) : DbTransactionInterceptor
@@ -939,7 +1052,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         public override Task TransactionCommittedAsync(DbTransaction transaction, TransactionEndEventData eventData,
             CancellationToken cancellationToken = default)
         {
-            if (state.Enabled && state.Kind == IdentityKind.Employee)
+            if (state.Enabled)
             {
                 state.CompletedWrites++;
                 state.Injected = true;

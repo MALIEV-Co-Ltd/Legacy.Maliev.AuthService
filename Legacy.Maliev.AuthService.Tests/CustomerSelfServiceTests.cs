@@ -19,6 +19,59 @@ namespace Legacy.Maliev.AuthService.Tests;
 [Collection(PostgresCollection.Name)]
 public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
 {
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CanonicalWriterCustomerRecovery_PreservesRawCeg1ForNewAndHistoricalKeys(bool historicalKey)
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        const string raw = "cafe\u0301@identity.test";
+        await fixture.SeedCustomerAsync(email: raw);
+        var row = await fixture.Customers.Users.SingleAsync();
+        row.NormalizedEmail = historicalKey ? raw.ToUpperInvariant() : "CAF\u00c9@IDENTITY.TEST";
+        await fixture.Customers.SaveChangesAsync();
+        var key = row.NormalizedEmail;
+        var challenge = await fixture.Service.RequestEmailConfirmationAsync(new(raw), default);
+        Assert.NotNull(challenge.Token);
+        var action = await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync();
+        var frame = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(new object?[]
+        {
+            "legacy-auth/customer-email-generation", 1, "email-confirmation", row.Id,
+            raw.ToUpperInvariant(), raw.ToUpperInvariant(), row.SecurityStamp,
+        });
+        var expected = "ceg1:" + Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(frame));
+        Assert.Equal(expected, action.BoundSecurityStamp);
+        Assert.True(await fixture.Service.CompleteEmailConfirmationAsync(new(raw, challenge.Token!), default));
+        Assert.Equal(expected, (await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync()).BoundSecurityStamp);
+        Assert.NotNull((await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync()).ConsumedAt);
+        Assert.Equal(key, (await fixture.Customers.Users.AsNoTracking().SingleAsync()).NormalizedEmail);
+    }
+
+    [Fact]
+    public async Task CanonicalHistoricalCollision_RegistrationAndPendingEmailChangeDenyWithoutConsuming()
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedCustomerAsync();
+        var row = await fixture.Customers.Users.SingleAsync();
+        var challenge = await fixture.Service.RequestEmailChangeAsync(row.Id, new("old-password", "k@identity.test"), default);
+        Assert.NotNull(challenge?.Token);
+        var binding = (await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync()).BoundSecurityStamp;
+        await fixture.SeedCustomerAsync(id: "historical-kelvin", databaseId: 43, email: "\u212a@identity.test");
+        var before = await fixture.Customers.Users.AsNoTracking().SingleAsync(value => value.Id == row.Id);
+        var registered = await fixture.Service.RegisterAsync(new(44, "k@identity.test", "correct-password"), default);
+        Assert.False(registered.Succeeded);
+        Assert.Null(await fixture.Service.ValidateEmailChangeAsync(new("k@identity.test", challenge!.Token!), default));
+        Assert.False(await fixture.Service.CompleteEmailChangeAsync(new("k@identity.test", challenge!.Token!), default));
+        var action = await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync();
+        Assert.Null(action.ConsumedAt);
+        Assert.Equal(binding, action.BoundSecurityStamp);
+        var after = await fixture.Customers.Users.AsNoTracking().SingleAsync(value => value.Id == row.Id);
+        Assert.Equal(before.Email, after.Email);
+        Assert.Equal(before.NormalizedEmail, after.NormalizedEmail);
+        Assert.Equal(before.SecurityStamp, after.SecurityStamp);
+        Assert.Equal(2, await fixture.Customers.Users.CountAsync());
+    }
+
     [Fact]
     public void Controller_UsesAuthenticatedJsonPostsAndNeverPlacesPasswordOrTokenInRoutes()
     {

@@ -22,17 +22,19 @@ public sealed class EmployeeIdentityAdminService(
         if (!AdministrativeIdentityPolicy.Accepts(request.UserName, request.Email))
             throw new AdministrativeIdentityValidationException();
 
-        var normalizedUserName = request.UserName.Trim().ToUpperInvariant();
-        var normalizedEmail = request.Email.Trim().ToUpperInvariant();
-        var exists = await dbContext.Users.AnyAsync(
-            user => user.DatabaseID == databaseId ||
-                user.NormalizedUserName == normalizedUserName ||
-                user.NormalizedEmail == normalizedEmail,
-            cancellationToken);
-        if (exists)
-        {
-            return null;
-        }
+        var normalizedUserName = request.UserName.Trim().Normalize().ToUpperInvariant();
+        var normalizedEmail = LegacyIdentityKeyOwnership.CanonicalKey(request.Email);
+        await using var fresh = NewNonRetryingContext();
+        await using var transaction = await fresh.Database.BeginTransactionAsync(cancellationToken);
+        // Profile ownership precedes the canonical email lock; competing creates cannot share one profile.
+        await fresh.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock(hashtextextended({"employee-create:" + databaseId}, 1))", cancellationToken);
+        await LegacyIdentityKeyOwnership.LockAsync(fresh, request.Email, cancellationToken);
+        await LegacyIdentityKeyOwnership.LockUserNameAsync(fresh, request.UserName, cancellationToken);
+        if (await fresh.Users.AnyAsync(value => value.DatabaseID == databaseId ||
+                value.NormalizedUserName == normalizedUserName, cancellationToken) ||
+            await LegacyIdentityKeyOwnership.HasOtherUserNameOwnerAsync(fresh, request.UserName, null, cancellationToken) ||
+            await LegacyIdentityKeyOwnership.HasOtherOwnerAsync(fresh, request.Email, null, cancellationToken)) return null;
 
         var user = new LegacyIdentityRow
         {
@@ -52,8 +54,9 @@ public sealed class EmployeeIdentityAdminService(
             ConcurrencyStamp = Guid.NewGuid().ToString(),
         };
         user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
-        dbContext.Users.Add(user);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        fresh.Users.Add(user);
+        await fresh.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
         return Project(user);
     }
 
@@ -86,16 +89,21 @@ public sealed class EmployeeIdentityAdminService(
         {
             if (expectedVersion is not null && !IdentityAdminVersion.Matches(user, expectedVersion))
                 throw new AdministrativeIdentityConflictException();
-            if (!AdministrativeIdentityPolicy.Accepts(request.UserName, request.Email) ||
-                await context.Users.AnyAsync(value => value.Id != user.Id &&
-                    (value.NormalizedUserName == request.UserName.Trim().ToUpperInvariant() ||
-                     value.NormalizedEmail == request.Email.Trim().ToUpperInvariant()), cancellationToken))
+            if (!AdministrativeIdentityPolicy.Accepts(request.UserName, request.Email))
+                throw new AdministrativeIdentityValidationException();
+            await LegacyIdentityKeyOwnership.LockAsync(context, request.Email, cancellationToken);
+            await LegacyIdentityKeyOwnership.LockUserNameAsync(context, request.UserName, cancellationToken);
+            var normalizedName = request.UserName.Trim().Normalize().ToUpperInvariant();
+            if (await context.Users.AnyAsync(value => value.Id != user.Id &&
+                    value.NormalizedUserName == normalizedName, cancellationToken) ||
+                await LegacyIdentityKeyOwnership.HasOtherUserNameOwnerAsync(context, request.UserName, user.Id, cancellationToken) ||
+                await LegacyIdentityKeyOwnership.HasOtherOwnerAsync(context, request.Email, user.Id, cancellationToken))
                 throw new AdministrativeIdentityValidationException();
 
             user.UserName = request.UserName.Trim();
-            user.NormalizedUserName = user.UserName.ToUpperInvariant();
+            user.NormalizedUserName = normalizedName;
             user.Email = request.Email.Trim();
-            user.NormalizedEmail = user.Email.ToUpperInvariant();
+            user.NormalizedEmail = LegacyIdentityKeyOwnership.CanonicalKey(user.Email);
             user.EmailConfirmed = request.EmailConfirmed;
             user.PhoneNumber = request.PhoneNumber;
             user.PhoneNumberConfirmed = request.PhoneNumberConfirmed;
@@ -149,6 +157,12 @@ public sealed class EmployeeIdentityAdminService(
         catch (EmployeeRecoveryUnavailableException) { throw; }
         catch { throw new EmployeeRecoveryUnavailableException(); }
     }
+
+    private EmployeeIdentityDbContext NewNonRetryingContext() => new(
+        new DbContextOptionsBuilder<EmployeeIdentityDbContext>(
+            (DbContextOptions<EmployeeIdentityDbContext>)dbContext.GetService<IDbContextOptions>())
+            .UseNpgsql(dbContext.Database.GetConnectionString(), provider =>
+                provider.ExecutionStrategy(dependencies => new NonRetryingExecutionStrategy(dependencies))).Options);
 
     private static EmployeeIdentityResponse Project(LegacyIdentityRow user) => new(
         user.Id,
