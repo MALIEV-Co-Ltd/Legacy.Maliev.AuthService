@@ -86,9 +86,13 @@ public sealed class CanonicalEmailOwnershipTests(PostgresFixture postgres) : IAs
             : await postgres.CreateCustomerContextAsync(RegisterPool);
         context.Users.Add(new()
         {
-            Id = "historical-username", UserName = "\u212a-user", NormalizedUserName = "\u212a-USER",
-            Email = "other@identity.test", NormalizedEmail = "OTHER@IDENTITY.TEST",
-            SecurityStamp = "retained-security", ConcurrencyStamp = "retained-concurrency",
+            Id = "historical-username",
+            UserName = "\u212a-user",
+            NormalizedUserName = "\u212a-USER",
+            Email = "other@identity.test",
+            NormalizedEmail = "OTHER@IDENTITY.TEST",
+            SecurityStamp = "retained-security",
+            ConcurrencyStamp = "retained-concurrency",
         });
         await context.SaveChangesAsync();
         context.ChangeTracker.Clear();

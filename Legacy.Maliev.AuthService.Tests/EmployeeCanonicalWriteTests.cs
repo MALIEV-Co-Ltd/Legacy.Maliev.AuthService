@@ -46,10 +46,14 @@ public sealed class EmployeeCanonicalWriteTests(PostgresFixture postgres) : IAsy
         await using var context = await postgres.CreateEmployeeContextAsync(RegisterPool);
         var historical = new LegacyIdentityRow
         {
-            Id = "historical", DatabaseID = 7, UserName = "historical-user",
-            NormalizedUserName = "HISTORICAL-USER", Email = historicalEmail,
+            Id = "historical",
+            DatabaseID = 7,
+            UserName = "historical-user",
+            NormalizedUserName = "HISTORICAL-USER",
+            Email = historicalEmail,
             NormalizedEmail = historicalEmail.ToUpperInvariant(),
-            SecurityStamp = "original-security", ConcurrencyStamp = "original-concurrency",
+            SecurityStamp = "original-security",
+            ConcurrencyStamp = "original-concurrency",
         };
         context.Users.Add(historical);
         await context.SaveChangesAsync();

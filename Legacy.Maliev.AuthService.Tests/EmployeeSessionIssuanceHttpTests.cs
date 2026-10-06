@@ -898,9 +898,13 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         const string historicalEmail = "A\u030a\u0301@identity.test";
         identity.Users.Add(new()
         {
-            Id = "historical-canonical-collision", DatabaseID = 17, UserName = "\u212a-user@identity.test",
-            NormalizedUserName = "\u212a-USER@IDENTITY.TEST", Email = historicalEmail,
-            NormalizedEmail = historicalEmail.ToUpperInvariant(), SecurityStamp = "retained-security",
+            Id = "historical-canonical-collision",
+            DatabaseID = 17,
+            UserName = "\u212a-user@identity.test",
+            NormalizedUserName = "\u212a-USER@IDENTITY.TEST",
+            Email = historicalEmail,
+            NormalizedEmail = historicalEmail.ToUpperInvariant(),
+            SecurityStamp = "retained-security",
             ConcurrencyStamp = "retained-concurrency",
         });
         await identity.SaveChangesAsync();
