@@ -9,7 +9,7 @@ using System.Security.Cryptography;
 namespace Legacy.Maliev.AuthService.Infrastructure;
 
 /// <summary>Issues RS256 access tokens whose private key is supplied only at runtime.</summary>
-public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTokenIssuer, IInvoiceDelegationTokenIssuer, IQuotationInvoiceCapabilityTokenIssuer, IDisposable
+public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTokenIssuer, IInvoiceDelegationTokenIssuer, IQuotationInvoiceCapabilityTokenIssuer, IQuotationInvoiceAttachmentTokenIssuer, IDisposable
 {
     private readonly JwtOptions options;
     private readonly RSA rsa;
@@ -158,13 +158,37 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
     /// <inheritdoc />
     public IssuedAccessToken IssueQuotationInvoiceCapability(string employeeSubject, int quotationId, Guid operationId, DateTimeOffset now, int lifetimeSeconds)
     {
+        return Issue(QuotationInvoiceClaims(employeeSubject, quotationId, operationId, now, lifetimeSeconds),
+            now, QuotationInvoiceCapabilityContract.Audience, lifetimeSeconds);
+    }
+
+    /// <inheritdoc />
+    public IssuedAccessToken IssueQuotationInvoiceAttachment(string employeeSubject, InvoiceFinancialOwnership ownership,
+        DateTimeOffset now, int lifetimeSeconds)
+    {
+        if (!InvoiceFinancialOwnershipContract.IsCanonical(ownership) || ownership.OriginIssuer != options.Issuer
+            || ownership.EmployeeSubject != employeeSubject)
+            throw new ArgumentException("A canonical financial ownership proof is required.", nameof(ownership));
+        Claim[] claims =
+        [
+            .. QuotationInvoiceClaims(employeeSubject, ownership.QuotationId, Guid.Parse(ownership.OperationId), now, lifetimeSeconds),
+            new("invoice_id", ownership.InvoiceId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
+            new("quotation_version", ownership.OriginalQuotationVersion),
+            new("financial_binding", ownership.FinancialBinding),
+            new("financial_binding_version", InvoiceFinancialOwnershipContract.BindingVersion),
+        ];
+        return Issue(claims, now, QuotationInvoiceCapabilityContract.Audience, lifetimeSeconds);
+    }
+
+    private static Claim[] QuotationInvoiceClaims(string employeeSubject, int quotationId, Guid operationId, DateTimeOffset now, int lifetimeSeconds)
+    {
         if (string.IsNullOrWhiteSpace(employeeSubject) || employeeSubject.Length > 256 || employeeSubject.StartsWith("service:", StringComparison.Ordinal))
             throw new ArgumentException("A valid employee subject is required.", nameof(employeeSubject));
         if (quotationId <= 0) throw new ArgumentOutOfRangeException(nameof(quotationId));
         if (operationId == Guid.Empty) throw new ArgumentException("A nonempty operation is required.", nameof(operationId));
         if (lifetimeSeconds is < 1 or > QuotationInvoiceCapabilityContract.MaximumLifetimeSeconds)
             throw new ArgumentOutOfRangeException(nameof(lifetimeSeconds));
-        Claim[] claims =
+        return
         [
             new(JwtRegisteredClaimNames.Sub, employeeSubject),
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("D")),
@@ -175,7 +199,6 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
             new("quotation_id", quotationId.ToString(System.Globalization.CultureInfo.InvariantCulture)),
             new("operation_id", operationId.ToString("D")),
         ];
-        return Issue(claims, now, QuotationInvoiceCapabilityContract.Audience, lifetimeSeconds);
     }
 
     private IssuedAccessToken Issue(IEnumerable<Claim> claims, DateTimeOffset now, string? audience = null, int? lifetimeSeconds = null)

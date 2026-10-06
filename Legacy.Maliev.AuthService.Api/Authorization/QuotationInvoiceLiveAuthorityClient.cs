@@ -71,7 +71,7 @@ public sealed class QuotationInvoiceLiveAuthorityClient(
         }
     }
 
-    private bool ValidateOwnToken(string token)
+    internal bool ValidateOwnToken(string token, string? requiredPermission = null)
     {
         try
         {
@@ -104,8 +104,8 @@ public sealed class QuotationInvoiceLiveAuthorityClient(
             if (root.TryGetProperty("nbf", out var notBefore) && (notBefore.ValueKind != JsonValueKind.Number || !notBefore.TryGetInt64(out var nbf) || nbf > now)) return false;
             var parameters = bearerOptions.Get(JwtBearerDefaults.AuthenticationScheme).TokenValidationParameters.Clone();
             parameters.ValidateLifetime = false; // Exact TimeProvider lifetime checks above, without wall-clock skew.
-            new JwtSecurityTokenHandler { MapInboundClaims = false }.ValidateToken(token, parameters, out _);
-            return true;
+            var principal = new JwtSecurityTokenHandler { MapInboundClaims = false }.ValidateToken(token, parameters, out _);
+            return requiredPermission is null || principal.FindAll("permissions").Count(claim => claim.Value == requiredPermission) == 1;
         }
         catch (Exception exception) when (exception is SecurityTokenException or JsonException or FormatException or ArgumentException or CryptographicException or InvalidOperationException)
         {

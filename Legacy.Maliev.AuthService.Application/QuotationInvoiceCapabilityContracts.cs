@@ -23,7 +23,8 @@ public static class QuotationInvoiceCapabilityContract
 public sealed record QuotationInvoiceCapabilityRequest(
     [Required, StringLength(16384, MinimumLength = 1)] string EmployeeAccessToken,
     [Range(1, int.MaxValue)] int QuotationId,
-    [Required, StringLength(36, MinimumLength = 36)] string OperationId);
+    [Required, StringLength(36, MinimumLength = 36)] string OperationId,
+    [Range(1, int.MaxValue)] int? InvoiceId = null);
 
 /// <summary>A separate short-lived capability; no refresh credential is issued.</summary>
 public sealed record QuotationInvoiceCapabilityResponse(string AccessToken, string TokenType, int ExpiresIn);

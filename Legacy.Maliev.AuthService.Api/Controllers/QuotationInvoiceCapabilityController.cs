@@ -24,7 +24,7 @@ public sealed class QuotationInvoiceCapabilityController(QuotationInvoiceCapabil
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable)]
     public async Task<ActionResult<QuotationInvoiceCapabilityResponse>> Exchange(QuotationInvoiceCapabilityRequest request)
     {
-        if (request.QuotationId <= 0 || !Guid.TryParseExact(request.OperationId, "D", out var operation)
+        if (request.QuotationId <= 0 || request.InvoiceId is <= 0 || !Guid.TryParseExact(request.OperationId, "D", out var operation)
             || operation == Guid.Empty || request.OperationId != operation.ToString("D"))
             return BadRequest(new ProblemDetails { Status = 400, Title = "Invalid quotation operation" });
         try

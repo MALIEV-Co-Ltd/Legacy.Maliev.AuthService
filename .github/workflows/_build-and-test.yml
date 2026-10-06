@@ -59,6 +59,13 @@ jobs:
             --configuration Release --no-build --no-restore -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~NormalEmployeeEditGrants_|FullyQualifiedName~NormalServiceExchange_DoesNotBecomeAnInteractiveActor|FullyQualifiedName~NormalScopedIssuers_DoNotBecomeInteractiveActors|FullyQualifiedName~NormalIssuer_UndefinedInteractiveKind_RefusesBeforeIssuance|FullyQualifiedName~NormalLoginAccounting_UnconfirmedEmployeeAndUnknownAccountHaveNoIdentityOrSessionEffects" \
             --logger "trx;LogFileName=employee-edit-grants.trx" --results-directory artifacts/employee-edit-grants
+      - name: Verify invoice-bound capability financial authority through normal HTTP
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~NormalInvoiceBoundCapability_" \
+            --logger "trx;LogFileName=invoice-bound-capability.trx" --results-directory artifacts/invoice-bound-capability
       - name: Verify exact employee recovery callback token boundaries
         shell: bash
         run: |
@@ -179,6 +186,7 @@ jobs:
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-password-policy -OutputDirectory artifacts/coverage-evidence/administrative-password-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-identity-policy -OutputDirectory artifacts/coverage-evidence/administrative-identity-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/employee-edit-grants -OutputDirectory artifacts/coverage-evidence/employee-edit-grants
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/invoice-bound-capability -OutputDirectory artifacts/coverage-evidence/invoice-bound-capability
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/readonly-lockout -OutputDirectory artifacts/coverage-evidence/readonly-lockout
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/web-identity-user-policy -OutputDirectory artifacts/coverage-evidence/web-identity-user-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/employee-reset-password-policy -OutputDirectory artifacts/coverage-evidence/employee-reset-password-policy

@@ -13,7 +13,9 @@ public static class QuotationInvoiceLiveAuthorityRegistration
     {
         builder.AddLegacyAuthServiceTokenExchange();
         var services = builder.Services;
-        services.AddScoped<IQuotationInvoiceLiveAuthorityClient, QuotationInvoiceLiveAuthorityClient>();
+        services.AddScoped<QuotationInvoiceLiveAuthorityClient>();
+        services.AddScoped<IQuotationInvoiceLiveAuthorityClient>(provider => provider.GetRequiredService<QuotationInvoiceLiveAuthorityClient>());
+        services.AddScoped<IInvoiceFinancialOwnershipClient, InvoiceFinancialOwnershipClient>();
         services.AddTransient<BoundedQuotationWorkloadExchangeHandler>();
 #pragma warning disable EXTEXP0001 // Intentional client-local isolation from inherited resilience; no shared policy changes.
         services.AddHttpClient(LegacyServiceAccessTokenProvider.HttpClientName)
@@ -25,6 +27,10 @@ public static class QuotationInvoiceLiveAuthorityRegistration
             .RemoveAllResilienceHandlers()
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
             .RedactLoggedHeaders(["Authorization", "X-Maliev-IAM-Live-Check-Key"]);
+        services.AddHttpClient(InvoiceFinancialOwnershipClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10))
+            .RemoveAllResilienceHandlers()
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+            .RedactLoggedHeaders(["Authorization"]);
 #pragma warning restore EXTEXP0001
         return builder;
     }
