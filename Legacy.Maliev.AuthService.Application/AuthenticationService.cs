@@ -15,7 +15,7 @@ public sealed class AuthenticationService(
 {
     private static readonly TimeSpan RefreshLifetime = TimeSpan.FromDays(14);
 
-    /// <summary>Authenticates a legacy account without modifying its identity database.</summary>
+    /// <summary>Authenticates a legacy account with explicit password-attempt accounting and no implicit hash rewrite.</summary>
     public async Task<AuthenticationResult> LoginAsync(LoginRequest request, CancellationToken cancellationToken)
     {
         var identity = await credentialValidator.ValidateAsync(

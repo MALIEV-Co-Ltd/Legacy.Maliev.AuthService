@@ -5,6 +5,7 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Legacy.Maliev.AuthService.Api.Authorization;
 using Legacy.Maliev.AuthService.Application;
 using Legacy.Maliev.AuthService.Domain;
@@ -25,6 +26,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
@@ -32,6 +34,325 @@ namespace Legacy.Maliev.AuthService.Tests;
 [Collection(PostgresCollection.Name)]
 public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
 {
+    [Theory]
+    [InlineData(IdentityKind.Employee)]
+    [InlineData(IdentityKind.Customer)]
+    public async Task NormalLoginAccounting_FiveFailuresPersistLockoutAndExpiryAllowsRealPassword(IdentityKind kind)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var clock = new FakeTimeProvider(DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+        await using var factory = new Factory(stores, clock: clock);
+        using var client = factory.CreateClient();
+        var before = await SnapshotIdentitiesAsync(stores);
+        for (int attempt = 1; attempt <= 5; attempt++)
+        {
+            using var denied = await client.PostAsJsonAsync("/auth/v1/login", Login(kind) with { Password = "wrong-accounting-password" });
+            Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+            Assert.DoesNotContain("wrong-accounting-password", await denied.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+            await AssertOnlyLoginAccountingChangedAsync(before, stores, kind, attempt == 5 ? 0 : attempt,
+                attempt == 5 ? clock.GetUtcNow().AddMinutes(5) : null);
+        }
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+        var locked = await SnapshotIdentitiesAsync(stores);
+        using var refused = await client.PostAsJsonAsync("/auth/v1/login", Login(kind));
+        Assert.Equal(HttpStatusCode.Unauthorized, refused.StatusCode);
+        Assert.Equal(locked, await SnapshotIdentitiesAsync(stores));
+        clock.Advance(TimeSpan.FromMinutes(5));
+        using var equalDeadline = await client.PostAsJsonAsync("/auth/v1/login", Login(kind));
+        Assert.Equal(HttpStatusCode.Unauthorized, equalDeadline.StatusCode);
+        Assert.Equal(locked, await SnapshotIdentitiesAsync(stores));
+        clock.Advance(TimeSpan.FromMilliseconds(1));
+        var tokens = await LoginAsync(client, kind);
+        Assert.Equal(locked, await SnapshotIdentitiesAsync(stores));
+        var session = Assert.Single(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+        Assert.Equal(kind, session.IdentityKind);
+        Assert.Equal(Hash(tokens.RefreshToken), session.TokenHash);
+    }
+
+    [Theory]
+    [InlineData(IdentityKind.Employee)]
+    [InlineData(IdentityKind.Customer)]
+    public async Task NormalLoginAccounting_ConcurrentRequestsPersistFiveAttemptsWithoutLostUpdates(IdentityKind kind)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var clock = new FakeTimeProvider(DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+        await using var factory = new Factory(stores, clock: clock);
+        using var client = factory.CreateClient();
+        var before = await SnapshotIdentitiesAsync(stores);
+        var responses = await Task.WhenAll(Enumerable.Range(0, 5).Select(_ =>
+            client.PostAsJsonAsync("/auth/v1/login", Login(kind) with { Password = "concurrent-wrong-password" })));
+        foreach (var response in responses)
+        {
+            using (response) Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+        await AssertOnlyLoginAccountingChangedAsync(before, stores, kind, 0, clock.GetUtcNow().AddMinutes(5));
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task NormalLoginAccounting_DisabledLockoutStillRecordsSourceAttemptsAndSuccessfulPasswordResets()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var row = await stores.Customers.Users.SingleAsync();
+        row.LockoutEnabled = false;
+        row.AccessFailedCount = 4;
+        await stores.Customers.SaveChangesAsync();
+        var clock = new FakeTimeProvider(DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+        await using var factory = new Factory(stores, clock: clock);
+        using var client = factory.CreateClient();
+        var before = await SnapshotIdentitiesAsync(stores);
+        using var wrong = await client.PostAsJsonAsync("/auth/v1/login", Login(IdentityKind.Customer) with { Password = "disabled-wrong-password" });
+        Assert.Equal(HttpStatusCode.Unauthorized, wrong.StatusCode);
+        await AssertOnlyLoginAccountingChangedAsync(before, stores, IdentityKind.Customer, 0, clock.GetUtcNow().AddMinutes(5));
+        using var another = await client.PostAsJsonAsync("/auth/v1/login", Login(IdentityKind.Customer) with { Password = "disabled-wrong-password" });
+        Assert.Equal(HttpStatusCode.Unauthorized, another.StatusCode);
+        await AssertOnlyLoginAccountingChangedAsync(before, stores, IdentityKind.Customer, 1, clock.GetUtcNow().AddMinutes(5));
+        _ = await LoginAsync(client, IdentityKind.Customer);
+        await AssertOnlyLoginAccountingChangedAsync(before, stores, IdentityKind.Customer, 0, clock.GetUtcNow().AddMinutes(5));
+    }
+
+    [Fact]
+    public async Task NormalLoginAccounting_UnconfirmedEmployeeAndUnknownAccountHaveNoIdentityOrSessionEffects()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var row = await stores.Employees.Users.SingleAsync();
+        row.EmailConfirmed = false;
+        row.AccessFailedCount = 2;
+        await stores.Employees.SaveChangesAsync();
+        var before = await SnapshotIdentitiesAsync(stores);
+        await using var factory = new Factory(stores);
+        using var client = factory.CreateClient();
+        foreach (var request in new[] { Login(IdentityKind.Employee), Login(IdentityKind.Employee) with { Password = "wrong-unconfirmed" },
+                     new LoginRequest("missing-account@example.com", "wrong-unknown", IdentityKind.Customer) })
+        {
+            using var denied = await client.PostAsJsonAsync("/auth/v1/login", request);
+            Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+            Assert.Equal(before, await SnapshotIdentitiesAsync(stores));
+        }
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task NormalLoginAccounting_UnconfirmedCustomerResetsVerifiedPasswordBeforeRecoveryWithoutSession()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var row = await stores.Customers.Users.SingleAsync();
+        row.EmailConfirmed = false;
+        row.TwoFactorEnabled = true;
+        row.AccessFailedCount = 2;
+        await stores.Customers.SaveChangesAsync();
+        var before = await SnapshotIdentitiesAsync(stores);
+        await using var factory = new Factory(stores);
+        using var client = factory.CreateClient();
+        using var recovered = await client.PostAsJsonAsync("/auth/v1/login", Login(IdentityKind.Customer));
+        Assert.Equal(HttpStatusCode.Conflict, recovered.StatusCode);
+        var action = await recovered.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("confirm_email", action.GetProperty("action").GetString());
+        await AssertOnlyLoginAccountingChangedAsync(before, stores, IdentityKind.Customer, 0);
+        Assert.Single(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(IdentityKind.Employee)]
+    [InlineData(IdentityKind.Customer)]
+    public async Task NormalLoginAccounting_FailedResetPersistenceCannotIssueSession(IdentityKind kind)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var context = kind == IdentityKind.Employee ? (LegacyIdentityDbContext)stores.Employees : stores.Customers;
+        var row = await context.Users.SingleAsync();
+        row.AccessFailedCount = 2;
+        await context.SaveChangesAsync();
+        await context.Database.ExecuteSqlRawAsync("""
+            CREATE FUNCTION reject_login_accounting() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN RAISE EXCEPTION 'synthetic accounting persistence failure'; END; $$;
+            CREATE TRIGGER reject_login_accounting BEFORE UPDATE OF "AccessFailedCount" ON "AspNetUsers"
+            FOR EACH ROW EXECUTE FUNCTION reject_login_accounting();
+            """);
+        var before = await SnapshotIdentitiesAsync(stores);
+        await using var factory = new Factory(stores);
+        using var client = factory.CreateClient();
+        foreach (var request in new[] { Login(kind), Login(kind) with { Password = "failed-accounting-wrong" } })
+        {
+            using var failed = await client.PostAsJsonAsync("/auth/v1/login", request);
+            Assert.Equal(HttpStatusCode.InternalServerError, failed.StatusCode);
+            Assert.DoesNotContain("synthetic accounting persistence failure", await failed.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+            Assert.Equal(before, await SnapshotIdentitiesAsync(stores));
+        }
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(IdentityKind.Employee)]
+    [InlineData(IdentityKind.Customer)]
+    public async Task NormalLoginAccounting_ConcurrentFailureAndSuccessPreserveOneOrderedCounterOutcome(IdentityKind kind)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores);
+        using var client = factory.CreateClient();
+        var before = await SnapshotIdentitiesAsync(stores);
+        var deniedTask = client.PostAsJsonAsync("/auth/v1/login", Login(kind) with { Password = "concurrent-wrong" });
+        var acceptedTask = client.PostAsJsonAsync("/auth/v1/login", Login(kind));
+        using var denied = await deniedTask;
+        using var accepted = await acceptedTask;
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        _ = await ReadTokensAsync(accepted);
+        var context = kind == IdentityKind.Employee ? (LegacyIdentityDbContext)stores.Employees : stores.Customers;
+        var count = (await context.Users.AsNoTracking().SingleAsync()).AccessFailedCount;
+        Assert.Contains(count, new[] { 0, 1 });
+        await AssertOnlyLoginAccountingChangedAsync(before, stores, kind, count);
+        Assert.Single(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(IdentityKind.Employee)]
+    [InlineData(IdentityKind.Customer)]
+    public async Task NormalLoginAccounting_ConcurrentPasswordReplacementIsReadAfterRowFence(IdentityKind kind)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var context = kind == IdentityKind.Employee ? (LegacyIdentityDbContext)stores.Employees : stores.Customers;
+        await using var factory = new Factory(stores);
+        using var client = factory.CreateClient();
+        await using var replacement = await context.Database.BeginTransactionAsync();
+        var row = await context.Users.FromSqlRaw("SELECT * FROM \"AspNetUsers\" FOR UPDATE").SingleAsync();
+        row.PasswordHash = new PasswordHasher<LegacyIdentityRow>().HashPassword(row, "replacement-accounting-password");
+        row.SecurityStamp = "replacement-accounting-stamp";
+        row.ConcurrencyStamp = "replacement-accounting-concurrency";
+        await context.SaveChangesAsync();
+        var before = await SnapshotIdentitiesAsync(stores);
+        var attempted = client.PostAsJsonAsync("/auth/v1/login", Login(kind));
+        var committed = false;
+        try
+        {
+            var waiting = 0;
+            for (int attempt = 0; attempt < 100 && waiting == 0; attempt++)
+            {
+                // The row-fence transaction otherwise retains its first activity snapshot.
+                await context.Database.ExecuteSqlRawAsync("SELECT pg_stat_clear_snapshot()");
+                waiting = await context.Database.SqlQueryRaw<int>("""
+                    SELECT count(*)::integer AS "Value" FROM pg_stat_activity
+                    WHERE datname = current_database() AND wait_event_type = 'Lock'
+                    """).SingleAsync();
+                if (waiting == 0) await Task.Delay(50);
+            }
+            Assert.True(waiting > 0, "The actual login query must wait for the competing identity row transaction.");
+            Assert.False(attempted.IsCompleted);
+            await replacement.CommitAsync();
+            committed = true;
+        }
+        finally
+        {
+            if (!committed)
+            {
+                try { await replacement.DisposeAsync(); }
+                catch (Exception) { /* Preserve the original fence failure; the context still owns final disposal. */ }
+                await DrainFailedFenceRequestsAsync([attempted]);
+            }
+            else await replacement.DisposeAsync();
+        }
+        using var denied = await attempted;
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        await AssertOnlyLoginAccountingChangedAsync(before, stores, kind, 1);
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+        using var accepted = await client.PostAsJsonAsync("/auth/v1/login", Login(kind) with { Password = "replacement-accounting-password" });
+        var tokens = await ReadTokensAsync(accepted);
+        _ = ReadJwt(tokens.AccessToken, factory);
+        await AssertOnlyLoginAccountingChangedAsync(before, stores, kind, 0);
+        Assert.Equal("replacement-accounting-stamp", (await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).SecurityStamp);
+    }
+
+    [Fact]
+    public async Task NormalLoginAccounting_ConfirmedTfaSuccessRetainsDeferredCounterContract()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var row = await stores.Employees.Users.SingleAsync();
+        row.TwoFactorEnabled = true;
+        row.AccessFailedCount = 2;
+        await stores.Employees.SaveChangesAsync();
+        var before = await SnapshotIdentitiesAsync(stores);
+        await using var factory = new Factory(stores);
+        using var client = factory.CreateClient();
+        _ = await LoginAsync(client, IdentityKind.Employee);
+        Assert.Equal(before, await SnapshotIdentitiesAsync(stores));
+        Assert.Single(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(IdentityKind.Employee)]
+    [InlineData(IdentityKind.Customer)]
+    public async Task NormalLoginAccounting_TwoConnectionPoolMakesProgressWithoutSecondaryReaderAcquisition(IdentityKind kind)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var clock = new FakeTimeProvider(DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+        await using var factory = new Factory(stores, clock: clock, tinyIdentityPool: true);
+        using var client = factory.CreateClient();
+        var context = kind == IdentityKind.Employee ? (LegacyIdentityDbContext)stores.Employees : stores.Customers;
+        var before = await SnapshotIdentitiesAsync(stores);
+        await using var fence = await context.Database.BeginTransactionAsync();
+        _ = await context.Users.FromSqlRaw("SELECT * FROM \"AspNetUsers\" FOR UPDATE").SingleAsync();
+        var requests = Enumerable.Range(0, 8).Select(_ => client.PostAsJsonAsync("/auth/v1/login",
+            Login(kind) with { Password = "tiny-pool-wrong-password" })).ToArray();
+        var committed = false;
+        try
+        {
+            var waiting = 0;
+            for (int attempt = 0; attempt < 100 && waiting < 2; attempt++)
+            {
+                // The row-fence transaction otherwise retains its first activity snapshot.
+                await context.Database.ExecuteSqlRawAsync("SELECT pg_stat_clear_snapshot()");
+                waiting = await context.Database.SqlQueryRaw<int>("""
+                    SELECT count(*)::integer AS "Value" FROM pg_stat_activity WHERE datname = current_database()
+                    AND application_name = 'login-accounting-tiny-pool' AND wait_event_type = 'Lock'
+                    """).SingleAsync();
+                if (waiting < 2) await Task.Delay(50);
+            }
+            Assert.True(waiting >= 2, "Both configured pool connections must be occupied by actual waiting login queries.");
+            await fence.CommitAsync();
+            committed = true;
+        }
+        finally
+        {
+            if (!committed)
+            {
+                try { await fence.DisposeAsync(); }
+                catch (Exception) { /* Preserve the original fence failure; the context still owns final disposal. */ }
+                await DrainFailedFenceRequestsAsync(requests);
+            }
+            else await fence.DisposeAsync();
+        }
+        foreach (var response in await Task.WhenAll(requests).WaitAsync(TimeSpan.FromSeconds(15)))
+        {
+            using (response) Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+        await AssertOnlyLoginAccountingChangedAsync(before, stores, kind, 0, clock.GetUtcNow().AddMinutes(5));
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+    }
+
+    private static async Task DrainFailedFenceRequestsAsync(IEnumerable<Task<HttpResponseMessage>> requests)
+    {
+        foreach (var request in requests)
+        {
+            try
+            {
+                using var response = await request.WaitAsync(TimeSpan.FromSeconds(15));
+            }
+            catch (Exception)
+            {
+                // Cleanup must observe every sibling without replacing the primary test assertion.
+                _ = request.ContinueWith(completed =>
+                {
+                    if (completed.Status == TaskStatus.RanToCompletion) completed.Result.Dispose();
+                    else _ = completed.Exception;
+                }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            }
+        }
+    }
+
     [Theory]
     [InlineData(IdentityKind.Employee, false)]
     [InlineData(IdentityKind.Customer, false)]
@@ -249,7 +570,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
     [InlineData(IdentityKind.Customer, false)]
     [InlineData(IdentityKind.Employee, true)]
     [InlineData(IdentityKind.Customer, true)]
-    public async Task NormalHistoricalPasswordFormat_LegacyHashAuthenticatesWithoutRehashOrIdentityMutation(IdentityKind kind, bool versionThree)
+    public async Task NormalHistoricalPasswordFormat_LegacyHashAuthenticatesWithoutRehashOrUnrelatedIdentityMutation(IdentityKind kind, bool versionThree)
     {
         // Independently constructed PBKDF2 fixtures: salt bytes 00..0f, password issuance-password.
         // V2: marker 00, SHA1/1000/32. V3: marker 01, big-endian PRF=1/iterations=10000/saltLength=16, SHA256/32.
@@ -275,7 +596,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         var problem = await denied.Content.ReadAsStringAsync();
         foreach (var sensitive in new[] { row.Id, login.UserName, login.Password, "synthetic-wrong-password", storedHash, "accessToken" })
             Assert.DoesNotContain(sensitive, problem, StringComparison.Ordinal);
-        Assert.Equal(identities, await SnapshotIdentitiesAsync(stores));
+        await AssertOnlyLoginAccountingChangedAsync(identities, stores, kind, 1);
         Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
         Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
 
@@ -291,14 +612,14 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal(kind, session.IdentityKind);
         Assert.Equal(Hash(tokens.RefreshToken), session.TokenHash);
         Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
-        Assert.Equal(identities, await SnapshotIdentitiesAsync(stores));
+        await AssertOnlyLoginAccountingChangedAsync(identities, stores, kind, 0);
         Assert.Equal(storedHash, (await context.Users.AsNoTracking().SingleAsync()).PasswordHash);
     }
 
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
-    public async Task NormalHistoricalSecurity_IdentityIdPasswordDeniesWithoutMutation_RealPasswordIssuesBoundActor(IdentityKind kind)
+    public async Task NormalHistoricalSecurity_IdentityIdPasswordDeniesWithOnlyAccounting_RealPasswordIssuesBoundActor(IdentityKind kind)
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var factory = new Factory(stores);
@@ -313,7 +634,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.DoesNotContain(login.UserName, problem, StringComparison.Ordinal);
         Assert.DoesNotContain(login.Password, problem, StringComparison.Ordinal);
         Assert.DoesNotContain("accessToken", problem, StringComparison.Ordinal);
-        Assert.Equal(identities, await SnapshotIdentitiesAsync(stores));
+        await AssertOnlyLoginAccountingChangedAsync(identities, stores, kind, 1);
         Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
         Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
 
@@ -328,7 +649,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal(id, session.IdentityId);
         Assert.Equal(kind, session.IdentityKind);
         Assert.Equal(Hash(tokens.RefreshToken), session.TokenHash);
-        Assert.Equal(identities, await SnapshotIdentitiesAsync(stores));
+        await AssertOnlyLoginAccountingChangedAsync(identities, stores, kind, 0);
     }
 
     [Theory]
@@ -368,6 +689,23 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Employees = await stores.Employees.Users.AsNoTracking().OrderBy(row => row.Id).ToListAsync(),
         Customers = await stores.Customers.Users.AsNoTracking().OrderBy(row => row.Id).ToListAsync(),
     });
+
+    private static async Task AssertOnlyLoginAccountingChangedAsync(string before, Stores stores,
+        IdentityKind kind, int count, DateTimeOffset? lockoutEnd = null)
+    {
+        var expected = JsonNode.Parse(before)!;
+        var actual = JsonNode.Parse(await SnapshotIdentitiesAsync(stores))!;
+        var collection = kind == IdentityKind.Employee ? "Employees" : "Customers";
+        var expectedRow = expected[collection]!.AsArray().Single()!;
+        var actualRow = actual[collection]!.AsArray().Single()!;
+        var stamp = actualRow["ConcurrencyStamp"]!.GetValue<string>();
+        Assert.True(Guid.TryParse(stamp, out _));
+        Assert.NotEqual(expectedRow["ConcurrencyStamp"]!.GetValue<string>(), stamp);
+        expectedRow["ConcurrencyStamp"] = stamp;
+        expectedRow["AccessFailedCount"] = count;
+        expectedRow["LockoutEnd"] = JsonSerializer.SerializeToNode(lockoutEnd);
+        Assert.True(JsonNode.DeepEquals(expected, actual), "Only the selected row's login accounting fields may change.");
+    }
 
     [Theory]
     [InlineData(IdentityKind.Employee, false)]
@@ -723,7 +1061,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         }
     }
 
-    private sealed class Factory(Stores stores, RejectSave? fault = null, bool identityAdministration = false) : WebApplicationFactory<Program>
+    private sealed class Factory(Stores stores, RejectSave? fault = null, TimeProvider? clock = null, bool tinyIdentityPool = false, bool identityAdministration = false) : WebApplicationFactory<Program>
     {
         public const string ServiceSecret = "issuance-test-only-secret-0123456789";
         private readonly RSA signing = RSA.Create(2048);
@@ -736,8 +1074,8 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
             {
                 var settings = new Dictionary<string, string?>
                 {
-                    ["ConnectionStrings:EmployeeIdentity"] = stores.Employees.Database.GetConnectionString(),
-                    ["ConnectionStrings:CustomerIdentity"] = stores.Customers.Database.GetConnectionString(),
+                    ["ConnectionStrings:EmployeeIdentity"] = IdentityConnection(stores.Employees, tinyIdentityPool),
+                    ["ConnectionStrings:CustomerIdentity"] = IdentityConnection(stores.Customers, tinyIdentityPool),
                     ["ConnectionStrings:RefreshSessions"] = stores.State.Database.GetConnectionString(),
                     ["Jwt:Issuer"] = "https://issuance.test",
                     ["Jwt:Audience"] = "issuance-test",
@@ -760,9 +1098,23 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
                 // actual nonce, reader, issuer, session store and runtime DI remain.
                 services.RemoveAll<IGoogleIdentityTokenValidator>();
                 services.AddSingleton<IGoogleIdentityTokenValidator, GoogleValidator>();
+                if (clock is not null)
+                {
+                    services.RemoveAll<TimeProvider>();
+                    services.AddSingleton(clock);
+                }
                 if (fault is not null) services.AddDbContext<RefreshSessionDbContext>(options => options.AddInterceptors(fault));
             });
         }
+        private static string? IdentityConnection(LegacyIdentityDbContext context, bool tinyPool) => tinyPool
+            ? new NpgsqlConnectionStringBuilder(context.Database.GetConnectionString())
+            {
+                MaxPoolSize = 2,
+                MinPoolSize = 1,
+                Timeout = 5,
+                ApplicationName = "login-accounting-tiny-pool",
+            }.ConnectionString
+            : context.Database.GetConnectionString();
         public override async ValueTask DisposeAsync()
         {
             var connections = new List<NpgsqlConnection>();

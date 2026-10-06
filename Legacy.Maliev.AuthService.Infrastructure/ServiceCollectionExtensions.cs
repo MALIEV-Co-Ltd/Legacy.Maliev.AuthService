@@ -28,7 +28,7 @@ public static class ServiceCollectionExtensions
 
         services.AddScoped<IPasswordHasher<LegacyIdentityRow>, PasswordHasher<LegacyIdentityRow>>();
         services.AddScoped<LegacyIdentityReader>();
-        services.AddScoped<ILegacyCredentialValidator>(provider => provider.GetRequiredService<LegacyIdentityReader>());
+        services.AddScoped<ILegacyCredentialValidator, InteractiveLegacyCredentialValidator>();
         services.AddScoped<ILegacyIdentityReader>(provider => provider.GetRequiredService<LegacyIdentityReader>());
         services.AddScoped<IGoogleEmployeeIdentityReader>(provider => provider.GetRequiredService<LegacyIdentityReader>());
         services.AddScoped<IRefreshSessionStore, PostgresRefreshSessionStore>();
