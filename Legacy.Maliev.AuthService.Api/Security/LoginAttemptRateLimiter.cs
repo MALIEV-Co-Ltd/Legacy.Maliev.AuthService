@@ -58,7 +58,7 @@ public sealed class LoginAttemptRateLimiter : IDisposable
             RemoveExpiredPartitions(now);
         }
 
-        var normalizedIdentifier = request.UserName.Trim().ToUpperInvariant();
+        var normalizedIdentifier = request.UserName.Trim().Normalize().ToUpperInvariant();
         var compositeIdentity = string.Create(
             CultureInfo.InvariantCulture,
             $"{(int)request.IdentityKind}:{normalizedIdentifier}");

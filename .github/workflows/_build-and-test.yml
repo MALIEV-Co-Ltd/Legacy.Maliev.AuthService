@@ -132,6 +132,22 @@ jobs:
             -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~NormalHistoricalPasswordFormat_" \
             --logger "trx;LogFileName=historical-password-formats.trx" --results-directory artifacts/historical-password-formats
+      - name: Verify historical Identity canonical lookup and private rate partitions
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore \
+            -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~NormalHistoricalIdentityNormalization_" \
+            --logger "trx;LogFileName=historical-identity-normalization.trx" --results-directory artifacts/historical-identity-normalization
+      - name: Verify Production Auth Program unhandled HTTP incident contract
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore \
+            -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~NormalProgramUnhandledFailure_" \
+            --logger "trx;LogFileName=program-unhandled-failure.trx" --results-directory artifacts/program-unhandled-failure
       - name: Verify customer registration recovery preserves established links
         shell: bash
         run: |
@@ -183,6 +199,8 @@ jobs:
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/recovery-callback -OutputDirectory artifacts/coverage-evidence/recovery-callback
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-security -OutputDirectory artifacts/coverage-evidence/historical-security
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-password-formats -OutputDirectory artifacts/coverage-evidence/historical-password-formats
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-identity-normalization -OutputDirectory artifacts/coverage-evidence/historical-identity-normalization
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/program-unhandled-failure -OutputDirectory artifacts/coverage-evidence/program-unhandled-failure
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-password-policy -OutputDirectory artifacts/coverage-evidence/administrative-password-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-identity-policy -OutputDirectory artifacts/coverage-evidence/administrative-identity-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/employee-edit-grants -OutputDirectory artifacts/coverage-evidence/employee-edit-grants

@@ -1,13 +1,18 @@
 using Legacy.Maliev.AuthService.Application;
+using Legacy.Maliev.AuthService.Api.Controllers;
 using Legacy.Maliev.AuthService.Domain;
 using Legacy.Maliev.AuthService.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Controllers;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
@@ -16,6 +21,9 @@ using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using System.Globalization;
+using System.Collections.Concurrent;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
@@ -25,6 +33,64 @@ public sealed class GoogleIdentityHttpBoundaryTests
     private const string ExchangeRoute = "/auth/v1/exchange/google";
     private const string Credential = "synthetic-google-credential";
     private static readonly string Nonce = new('n', 64);
+
+    [Fact]
+    public async Task NormalProgramUnhandledFailure_GoogleNonceEmitsOneSanitizedCriticalIncident()
+    {
+        const string correlation = "auth-google-incident";
+        const string querySecret = "controlled-private-query";
+        const string headerSecret = "controlled-private-header";
+        var state = new State { Mode = "nonce_unknown_failure" };
+        using var incidents = new IncidentCaptureProvider();
+        using var factory = new Factory(state, incidents);
+        using var client = TrustedClient(factory);
+        Assert.Equal(Environments.Production, factory.Services.GetRequiredService<IHostEnvironment>().EnvironmentName);
+        var authorizationHeader = client.DefaultRequestHeaders.Authorization!;
+        var authorization = authorizationHeader.ToString();
+        client.DefaultRequestHeaders.Add("X-Correlation-ID", correlation);
+        client.DefaultRequestHeaders.Add("X-Controlled-Secret", headerSecret);
+        var before = DateTimeOffset.UtcNow;
+        using var response = await client.PostAsJsonAsync(NonceRoute + "?token=" + querySecret, new GoogleIdentityNonceRequest("intranet"));
+        var after = DateTimeOffset.UtcNow;
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.Equal("application/json", response.Content.Headers.ContentType!.MediaType);
+        Assert.Equal(correlation, Assert.Single(response.Headers.GetValues("X-Correlation-ID")));
+        var body = await response.Content.ReadAsStringAsync();
+        using var json = JsonDocument.Parse(body);
+        Assert.Equal(new[] { "details", "error", "statusCode", "traceId" }, json.RootElement.EnumerateObject().Select(value => value.Name).Order().ToArray());
+        Assert.Equal(500, json.RootElement.GetProperty("statusCode").GetInt32());
+        Assert.Equal("An internal server error occurred", json.RootElement.GetProperty("error").GetString());
+        Assert.Equal(JsonValueKind.Null, json.RootElement.GetProperty("details").ValueKind);
+        var traceId = json.RootElement.GetProperty("traceId").GetString();
+        Assert.False(string.IsNullOrWhiteSpace(traceId));
+        var entry = Assert.Single(incidents.Entries);
+        Assert.Equal(LogLevel.Critical, entry.Level);
+        Assert.Equal("Maliev.Aspire.ServiceDefaults.Middleware.ExceptionHandlingMiddleware", entry.Category);
+        Assert.Null(entry.Exception);
+        Assert.Equal(new[] { "EventName", "ExceptionType", "IncidentId", "Method", "OccurredAtUtc", "Path", "Service", "StatusCode" }, entry.Values.Keys.Order().ToArray());
+        Assert.Equal("UnhandledRequestFailure", entry.Values["EventName"]);
+        Assert.Equal("Exception", entry.Values["ExceptionType"]);
+        Assert.Equal(traceId, entry.Values["IncidentId"]);
+        Assert.Equal("POST", entry.Values["Method"]);
+        var route = factory.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
+            .Single(endpoint => endpoint.Metadata.GetMetadata<ControllerActionDescriptor>()?.MethodInfo.Name == nameof(AuthenticationController.IssueEmployeeGoogleNonce))
+            .RoutePattern.RawText;
+        Assert.NotNull(route);
+        Assert.Equal(NonceRoute.TrimStart('/'), route.TrimStart('/'));
+        Assert.Equal(route, entry.Values["Path"]);
+        Assert.Equal(factory.Services.GetRequiredService<IHostEnvironment>().ApplicationName, entry.Values["Service"]);
+        Assert.Equal(500, entry.Values["StatusCode"]);
+        var occurred = DateTimeOffset.ParseExact(Assert.IsType<string>(entry.Values["OccurredAtUtc"]), "O", CultureInfo.InvariantCulture);
+        Assert.Equal(TimeSpan.Zero, occurred.Offset);
+        Assert.InRange(occurred, before, after);
+        var captured = body + entry.Message + JsonSerializer.Serialize(entry.Values);
+        foreach (var secret in new[] { querySecret, headerSecret, "controlled-private-exception", authorization, authorizationHeader.Parameter!, Credential, Nonce })
+            Assert.DoesNotContain(secret, captured, StringComparison.Ordinal);
+        Assert.Equal(new[] { "issue-nonce" }, state.Events);
+        Assert.Equal("legacy-intranet", state.ServiceName);
+        Assert.Equal("intranet", state.Application);
+        Assert.Null(state.Created);
+    }
 
     [Theory]
     [InlineData("anonymous", HttpStatusCode.Unauthorized)]
@@ -202,7 +268,7 @@ public sealed class GoogleIdentityHttpBoundaryTests
     private static HttpClient TrustedClient(Factory factory) => factory.CreateAuthorizedClient(
         factory.IssueService([LegacyAccessTokenPermissions.GoogleIdentityExchange]));
 
-    private sealed class Factory(State state) : CustomerIdentityAuthorizationTests.AuthApiFactory
+    private sealed class Factory(State state, IncidentCaptureProvider? incidents = null) : CustomerIdentityAuthorizationTests.AuthApiFactory
     {
         public string IssueMachineWithoutName()
         {
@@ -221,6 +287,11 @@ public sealed class GoogleIdentityHttpBoundaryTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             base.ConfigureWebHost(builder);
+            if (incidents is not null)
+            {
+                builder.UseEnvironment(Environments.Production);
+                builder.ConfigureLogging(logging => logging.AddProvider(incidents));
+            }
             builder.ConfigureTestServices(services =>
             {
                 services.RemoveAll<GoogleAuthenticationService>();
@@ -256,6 +327,7 @@ public sealed class GoogleIdentityHttpBoundaryTests
             ServiceName = serviceName;
             Application = application;
             if (Mode == "nonce_timeout") throw new OperationCanceledException("synthetic upstream failure");
+            if (Mode == "nonce_unknown_failure") throw new Exception("controlled-private-exception");
             return Task.FromResult((Nonce, Now.AddMinutes(10)));
         }
 
@@ -302,4 +374,27 @@ public sealed class GoogleIdentityHttpBoundaryTests
         public Task RevokeFamilyAsync(string tokenHash, DateTimeOffset now, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("Google exchange must not revoke an existing refresh session.");
     }
+
+    private sealed class IncidentCaptureProvider : ILoggerProvider
+    {
+        public ConcurrentQueue<IncidentEntry> Entries { get; } = new();
+        public ILogger CreateLogger(string categoryName) => new IncidentLogger(categoryName, Entries);
+        public void Dispose() { }
+    }
+
+    private sealed class IncidentLogger(string category, ConcurrentQueue<IncidentEntry> entries) : ILogger
+    {
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(LogLevel logLevel) => true;
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception,
+            Func<TState, Exception?, string> formatter)
+        {
+            if (category == "Maliev.Aspire.ServiceDefaults.Middleware.ExceptionHandlingMiddleware")
+                entries.Enqueue(new IncidentEntry(category, logLevel, exception, formatter(state, exception),
+                    ((IEnumerable<KeyValuePair<string, object?>>)state!).Where(pair => pair.Key != "{OriginalFormat}").ToDictionary()));
+        }
+    }
+
+    private sealed record IncidentEntry(string Category, LogLevel Level, Exception? Exception, string Message,
+        Dictionary<string, object?> Values);
 }

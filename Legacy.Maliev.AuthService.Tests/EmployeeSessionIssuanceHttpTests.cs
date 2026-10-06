@@ -1098,6 +1098,124 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Single(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }
 
+    [Theory]
+    [InlineData(IdentityKind.Employee)]
+    [InlineData(IdentityKind.Customer)]
+    public async Task NormalHistoricalIdentityNormalization_CanonicalCredentialsPreserveRowsAndBindSelectedActor(IdentityKind kind)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var context = kind == IdentityKind.Employee ? (LegacyIdentityDbContext)stores.Employees : stores.Customers;
+        var row = await context.Users.SingleAsync();
+        row.UserName = "caf\u00e9@identity.test";
+        row.NormalizedUserName = "CAF\u00c9@IDENTITY.TEST";
+        await context.SaveChangesAsync();
+        var before = await SnapshotIdentitiesAsync(stores);
+        await using var factory = new Factory(stores);
+        using var client = factory.CreateClient();
+        using var scope = factory.Services.CreateScope();
+        var reader = scope.ServiceProvider.GetRequiredService<LegacyIdentityReader>();
+        var framework = new UpperInvariantLookupNormalizer();
+        var login = Login(kind);
+        foreach (var alias in new[] { "caf\u00e9@identity.test", "cafe\u0301@identity.test" })
+        {
+            Assert.Equal("CAF\u00c9@IDENTITY.TEST", framework.NormalizeName(alias));
+            var direct = await reader.ValidateAsync(alias, login.Password, kind, default);
+            Assert.NotNull(direct);
+            Assert.Equal(row.Id, direct.Id);
+            Assert.Equal(before, await SnapshotIdentitiesAsync(stores));
+            using var response = await client.PostAsJsonAsync("/auth/v1/login", login with { UserName = alias });
+            var tokens = await ReadTokensAsync(response);
+            var jwt = ReadJwt(tokens.AccessToken, factory);
+            Assert.Equal(row.Id, Assert.Single(jwt.Claims, claim => claim.Type == "sub").Value);
+            Assert.Equal(row.UserName, Assert.Single(jwt.Claims, claim => claim.Type == "name").Value);
+            Assert.Equal(kind.ToString().ToLowerInvariant(), Assert.Single(jwt.Claims, claim => claim.Type == "identity_kind").Value);
+            Assert.Equal(kind.ToString(), Assert.Single(jwt.Claims, claim => claim.Type == "role").Value);
+            Assert.Equal(kind.ToString(), Assert.Single(jwt.Claims, claim => claim.Type == ClaimTypes.Role).Value);
+            var session = await stores.State.RefreshSessions.AsNoTracking().SingleAsync(value => value.TokenHash == Hash(tokens.RefreshToken));
+            Assert.Equal(row.Id, session.IdentityId);
+            Assert.Equal(kind, session.IdentityKind);
+            if (kind == IdentityKind.Employee)
+                Assert.Equal(session.Id.ToString("D"), Assert.Single(jwt.Claims, claim => claim.Type == "sid").Value);
+            else Assert.DoesNotContain(jwt.Claims, claim => claim.Type is "sid" or "permissions");
+            Assert.Equal(before, await SnapshotIdentitiesAsync(stores));
+        }
+        foreach (var alias in new[] { " cafe\u0301@identity.test", "cafe\u0301@identity.test " })
+        {
+            // The raw reader does not trim; the existing HTTP coordinator deliberately does.
+            Assert.Null(await reader.ValidateAsync(alias, login.Password, kind, default));
+            using var response = await client.PostAsJsonAsync("/auth/v1/login", login with { UserName = alias });
+            var tokens = await ReadTokensAsync(response);
+            Assert.Equal(row.Id, Assert.Single(ReadJwt(tokens.AccessToken, factory).Claims, claim => claim.Type == "sub").Value);
+            Assert.Equal(before, await SnapshotIdentitiesAsync(stores));
+        }
+        const string compatibilityAlias = "\uff43afe\u0301@identity.test";
+        Assert.Null(await reader.ValidateAsync(compatibilityAlias, login.Password, kind, default));
+        using (var denied = await client.PostAsJsonAsync("/auth/v1/login", login with { UserName = compatibilityAlias }))
+        {
+            Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+            Assert.DoesNotContain(compatibilityAlias, await denied.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        }
+        Assert.Equal(before, await SnapshotIdentitiesAsync(stores));
+        using (var wrong = await client.PostAsJsonAsync("/auth/v1/login", login with { UserName = "cafe\u0301@identity.test", Password = "synthetic-wrong-password" }))
+            Assert.Equal(HttpStatusCode.Unauthorized, wrong.StatusCode);
+        await AssertOnlyLoginAccountingChangedAsync(before, stores, kind, 1);
+        using var recovered = await client.PostAsJsonAsync("/auth/v1/login", login with { UserName = "cafe\u0301@identity.test" });
+        _ = await ReadTokensAsync(recovered);
+        await AssertOnlyLoginAccountingChangedAsync(before, stores, kind, 0);
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task NormalHistoricalIdentityNormalization_GoogleEmailLookupUsesCanonicalKeyWithoutWrites()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var row = await stores.Employees.Users.SingleAsync();
+        row.Email = "caf\u00e9@identity.test";
+        row.NormalizedEmail = "CAF\u00c9@IDENTITY.TEST";
+        await stores.Employees.SaveChangesAsync();
+        var before = await AdministrativeSnapshotAsync(stores);
+        await using var factory = new Factory(stores, googleReadOnlyBoundary: true);
+        using var scope = factory.Services.CreateScope();
+        var reader = scope.ServiceProvider.GetRequiredService<IGoogleEmployeeIdentityReader>();
+        foreach (var email in new[] { "caf\u00e9@identity.test", "cafe\u0301@identity.test", "  cafe\u0301@identity.test  " })
+        {
+            Assert.Equal("CAF\u00c9@IDENTITY.TEST", new UpperInvariantLookupNormalizer().NormalizeEmail(email.Trim()));
+            var identity = await reader.FindActiveEmployeeByEmailAsync(email, default);
+            Assert.NotNull(identity);
+            Assert.Equal(row.Id, identity.Id);
+            Assert.Equal(row.Email, identity.Email);
+            Assert.Equal(IdentityKind.Employee, identity.Kind);
+            Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        }
+        Assert.Null(await reader.FindActiveEmployeeByEmailAsync("\uff43afe\u0301@identity.test", default));
+        Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        // Existing Auth writers could persist an uppercase-only decomposed email key.
+        row.Email = "cafe\u0301@identity.test";
+        row.NormalizedEmail = "CAFE\u0301@IDENTITY.TEST";
+        await stores.Employees.SaveChangesAsync();
+        var legacy = await AdministrativeSnapshotAsync(stores);
+        var retained = await reader.FindActiveEmployeeByEmailAsync(row.Email, default);
+        Assert.NotNull(retained);
+        Assert.Equal(row.Id, retained.Id);
+        Assert.Equal(row.Email, retained.Email);
+        Assert.Equal(legacy, await AdministrativeSnapshotAsync(stores));
+        stores.Employees.Users.Add(new LegacyIdentityRow
+        {
+            Id = "canonical-email-collision",
+            UserName = "distinct-collision-user",
+            NormalizedUserName = "DISTINCT-COLLISION-USER",
+            Email = "caf\u00e9@identity.test",
+            NormalizedEmail = "CAF\u00c9@IDENTITY.TEST",
+            EmailConfirmed = true,
+            SecurityStamp = "collision-stamp",
+            ConcurrencyStamp = "collision-concurrency",
+        });
+        await stores.Employees.SaveChangesAsync();
+        var ambiguous = await AdministrativeSnapshotAsync(stores);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => reader.FindActiveEmployeeByEmailAsync(row.Email, default));
+        Assert.Equal(ambiguous, await AdministrativeSnapshotAsync(stores));
+    }
+
     private static async Task<string> SnapshotIdentitiesAsync(Stores stores) => JsonSerializer.Serialize(new
     {
         Employees = await stores.Employees.Users.AsNoTracking().OrderBy(row => row.Id).ToListAsync(),

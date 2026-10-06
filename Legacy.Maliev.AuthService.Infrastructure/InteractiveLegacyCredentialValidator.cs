@@ -20,7 +20,7 @@ public sealed class InteractiveLegacyCredentialValidator(
         // Accounting cannot be retried blindly after an uncertain commit: that would double-count.
         // Use the same selected store with a fresh non-retrying context for this bounded transaction.
         await using var context = NewAccountingContext(kind);
-        var normalized = userName.ToUpperInvariant();
+        var normalized = userName.Normalize().ToUpperInvariant();
         await using var transaction = await context.Database.BeginTransactionAsync(IsolationLevel.ReadCommitted, cancellationToken);
         // Serialize attempts for this selected persisted identity across requests and service instances.
         var user = await context.Users.FromSqlInterpolated(
