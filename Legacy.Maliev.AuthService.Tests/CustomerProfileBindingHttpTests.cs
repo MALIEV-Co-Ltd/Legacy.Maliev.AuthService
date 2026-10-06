@@ -17,11 +17,13 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 using CustomerProgram = CustomerProducer::Program;
 
@@ -345,11 +347,11 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         await using var factory = new AuthFactory(stores);
         using var first = factory.CreateClient();
         using var second = factory.CreateClient();
+        first.Timeout = second.Timeout = TimeSpan.FromSeconds(30);
         await AuthorizeAsync(first, true);
         await AuthorizeAsync(second, true);
         var key = Guid.NewGuid();
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-        first.Timeout = second.Timeout = TimeSpan.FromSeconds(30);
         var replies = await Task.WhenAll(SendAsync(first, 72, Submitted, true, key), SendAsync(second, 72, Submitted, true, key));
         try
         {
@@ -418,6 +420,7 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
+            builder.ConfigureLogging(logging => logging.AddProvider(new FixtureFailureLogger()));
             builder.UseSetting("CORS:AllowedOrigins:0", "https://localhost");
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -438,6 +441,15 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
             }));
             builder.ConfigureTestServices(services =>
             {
+                services.PostConfigure<ApiBehaviorOptions>(options =>
+                {
+                    var original = options.InvalidModelStateResponseFactory;
+                    options.InvalidModelStateResponseFactory = context =>
+                    {
+                        Console.WriteLine("CustomerBindingInvalidModelFields: " + string.Join(",", context.ModelState.Where(value => value.Value!.Errors.Count != 0).Select(value => value.Key is "UserName" or "Password" or "IdentityKind" or "request" or "ClientId" or "ClientSecret" ? value.Key : "[redacted-field]").Distinct().Order().Take(8)));
+                        return original(context);
+                    };
+                });
                 services.AddHttpClient(LegacyServiceAccessTokenProvider.HttpClientName).ConfigurePrimaryHttpMessageHandler(() => Server.CreateHandler());
                 services.AddHttpClient(CustomerProfileBindingClient.HttpClientName).ConfigurePrimaryHttpMessageHandler(() =>
                 {
@@ -479,7 +491,16 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         }
         public override async ValueTask DisposeAsync()
         {
-            try { if (customer is not null) await customer.DisposeAsync(); }
+            try
+            {
+                try { if (customer is not null) await customer.DisposeAsync(); }
+                finally
+                {
+                    await using var scope = Services.CreateAsyncScope();
+                    foreach (var context in new DbContext[] { scope.ServiceProvider.GetRequiredService<CustomerIdentityDbContext>(), scope.ServiceProvider.GetRequiredService<EmployeeIdentityDbContext>(), scope.ServiceProvider.GetRequiredService<RefreshSessionDbContext>() })
+                        stores.RegisterPool((NpgsqlConnection)context.Database.GetDbConnection());
+                }
+            }
             finally
             {
                 try { await base.DisposeAsync(); }
@@ -493,6 +514,7 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
+            builder.ConfigureLogging(logging => logging.AddProvider(new FixtureFailureLogger()));
             foreach (var setting in new Dictionary<string, string?>
             {
                 ["ConnectionStrings:CustomerDbContext"] = stores.Profiles.Database.GetConnectionString(),
@@ -501,6 +523,33 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
                 ["Jwt:Issuer"] = "https://customer-binding.test", ["Jwt:Audience"] = "customer-binding-test",
                 ["Features:ResourceScopedAuthEnabled"] = "true", ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "",
             }) builder.UseSetting(setting.Key, setting.Value);
+        }
+        public override async ValueTask DisposeAsync()
+        {
+            try
+            {
+                await using var scope = Services.CreateAsyncScope();
+                stores.RegisterPool((NpgsqlConnection)scope.ServiceProvider.GetRequiredService<CustomerDbContext>().Database.GetDbConnection());
+            }
+            finally { await base.DisposeAsync(); }
+        }
+    }
+
+    private sealed class FixtureFailureLogger : ILoggerProvider
+    {
+        public ILogger CreateLogger(string categoryName) => new FailureLogger();
+        public void Dispose() { }
+        private sealed class FailureLogger : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel level) => level >= LogLevel.Error;
+            public void Log<TState>(LogLevel level, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            {
+                if (exception is null) return;
+                var depth = 0;
+                for (var cause = exception; cause is not null && depth++ < 3; cause = cause.InnerException)
+                    Console.WriteLine("CustomerBindingFailure: " + cause.GetType().FullName + " at " + string.Join(" -> ", new System.Diagnostics.StackTrace(cause).GetFrames().Take(8).Select(frame => frame.GetMethod()?.DeclaringType?.FullName + "." + frame.GetMethod()?.Name)));
+            }
         }
     }
 
@@ -512,7 +561,7 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         public CustomerDbContext Profiles { get; private set; } = null!;
         private readonly List<DbContext> owned = [];
         private readonly List<NpgsqlConnection> pools = [];
-        private void RegisterPool(NpgsqlConnection connection) => pools.Add(connection);
+        public void RegisterPool(NpgsqlConnection connection) => pools.Add(connection);
         public static async Task<Stores> CreateAsync(PostgresFixture postgres)
         {
             var stores = new Stores();
