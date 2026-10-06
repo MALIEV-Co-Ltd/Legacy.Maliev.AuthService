@@ -17,6 +17,8 @@ public sealed class EmployeeIdentityAdminService(
         CreateEmployeeIdentityRequest request,
         CancellationToken cancellationToken)
     {
+        if (!AdministrativePasswordPolicy.Accepts(request.Password)) return null;
+
         var normalizedUserName = request.UserName.Trim().ToUpperInvariant();
         var normalizedEmail = request.Email.Trim().ToUpperInvariant();
         var exists = await dbContext.Users.AnyAsync(

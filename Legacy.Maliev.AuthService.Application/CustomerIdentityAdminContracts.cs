@@ -46,7 +46,7 @@ public sealed record CustomerIdentityResponse(
 public sealed record CustomerIdentityCreateReceipt(int DatabaseId, string Status);
 
 /// <summary>Outcome of an operation-keyed create attempt.</summary>
-public enum CustomerIdentityCreateOutcome { Created, Replayed, Conflict }
+public enum CustomerIdentityCreateOutcome { Created, Replayed, Conflict, InvalidPassword }
 
 /// <summary>Result of an operation-keyed create attempt.</summary>
 public sealed record CustomerIdentityCreateResult(CustomerIdentityCreateOutcome Outcome, int DatabaseId);

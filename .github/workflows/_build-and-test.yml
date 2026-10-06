@@ -68,6 +68,13 @@ jobs:
             -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~NormalHistoricalSecurity_" \
             --logger "trx;LogFileName=historical-security.trx" --results-directory artifacts/historical-security
+      - name: Verify administrative password creation through normal HTTP
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~NormalAdministrativePasswordPolicy_" \
+            --logger "trx;LogFileName=administrative-password-policy.trx" --results-directory artifacts/administrative-password-policy
       - name: Verify persistent login accounting through normal HTTP
         shell: bash
         run: |
@@ -134,6 +141,7 @@ jobs:
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/recovery-callback -OutputDirectory artifacts/coverage-evidence/recovery-callback
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-security -OutputDirectory artifacts/coverage-evidence/historical-security
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-password-formats -OutputDirectory artifacts/coverage-evidence/historical-password-formats
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-password-policy -OutputDirectory artifacts/coverage-evidence/administrative-password-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/login-accounting -OutputDirectory artifacts/coverage-evidence/login-accounting
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/confirmation-lockout -OutputDirectory artifacts/coverage-evidence/confirmation-lockout
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/registration-links -OutputDirectory artifacts/coverage-evidence/registration-links
