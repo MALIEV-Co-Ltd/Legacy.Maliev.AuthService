@@ -520,6 +520,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         await using var stores = await Stores.CreateAsync(postgres);
         await using var factory = new Factory(stores, identityAdministration: true);
         factory.Profiles[71] = new(71, "new-admin@example.com", null);
+        factory.CustomerProfiles[71] = new(71, "new-admin@example.com", null, null, null);
         using var client = factory.CreateClient();
         await AuthorizeAdministrationAsync(client, reconcile);
         var identities = await SnapshotIdentitiesAsync(stores);
@@ -720,6 +721,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         await using var stores = await Stores.CreateAsync(postgres);
         await using var factory = new Factory(stores, identityAdministration: true);
         factory.Profiles[72] = new(72, "new@example.com", null);
+        factory.CustomerProfiles[72] = new(72, "new@example.com", null, null, null);
         using var client = factory.CreateClient();
         await AuthorizeAdministrationAsync(client, reconcile);
         var before = await AdministrativeSnapshotAsync(stores);
@@ -805,7 +807,9 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         await using var stores = await Stores.CreateAsync(postgres);
         await using var factory = new Factory(stores, identityAdministration: true, identityValidation: true);
         factory.Profiles[72] = new(72, "target72@example.com", null);
+        factory.CustomerProfiles[72] = new(72, "target72@example.com", null, null, null);
         factory.Profiles[73] = new(73, "target73@example.com", null);
+        factory.CustomerProfiles[73] = new(73, "target73@example.com", null, null, null);
         using var client = factory.CreateClient();
         await AuthorizeAdministrationAsync(client, false);
         var route = $"/auth/v1/{kind.ToString().ToLowerInvariant()}-identities/";
@@ -852,6 +856,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         await using var stores = await Stores.CreateAsync(postgres);
         await using var factory = new Factory(stores, identityAdministration: true, identityValidation: true);
         factory.Profiles[72] = new(72, "versioned@example.com", null);
+        factory.CustomerProfiles[72] = new(72, "versioned@example.com", null, null, null);
         using var client = factory.CreateClient();
         await AuthorizeAdministrationAsync(client, false);
         var route = $"/auth/v1/{kind.ToString().ToLowerInvariant()}-identities/72";
@@ -996,6 +1001,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         await using var factory = new Factory(stores, identityAdministration: true, identityValidation: true,
             conditionalFaults: [new ConditionalCommandAckLoss(control), new ConditionalCommitAckLoss(control)]);
         factory.Profiles[72] = new(72, "before-ack@example.com", null);
+        factory.CustomerProfiles[72] = new(72, "before-ack@example.com", null, null, null);
         using var client = factory.CreateClient();
         await AuthorizeAdministrationAsync(client, false);
         var route = $"/auth/v1/{kind.ToString().ToLowerInvariant()}-identities/72";
@@ -1056,8 +1062,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         await using var stores = await Stores.CreateAsync(postgres);
         await using var factory = new Factory(stores, identityAdministration: true, identityValidation: true);
         factory.Profiles[72] = new(72, "cafe\u0301@identity.test", null);
+        factory.CustomerProfiles[72] = new(72, "cafe\u0301@identity.test", null, null, null);
         factory.Profiles[73] = new(73, "\u01fa@identity.test", null);
+        factory.CustomerProfiles[73] = new(73, "\u01fa@identity.test", null, null, null);
         factory.Profiles[74] = new(74, "otherwise-unique@identity.test", null);
+        factory.CustomerProfiles[74] = new(74, "otherwise-unique@identity.test", null, null, null);
         using var client = factory.CreateClient();
         await AuthorizeAdministrationAsync(client, false);
         LegacyIdentityDbContext identity = kind == IdentityKind.Employee ? stores.Employees : stores.Customers;
@@ -1128,6 +1137,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         await AuthorizeAdministrationAsync(client, true);
         var key = Guid.NewGuid();
         var route = "/auth/v1/customer-identities/72/reconcile-create";
+        factory.CustomerProfiles[72] = new(72, "cafe\u0301@identity.test", null, null, null);
         var payload = new CreateCustomerIdentityRequest("receipt-user@identity.test", "cafe\u0301@identity.test", "abcdef", true, null, null, null);
         async Task<HttpResponseMessage> SendAsync(CreateCustomerIdentityRequest request)
         {
@@ -1158,6 +1168,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         using var client = factory.CreateClient();
         await AuthorizeAdministrationAsync(client, false);
         const string route = "/auth/v1/customer-identities/72";
+        factory.CustomerProfiles[72] = new(72, "before-ack@identity.test", null, null, null);
         using var created = await client.PostAsJsonAsync(route,
             AdministrativeIdentityRequest(IdentityKind.Customer, "before-ack@identity.test", "before-ack@identity.test"));
         Assert.Equal(HttpStatusCode.Created, created.StatusCode);
@@ -2112,6 +2123,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         public const string ServiceSecret = "issuance-test-only-secret-0123456789";
         private readonly RSA signing = RSA.Create(2048);
         public Dictionary<int, EmployeeProfileBinding> Profiles { get; } = [];
+        public Dictionary<int, CustomerProfileBinding> CustomerProfiles { get; } = [];
         public HttpStatusCode? ProfileStatus { get; set; }
         public string? ProfileBody { get; set; }
         public int ProfileReads { get; private set; }
@@ -2137,10 +2149,12 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
                     ["ServiceClients:Clients:issuance-test:Permissions:0"] = "legacy-contact.messages.create",
                     ["Services:Auth:BaseUrl"] = "https://issuance.test",
                     ["Services:EmployeeService:BaseUrl"] = "https://employee-profile.test",
+                    ["Services:CustomerService:BaseUrl"] = "https://customer-profile.test",
                     ["ServiceAuthentication:ClientId"] = "legacy-auth",
                     ["ServiceAuthentication:ClientSecret"] = ServiceSecret,
                     ["ServiceClients:Clients:legacy-auth:SecretSha256"] = ServiceClientCredential.HashSecret(ServiceSecret),
                     ["ServiceClients:Clients:legacy-auth:Permissions:0"] = ProfileReadGrant ? EmployeeProfileBindingClient.ReadPermission : "legacy-contact.messages.create",
+                    ["ServiceClients:Clients:legacy-auth:Permissions:1"] = CustomerProfileBindingClient.ReadPermission,
                     ["ServiceClients:Clients:profile-create-test:SecretSha256"] = ServiceClientCredential.HashSecret(ServiceSecret),
                     ["ServiceClients:Clients:profile-create-test:Permissions:0"] = LegacyAccessTokenPermissions.EmployeeIdentitiesCreate,
                 };
@@ -2159,6 +2173,8 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
                     .ConfigurePrimaryHttpMessageHandler(() => Server.CreateHandler());
                 services.AddHttpClient(EmployeeProfileBindingClient.HttpClientName)
                     .ConfigurePrimaryHttpMessageHandler(() => new ProfileBackend(this));
+                services.AddHttpClient(CustomerProfileBindingClient.HttpClientName)
+                    .ConfigurePrimaryHttpMessageHandler(() => new CustomerProfileBackend(this));
                 // Only Google's external credential validation is controlled. The
                 // actual nonce, reader, issuer, session store and runtime DI remain.
                 services.RemoveAll<IGoogleIdentityTokenValidator>();
@@ -2192,13 +2208,32 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
                 Assert.Equal("Bearer", request.Headers.Authorization.Scheme);
                 Assert.Equal("service:legacy-auth", Assert.Single(jwt.Claims, value => value.Type == "sub").Value);
                 Assert.Equal("service", Assert.Single(jwt.Claims, value => value.Type == "identity_kind").Value);
-                Assert.Equal(EmployeeProfileBindingClient.ReadPermission, Assert.Single(jwt.Claims, value => value.Type == "permissions").Value);
+                Assert.Single(jwt.Claims, value => value.Type == "permissions" && value.Value == EmployeeProfileBindingClient.ReadPermission);
                 Assert.DoesNotContain(jwt.Claims, value => value.Type is "sid" or "employeeId" or "role");
                 var id = int.Parse(request.RequestUri.AbsolutePath["/employees/".Length..], System.Globalization.CultureInfo.InvariantCulture);
                 var status = owner.ProfileStatus ?? (owner.Profiles.ContainsKey(id) ? HttpStatusCode.OK : HttpStatusCode.NotFound);
                 var body = owner.ProfileBody ?? (owner.Profiles.TryGetValue(id, out var profile)
                     ? JsonSerializer.Serialize(new { profile.Id, profile.Email, profile.PhoneNumber, FirstName = "Controlled", LastName = "Profile" }) : "{}");
                 return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+            }
+        }
+        // Predecessor actor cases control only external profile transport; real reader/token/PG writer remain.
+        private sealed class CustomerProfileBackend(Factory owner) : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Assert.Equal(HttpMethod.Get, request.Method);
+                Assert.Equal("customer-profile.test", request.RequestUri!.Host);
+                var jwt = ReadJwt(request.Headers.Authorization!.Parameter!, owner);
+                Assert.Equal("service:legacy-auth", Assert.Single(jwt.Claims, value => value.Type == "sub").Value);
+                Assert.Single(jwt.Claims, value => value.Type == "permissions" && value.Value == CustomerProfileBindingClient.ReadPermission);
+                var id = int.Parse(request.RequestUri.AbsolutePath["/customers/".Length..], System.Globalization.CultureInfo.InvariantCulture);
+                var found = owner.CustomerProfiles.TryGetValue(id, out var profile);
+                return Task.FromResult(new HttpResponseMessage(found ? HttpStatusCode.OK : HttpStatusCode.NotFound)
+                {
+                    Content = new StringContent(found ? JsonSerializer.Serialize(profile) : "{}", Encoding.UTF8, "application/json"),
+                });
             }
         }
         private static string? IdentityConnection(LegacyIdentityDbContext context, bool tinyPool) => tinyPool

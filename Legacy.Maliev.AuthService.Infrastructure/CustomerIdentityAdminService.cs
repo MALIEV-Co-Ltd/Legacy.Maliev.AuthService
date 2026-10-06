@@ -13,7 +13,8 @@ namespace Legacy.Maliev.AuthService.Infrastructure;
 /// <summary>Administers customer identities without changing the legacy ASP.NET Identity schema.</summary>
 public sealed class CustomerIdentityAdminService(
     CustomerIdentityDbContext dbContext,
-    IPasswordHasher<LegacyIdentityRow> passwordHasher) : ICustomerIdentityAdminService
+    IPasswordHasher<LegacyIdentityRow> passwordHasher,
+    ICustomerProfileBindingClient profiles) : ICustomerIdentityAdminService
 {
     /// <inheritdoc />
     public async Task<CustomerIdentityCreateResult> CreateOrReconcileAsync(
@@ -35,19 +36,20 @@ public sealed class CustomerIdentityAdminService(
             operation => operation.ServiceSubject == serviceSubject && operation.OperationKey == operationKey,
             cancellationToken);
         if (existing is not null) return await ReconcileAsync(fresh, existing, databaseId, request, cancellationToken);
+        var bound = await BindNewIdentityAsync(databaseId, request, cancellationToken);
         await LockProfileAsync(fresh, databaseId, cancellationToken);
-        await LegacyIdentityKeyOwnership.LockAsync(fresh, request.Email, cancellationToken);
+        await LegacyIdentityKeyOwnership.LockAsync(fresh, bound.Email, cancellationToken);
         await LegacyIdentityKeyOwnership.LockUserNameAsync(fresh, request.UserName, cancellationToken);
         var normalizedUserName = request.UserName.Trim().Normalize().ToUpperInvariant();
         if (await fresh.Users.AnyAsync(user => user.DatabaseID == databaseId ||
                 user.NormalizedUserName == normalizedUserName, cancellationToken) ||
             await LegacyIdentityKeyOwnership.HasOtherUserNameOwnerAsync(fresh, request.UserName, null, cancellationToken) ||
-            await LegacyIdentityKeyOwnership.HasOtherOwnerAsync(fresh, request.Email, null, cancellationToken))
+            await LegacyIdentityKeyOwnership.HasOtherOwnerAsync(fresh, bound.Email, null, cancellationToken))
             return new(CustomerIdentityCreateOutcome.Conflict, databaseId);
         if (!AdministrativePasswordPolicy.Accepts(request.Password))
             return new(CustomerIdentityCreateOutcome.InvalidPassword, databaseId);
 
-        var user = NewUser(databaseId, request);
+        var user = NewUser(databaseId, bound);
         var salt = RandomNumberGenerator.GetBytes(16);
         fresh.Users.Add(user);
         fresh.CreateOperations.Add(new CustomerIdentityCreateOperation
@@ -115,21 +117,36 @@ public sealed class CustomerIdentityAdminService(
         if (!AdministrativeIdentityPolicy.Accepts(request.UserName, request.Email))
             throw new AdministrativeIdentityValidationException();
 
+        var bound = await BindNewIdentityAsync(databaseId, request, cancellationToken);
+
         await using var fresh = NewNonRetryingContext();
         await using var transaction = await fresh.Database.BeginTransactionAsync(cancellationToken);
         await LockProfileAsync(fresh, databaseId, cancellationToken);
-        await LegacyIdentityKeyOwnership.LockAsync(fresh, request.Email, cancellationToken);
+        await LegacyIdentityKeyOwnership.LockAsync(fresh, bound.Email, cancellationToken);
         await LegacyIdentityKeyOwnership.LockUserNameAsync(fresh, request.UserName, cancellationToken);
         var normalizedUserName = request.UserName.Trim().Normalize().ToUpperInvariant();
         if (await fresh.Users.AnyAsync(user => user.DatabaseID == databaseId ||
                 user.NormalizedUserName == normalizedUserName, cancellationToken) ||
             await LegacyIdentityKeyOwnership.HasOtherUserNameOwnerAsync(fresh, request.UserName, null, cancellationToken) ||
-            await LegacyIdentityKeyOwnership.HasOtherOwnerAsync(fresh, request.Email, null, cancellationToken)) return null;
-        var user = NewUser(databaseId, request);
+            await LegacyIdentityKeyOwnership.HasOtherOwnerAsync(fresh, bound.Email, null, cancellationToken)) return null;
+        var user = NewUser(databaseId, bound);
         fresh.Users.Add(user);
         await fresh.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         return Project(user);
+    }
+
+    private async Task<CreateCustomerIdentityRequest> BindNewIdentityAsync(
+        int databaseId, CreateCustomerIdentityRequest request, CancellationToken cancellationToken)
+    {
+        var result = await profiles.ReadAsync(databaseId, cancellationToken);
+        if (result.Status == CustomerProfileBindingStatus.Missing)
+            throw new CustomerProfileBindingException(CustomerProfileBindingStatus.Missing);
+        if (result.Status != CustomerProfileBindingStatus.Verified || result.Profile is not { } profile
+            || profile.Id != databaseId || !AdministrativeIdentityPolicy.Accepts(request.UserName, profile.Email))
+            throw new CustomerProfileBindingException(CustomerProfileBindingStatus.Unavailable);
+        // Only NEW identity fields are bound. The immutable receipt continues to hash the raw submitted request.
+        return request with { Email = profile.Email, PhoneNumber = profile.Telephone, FaxNumber = profile.Fax, MobileNumber = profile.Mobile };
     }
 
     private LegacyIdentityRow NewUser(int databaseId, CreateCustomerIdentityRequest request)

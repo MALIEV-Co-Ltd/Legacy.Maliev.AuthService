@@ -17,6 +17,7 @@ public static class QuotationInvoiceLiveAuthorityRegistration
         services.AddScoped<IQuotationInvoiceLiveAuthorityClient>(provider => provider.GetRequiredService<QuotationInvoiceLiveAuthorityClient>());
         services.AddScoped<IInvoiceFinancialOwnershipClient, InvoiceFinancialOwnershipClient>();
         services.AddScoped<IEmployeeProfileBindingClient, EmployeeProfileBindingClient>();
+        services.AddScoped<ICustomerProfileBindingClient, CustomerProfileBindingClient>();
         services.AddTransient<BoundedQuotationWorkloadExchangeHandler>();
 #pragma warning disable EXTEXP0001 // Intentional client-local isolation from inherited resilience; no shared policy changes.
         services.AddHttpClient(LegacyServiceAccessTokenProvider.HttpClientName)
@@ -33,6 +34,10 @@ public static class QuotationInvoiceLiveAuthorityRegistration
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
             .RedactLoggedHeaders(["Authorization"]);
         services.AddHttpClient(EmployeeProfileBindingClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10))
+            .RemoveAllResilienceHandlers()
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
+            .RedactLoggedHeaders(["Authorization"]);
+        services.AddHttpClient(CustomerProfileBindingClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10))
             .RemoveAllResilienceHandlers()
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
             .RedactLoggedHeaders(["Authorization"]);

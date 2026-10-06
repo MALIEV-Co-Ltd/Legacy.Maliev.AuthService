@@ -31,7 +31,15 @@ jobs:
           ref: 78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7
           path: .dependencies/Legacy.Maliev.CompatibilityContracts
           persist-credentials: false
+      - name: Check out exact Customer producer for the profile-binding tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.CustomerService
+          ref: 4eedecd81d1d8dcb4f38d8f76e51e7e9cb2110be
+          path: .dependencies/Legacy.Maliev.CustomerService
+          persist-credentials: false
       - name: Validate .NET solution
+        # The Customer API reference is test-only; no production project acquires it.
         uses: MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@e3a6093324a24968876782153286f52db8b29fd8
         with:
           solution: Legacy.Maliev.AuthService.slnx
@@ -164,6 +172,13 @@ jobs:
             -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~NormalEmployeeProfileBinding_" \
             --logger "trx;LogFileName=employee-profile-binding.trx" --results-directory artifacts/employee-profile-binding
+      - name: Verify authoritative Customer binding and receipt-first replay through both real hosts
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~NormalCustomerProfileBinding_" \
+            --logger "trx;LogFileName=customer-profile-binding.trx" --results-directory artifacts/customer-profile-binding
       - name: Verify customer registration recovery preserves established links
         shell: bash
         run: |
@@ -219,6 +234,7 @@ jobs:
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/program-unhandled-failure -OutputDirectory artifacts/coverage-evidence/program-unhandled-failure
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/canonical-identity-writes -OutputDirectory artifacts/coverage-evidence/canonical-identity-writes
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/employee-profile-binding -OutputDirectory artifacts/coverage-evidence/employee-profile-binding
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/customer-profile-binding -OutputDirectory artifacts/coverage-evidence/customer-profile-binding
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-password-policy -OutputDirectory artifacts/coverage-evidence/administrative-password-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-identity-policy -OutputDirectory artifacts/coverage-evidence/administrative-identity-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/employee-edit-grants -OutputDirectory artifacts/coverage-evidence/employee-edit-grants

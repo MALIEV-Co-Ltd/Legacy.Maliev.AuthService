@@ -18,7 +18,7 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
     {
         await using var context = await postgres.CreateCustomerContextAsync();
         var hasher = new PasswordHasher<LegacyIdentityRow>();
-        var service = new CustomerIdentityAdminService(context, hasher);
+        var service = new CustomerIdentityAdminService(context, hasher, StoredProfile());
 
         var response = await service.CreateAsync(
             42,
@@ -52,7 +52,7 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
     public async Task KeyedCreate_LostResponseReplaysOnlyForSameOwnerKeyAndPayload()
     {
         await using var context = await postgres.CreateCustomerContextAsync();
-        var service = new CustomerIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>());
+        var service = new CustomerIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>(), StoredProfile());
         var request = new CreateCustomerIdentityRequest(
             "customer@example.com", "customer@example.com", "correct-password", true, null, null, null);
         var key = Guid.NewGuid();
@@ -77,7 +77,7 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
     public async Task KeyedCreate_ChangedPayloadOrDatabaseIdConflictsWithoutMutatingIdentity()
     {
         await using var context = await postgres.CreateCustomerContextAsync();
-        var service = new CustomerIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>());
+        var service = new CustomerIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>(), StoredProfile());
         var request = new CreateCustomerIdentityRequest(
             "customer@example.com", "customer@example.com", "correct-password", true, null, null, null);
         var key = Guid.NewGuid();
@@ -96,7 +96,7 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
     public async Task KeyedCreate_UnrelatedExistingIdentityDoesNotGainOwnershipReceipt()
     {
         await using var context = await postgres.CreateCustomerContextAsync();
-        var service = new CustomerIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>());
+        var service = new CustomerIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>(), StoredProfile());
         var request = new CreateCustomerIdentityRequest(
             "customer@example.com", "customer@example.com", "correct-password", true, null, null, null);
         Assert.NotNull(await service.CreateAsync(42, request, default));
@@ -112,7 +112,7 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
     public async Task KeyedCreate_DeletedOrReplacedIdentityCannotBeReplayed()
     {
         await using var context = await postgres.CreateCustomerContextAsync();
-        var service = new CustomerIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>());
+        var service = new CustomerIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>(), StoredProfile());
         var request = new CreateCustomerIdentityRequest(
             "customer@example.com", "customer@example.com", "correct-password", true, null, null, null);
         var key = Guid.NewGuid();
@@ -145,9 +145,9 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
         var key = Guid.NewGuid();
 
         var results = await Task.WhenAll(
-            new CustomerIdentityAdminService(first, hasher).CreateOrReconcileAsync(
+            new CustomerIdentityAdminService(first, hasher, StoredProfile()).CreateOrReconcileAsync(
                 42, "service:legacy-intranet", key, request, default),
-            new CustomerIdentityAdminService(second, hasher).CreateOrReconcileAsync(
+            new CustomerIdentityAdminService(second, hasher, StoredProfile()).CreateOrReconcileAsync(
                 42, "service:legacy-intranet", key, request, default));
 
         Assert.Contains(results, result => result.Outcome == CustomerIdentityCreateOutcome.Created);
@@ -160,7 +160,7 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
     public async Task Update_ChangesSecurityStampSoExistingRefreshFamiliesBecomeInvalid()
     {
         await using var context = await postgres.CreateCustomerContextAsync();
-        var service = new CustomerIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>());
+        var service = new CustomerIdentityAdminService(context, new PasswordHasher<LegacyIdentityRow>(), StoredProfile());
         await service.CreateAsync(
             42,
             new CreateCustomerIdentityRequest(
@@ -216,6 +216,8 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
         Assert.Contains(nameof(CustomerIdentityDbContext), combined, StringComparison.Ordinal);
         Assert.Contains("AspNetUsers", combined, StringComparison.Ordinal);
     }
+
+    private static FixedCustomerProfileBinding StoredProfile() => new(new CustomerProfileBinding(42, "customer@example.com", null, null, null));
 
     private static string FindRoot()
     {
