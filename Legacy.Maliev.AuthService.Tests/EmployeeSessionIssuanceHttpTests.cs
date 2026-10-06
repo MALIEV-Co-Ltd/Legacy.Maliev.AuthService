@@ -9,6 +9,7 @@ using Legacy.Maliev.AuthService.Application;
 using Legacy.Maliev.AuthService.Domain;
 using Legacy.Maliev.AuthService.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Infrastructure;
@@ -30,6 +31,57 @@ namespace Legacy.Maliev.AuthService.Tests;
 [Collection(PostgresCollection.Name)]
 public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
 {
+    [Theory]
+    [InlineData(IdentityKind.Employee, false)]
+    [InlineData(IdentityKind.Customer, false)]
+    [InlineData(IdentityKind.Employee, true)]
+    [InlineData(IdentityKind.Customer, true)]
+    public async Task NormalHistoricalPasswordFormat_LegacyHashAuthenticatesWithoutRehashOrIdentityMutation(IdentityKind kind, bool versionThree)
+    {
+        // Independently constructed PBKDF2 fixtures: salt bytes 00..0f, password issuance-password.
+        // V2: marker 00, SHA1/1000/32. V3: marker 01, big-endian PRF=1/iterations=10000/saltLength=16, SHA256/32.
+        var storedHash = versionThree
+            ? "AQAAAAEAACcQAAAAEAABAgMEBQYHCAkKCwwNDg/L+ligzuuNDfC4puJ7/XESuifEOqBUSJqj0uubEuaNLQ=="
+            : "AAABAgMEBQYHCAkKCwwNDg9XcaRSqhkwK0f7PnHfbpe/YYjZAgTebgJbfRuJrkU1dQ==";
+        await using var stores = await Stores.CreateAsync(postgres);
+        var context = kind == IdentityKind.Employee ? (LegacyIdentityDbContext)stores.Employees : stores.Customers;
+        var row = await context.Users.SingleAsync();
+        row.PasswordHash = storedHash;
+        await context.SaveChangesAsync();
+        var identities = await SnapshotIdentitiesAsync(stores);
+        await using var factory = new Factory(stores);
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+        var login = Login(kind);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var hasher = Assert.IsType<PasswordHasher<LegacyIdentityRow>>(scope.ServiceProvider.GetRequiredService<IPasswordHasher<LegacyIdentityRow>>());
+            Assert.Equal(PasswordVerificationResult.SuccessRehashNeeded, hasher.VerifyHashedPassword(row, storedHash, login.Password));
+        }
+        using var denied = await client.PostAsJsonAsync("/auth/v1/login", login with { Password = "synthetic-wrong-password" });
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        var problem = await denied.Content.ReadAsStringAsync();
+        foreach (var sensitive in new[] { row.Id, login.UserName, login.Password, "synthetic-wrong-password", storedHash, "accessToken" })
+            Assert.DoesNotContain(sensitive, problem, StringComparison.Ordinal);
+        Assert.Equal(identities, await SnapshotIdentitiesAsync(stores));
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+
+        var tokens = await LoginAsync(client, kind);
+        var jwt = ReadJwt(tokens.AccessToken, factory);
+        Assert.Equal(row.Id, Assert.Single(jwt.Claims, claim => claim.Type == "sub").Value);
+        Assert.Equal(kind.ToString().ToLowerInvariant(), Assert.Single(jwt.Claims, claim => claim.Type == "identity_kind").Value);
+        var role = kind == IdentityKind.Employee ? "Employee" : "Customer";
+        Assert.Equal(role, Assert.Single(jwt.Claims, claim => claim.Type == ClaimTypes.Role).Value);
+        Assert.Equal(role, Assert.Single(jwt.Claims, claim => claim.Type == "role").Value);
+        var session = Assert.Single(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+        Assert.Equal(row.Id, session.IdentityId);
+        Assert.Equal(kind, session.IdentityKind);
+        Assert.Equal(Hash(tokens.RefreshToken), session.TokenHash);
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+        Assert.Equal(identities, await SnapshotIdentitiesAsync(stores));
+        Assert.Equal(storedHash, (await context.Users.AsNoTracking().SingleAsync()).PasswordHash);
+    }
+
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
