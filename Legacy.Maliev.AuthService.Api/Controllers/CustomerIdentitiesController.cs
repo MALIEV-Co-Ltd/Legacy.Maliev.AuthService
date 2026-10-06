@@ -45,6 +45,11 @@ public sealed class CustomerIdentitiesController(
             CustomerIdentityCreateOutcome.Created => StatusCode(StatusCodes.Status201Created,
                 new CustomerIdentityCreateReceipt(databaseId, "created")),
             CustomerIdentityCreateOutcome.Replayed => Ok(new CustomerIdentityCreateReceipt(databaseId, "replayed")),
+            CustomerIdentityCreateOutcome.InvalidIdentity => BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Invalid identity fields",
+            }),
             CustomerIdentityCreateOutcome.InvalidPassword => BadRequest(new ProblemDetails
             {
                 Status = StatusCodes.Status400BadRequest,
@@ -66,6 +71,9 @@ public sealed class CustomerIdentitiesController(
     {
         if (!AdministrativePasswordPolicy.Accepts(request.Password))
             return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Invalid initial password" });
+
+        if (!AdministrativeIdentityPolicy.Accepts(request.UserName, request.Email))
+            return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Invalid identity fields" });
 
         var identity = await service.CreateAsync(databaseId, request, cancellationToken);
         return identity is null
@@ -101,6 +109,7 @@ public sealed class CustomerIdentitiesController(
     public async Task<ActionResult<CustomerIdentityResponse>> Get(int databaseId, CancellationToken cancellationToken)
     {
         var identity = await service.GetAsync(databaseId, cancellationToken);
+        if (identity?.Version is { } version) Response.Headers.ETag = "\"" + version + "\"";
         return identity is null ? NotFound() : identity;
     }
 
@@ -111,8 +120,50 @@ public sealed class CustomerIdentitiesController(
     public async Task<IActionResult> Update(
         int databaseId,
         UpdateCustomerIdentityRequest request,
-        CancellationToken cancellationToken) =>
-        await service.UpdateAsync(databaseId, request, cancellationToken) ? NoContent() : NotFound();
+        CancellationToken cancellationToken)
+    {
+        try { return await service.UpdateAsync(databaseId, request, cancellationToken) ? NoContent() : NotFound(); }
+        catch (AdministrativeIdentityValidationException)
+        {
+            return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Invalid identity fields" });
+        }
+    }
+
+    /// <summary>Updates safe fields using the exact strong version obtained from the identity projection.</summary>
+    [HttpPut("{databaseId:int}/versioned")]
+    [RequirePermission(LegacyAccessTokenPermissions.CustomerIdentitiesUpdate)]
+    [Authorize(Policy = "LegacyEmployee")]
+    public async Task<IActionResult> UpdateVersioned(int databaseId, UpdateCustomerIdentityRequest request,
+        [FromHeader(Name = "If-Match")] string? expectedVersion, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(expectedVersion))
+            return StatusCode(StatusCodes.Status428PreconditionRequired, new ProblemDetails
+            {
+                Status = StatusCodes.Status428PreconditionRequired,
+                Title = "Identity version required",
+            });
+        try { return await service.UpdateVersionedAsync(databaseId, request, expectedVersion, cancellationToken) ? NoContent() : NotFound(); }
+        catch (AdministrativeIdentityConflictException)
+        {
+            return StatusCode(StatusCodes.Status412PreconditionFailed, new ProblemDetails
+            {
+                Status = StatusCodes.Status412PreconditionFailed,
+                Title = "Identity version changed",
+            });
+        }
+        catch (AdministrativeIdentityValidationException)
+        {
+            return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Invalid identity fields" });
+        }
+        catch (AdministrativeIdentityUnavailableException)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Title = "Identity update unavailable",
+            });
+        }
+    }
 
     /// <summary>Deletes an identity without deleting the customer profile.</summary>
     [HttpDelete("{databaseId:int}")]

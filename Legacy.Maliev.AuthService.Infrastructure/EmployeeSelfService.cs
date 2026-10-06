@@ -184,7 +184,7 @@ public sealed class EmployeeSelfService(EmployeeIdentityDbContext employees, Ref
             var before = row.SecurityStamp;
             if (action.Purpose == PasswordReset)
             {
-                if (password is null) return null;
+                if (password is null || !AdministrativePasswordPolicy.Accepts(password)) return null;
                 row.PasswordHash = passwordHasher.HashPassword(row, password);
                 row.AccessFailedCount = 0;
                 row.LockoutEnd = null;

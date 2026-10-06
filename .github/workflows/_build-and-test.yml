@@ -68,6 +68,20 @@ jobs:
             -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~NormalHistoricalSecurity_" \
             --logger "trx;LogFileName=historical-security.trx" --results-directory artifacts/historical-security
+      - name: Verify employee reset password policy through normal HTTP
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~ResetPasswordPolicy_" \
+            --logger "trx;LogFileName=employee-reset-password-policy.trx" --results-directory artifacts/employee-reset-password-policy
+      - name: Verify administrative user validation through normal HTTP
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~NormalAdministrativeIdentityPolicy_" \
+            --logger "trx;LogFileName=administrative-identity-policy.trx" --results-directory artifacts/administrative-identity-policy
       - name: Verify administrative password creation through normal HTTP
         shell: bash
         run: |
@@ -142,6 +156,8 @@ jobs:
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-security -OutputDirectory artifacts/coverage-evidence/historical-security
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-password-formats -OutputDirectory artifacts/coverage-evidence/historical-password-formats
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-password-policy -OutputDirectory artifacts/coverage-evidence/administrative-password-policy
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-identity-policy -OutputDirectory artifacts/coverage-evidence/administrative-identity-policy
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/employee-reset-password-policy -OutputDirectory artifacts/coverage-evidence/employee-reset-password-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/login-accounting -OutputDirectory artifacts/coverage-evidence/login-accounting
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/confirmation-lockout -OutputDirectory artifacts/coverage-evidence/confirmation-lockout
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/registration-links -OutputDirectory artifacts/coverage-evidence/registration-links

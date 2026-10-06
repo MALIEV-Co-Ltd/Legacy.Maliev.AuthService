@@ -372,6 +372,9 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
             UpdateCustomerIdentityRequest request,
             CancellationToken cancellationToken) => Task.FromResult(false);
 
+        public Task<bool> UpdateVersionedAsync(int databaseId, UpdateCustomerIdentityRequest request,
+            string expectedVersion, CancellationToken cancellationToken) => Task.FromResult(false);
+
         public Task<bool> DeleteAsync(int databaseId, CancellationToken cancellationToken) => Task.FromResult(false);
     }
 
@@ -400,6 +403,9 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
             int databaseId,
             UpdateEmployeeIdentityRequest request,
             CancellationToken cancellationToken) => Task.FromResult(false);
+
+        public Task<bool> UpdateVersionedAsync(int databaseId, UpdateEmployeeIdentityRequest request,
+            string expectedVersion, CancellationToken cancellationToken) => Task.FromResult(false);
 
         public Task<bool> DeleteAsync(int databaseId, CancellationToken cancellationToken) => Task.FromResult(false);
     }

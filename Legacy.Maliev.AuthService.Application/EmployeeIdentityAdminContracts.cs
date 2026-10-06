@@ -33,7 +33,8 @@ public sealed record EmployeeIdentityResponse(
     DateTimeOffset? LockoutEnd,
     bool LockoutEnabled,
     int AccessFailedCount,
-    int DatabaseID);
+    int DatabaseID,
+    string? Version = null);
 
 /// <summary>Employee identity administration backed by the unchanged legacy schema.</summary>
 public interface IEmployeeIdentityAdminService
@@ -46,6 +47,9 @@ public interface IEmployeeIdentityAdminService
 
     /// <summary>Updates safe employee identity fields and rotates the security stamp.</summary>
     Task<bool> UpdateAsync(int databaseId, UpdateEmployeeIdentityRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Updates safe fields only when the quoted strong version still identifies the current row.</summary>
+    Task<bool> UpdateVersionedAsync(int databaseId, UpdateEmployeeIdentityRequest request, string expectedVersion, CancellationToken cancellationToken);
 
     /// <summary>Deletes an identity while leaving the employee profile untouched.</summary>
     Task<bool> DeleteAsync(int databaseId, CancellationToken cancellationToken);

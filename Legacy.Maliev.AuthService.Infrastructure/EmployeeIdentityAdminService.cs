@@ -2,6 +2,7 @@ using Legacy.Maliev.AuthService.Application;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Legacy.Maliev.AuthService.Infrastructure;
 
@@ -18,6 +19,8 @@ public sealed class EmployeeIdentityAdminService(
         CancellationToken cancellationToken)
     {
         if (!AdministrativePasswordPolicy.Accepts(request.Password)) return null;
+        if (!AdministrativeIdentityPolicy.Accepts(request.UserName, request.Email))
+            throw new AdministrativeIdentityValidationException();
 
         var normalizedUserName = request.UserName.Trim().ToUpperInvariant();
         var normalizedEmail = request.Email.Trim().ToUpperInvariant();
@@ -66,10 +69,29 @@ public sealed class EmployeeIdentityAdminService(
     public async Task<bool> UpdateAsync(
         int databaseId,
         UpdateEmployeeIdentityRequest request,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken) => await UpdateCoreAsync(databaseId, request, null, cancellationToken);
+
+    /// <inheritdoc />
+    public Task<bool> UpdateVersionedAsync(int databaseId, UpdateEmployeeIdentityRequest request,
+        string expectedVersion, CancellationToken cancellationToken)
     {
-        return await MutateAsync(databaseId, (context, user) =>
+        if (string.IsNullOrWhiteSpace(expectedVersion)) throw new AdministrativeIdentityConflictException();
+        return UpdateCoreAsync(databaseId, request, expectedVersion, cancellationToken);
+    }
+
+    private async Task<bool> UpdateCoreAsync(int databaseId, UpdateEmployeeIdentityRequest request,
+        string? expectedVersion, CancellationToken cancellationToken)
+    {
+        return await MutateAsync(databaseId, async (context, user) =>
         {
+            if (expectedVersion is not null && !IdentityAdminVersion.Matches(user, expectedVersion))
+                throw new AdministrativeIdentityConflictException();
+            if (!AdministrativeIdentityPolicy.Accepts(request.UserName, request.Email) ||
+                await context.Users.AnyAsync(value => value.Id != user.Id &&
+                    (value.NormalizedUserName == request.UserName.Trim().ToUpperInvariant() ||
+                     value.NormalizedEmail == request.Email.Trim().ToUpperInvariant()), cancellationToken))
+                throw new AdministrativeIdentityValidationException();
+
             user.UserName = request.UserName.Trim();
             user.NormalizedUserName = user.UserName.ToUpperInvariant();
             user.Email = request.Email.Trim();
@@ -82,36 +104,48 @@ public sealed class EmployeeIdentityAdminService(
             user.LockoutEnabled = request.LockoutEnabled;
             user.SecurityStamp = Guid.NewGuid().ToString();
             user.ConcurrencyStamp = Guid.NewGuid().ToString();
-        }, cancellationToken);
+        }, cancellationToken, conditional: expectedVersion is not null);
     }
 
     /// <inheritdoc />
     public async Task<bool> DeleteAsync(int databaseId, CancellationToken cancellationToken)
     {
-        return await MutateAsync(databaseId, (context, user) => context.Users.Remove(user), cancellationToken);
+        return await MutateAsync(databaseId, (context, user) =>
+        {
+            context.Users.Remove(user);
+            return Task.CompletedTask;
+        }, cancellationToken);
     }
 
-    private async Task<bool> MutateAsync(int databaseId, Action<EmployeeIdentityDbContext, LegacyIdentityRow> mutation, CancellationToken cancellationToken)
+    private async Task<bool> MutateAsync(int databaseId, Func<EmployeeIdentityDbContext, LegacyIdentityRow, Task> mutation, CancellationToken cancellationToken, bool conditional = false)
     {
         if (recoveryOptions?.Enabled != true) throw new EmployeeRecoveryUnavailableException();
         try
         {
-            return await dbContext.Database.CreateExecutionStrategy().ExecuteAsync(async () =>
+            IExecutionStrategy strategy = conditional ? new NonRetryingExecutionStrategy(dbContext) : dbContext.Database.CreateExecutionStrategy();
+            return await strategy.ExecuteAsync(async () =>
             {
-                await using var fresh = new EmployeeIdentityDbContext((DbContextOptions<EmployeeIdentityDbContext>)dbContext.GetService<IDbContextOptions>());
+                var options = (DbContextOptions<EmployeeIdentityDbContext>)dbContext.GetService<IDbContextOptions>();
+                if (conditional)
+                    options = new DbContextOptionsBuilder<EmployeeIdentityDbContext>(options)
+                        .UseNpgsql(dbContext.Database.GetConnectionString(), provider =>
+                            provider.ExecutionStrategy(dependencies => new NonRetryingExecutionStrategy(dependencies))).Options;
+                await using var fresh = new EmployeeIdentityDbContext(options);
                 await EmployeeRecoverySchema.EnsureEmployeeAsync(fresh, cancellationToken);
                 await using var transaction = await fresh.Database.BeginTransactionAsync(cancellationToken);
                 var user = await fresh.Users.FromSqlInterpolated($"SELECT * FROM \"AspNetUsers\" WHERE \"DatabaseID\" = {databaseId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken);
                 if (user is null) return false;
                 // Identity lock MUST precede this employee-local intent/receipt read. Never acquire an Auth lock here.
                 if (await fresh.RecoveryEffects.AnyAsync(x => x.IdentityId == user.Id && x.FinalizedAcknowledgedAt == null, cancellationToken)) throw new EmployeeRecoveryUnavailableException();
-                mutation(fresh, user);
+                await mutation(fresh, user);
                 await fresh.SaveChangesAsync(cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
                 return true;
             });
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (AdministrativeIdentityConflictException) { throw; }
+        catch (AdministrativeIdentityValidationException) { throw; }
         catch (EmployeeRecoveryUnavailableException) { throw; }
         catch { throw new EmployeeRecoveryUnavailableException(); }
     }
@@ -127,5 +161,6 @@ public sealed class EmployeeIdentityAdminService(
         user.LockoutEnd,
         user.LockoutEnabled,
         user.AccessFailedCount,
-        user.DatabaseID ?? 0);
+        user.DatabaseID ?? 0,
+        IdentityAdminVersion.Get(user));
 }

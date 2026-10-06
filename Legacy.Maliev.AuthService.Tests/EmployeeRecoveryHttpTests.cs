@@ -1,7 +1,9 @@
 using Legacy.Maliev.AuthService.Api.Authorization;
 using Legacy.Maliev.AuthService.Application;
+using Legacy.Maliev.AuthService.Domain;
 using Legacy.Maliev.AuthService.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
@@ -16,6 +18,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
@@ -24,6 +27,135 @@ namespace Legacy.Maliev.AuthService.Tests;
 public sealed class EmployeeRecoveryHttpTests(PostgresFixture postgres)
 {
     private const string Root = "/auth/v1/employee-self-service/";
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    [InlineData(2)]
+    public async Task ResetPasswordPolicy_NewEffectRejectsInvalidPasswordWithoutConsumingChallenge_ValidBoundaryAppliesOnce(int boundary)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await stores.Employees.Users.ExecuteUpdateAsync(setters => setters
+            .SetProperty(row => row.AccessFailedCount, 2)
+            .SetProperty(row => row.LockoutEnd, DateTimeOffset.UtcNow.AddMinutes(5)));
+        await SeedOldSessionAsync(stores);
+        using var factory = new RecoveryFactory(stores, production: true);
+        using var owner = factory.Client(factory.Token());
+        using var issuance = await owner.PostAsJsonAsync(Root + "password-reset/request", new EmployeeActionRequest("employee@example.com"));
+        Assert.Equal(HttpStatusCode.OK, issuance.StatusCode);
+        var challenge = (await issuance.Content.ReadFromJsonAsync<EmployeeActionChallenge>())!;
+        var before = await RecoverySnapshotAsync(stores);
+        foreach (var password in new string?[] { "aaaaaaaa", "abcde", "", null, "abcdef" + new string('a', 1019) })
+        {
+            using var rejected = await owner.PostAsJsonAsync(Root + "password-reset/complete",
+                new CompleteEmployeePasswordResetRequest("employee@example.com", challenge.Token!, password!));
+            Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+            var body = await rejected.Content.ReadAsStringAsync();
+            Assert.DoesNotContain(challenge.Token!, body);
+            Assert.DoesNotContain("employee@example.com", body);
+            if (!string.IsNullOrEmpty(password)) Assert.DoesNotContain(password, body);
+            Assert.Equal(before, await RecoverySnapshotAsync(stores));
+        }
+        var valid = boundary switch { 0 => "abcdef", 1 => "abcdef" + new string('a', 1018), _ => "😀abcd" };
+        using var accepted = await owner.PostAsJsonAsync(Root + "password-reset/complete",
+            new CompleteEmployeePasswordResetRequest("employee@example.com", challenge.Token!, valid));
+        Assert.Equal(HttpStatusCode.NoContent, accepted.StatusCode);
+        var row = await stores.Employees.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(PasswordVerificationResult.Success, new PasswordHasher<LegacyIdentityRow>().VerifyHashedPassword(row, row.PasswordHash!, valid));
+        Assert.NotEqual("original-security-stamp", row.SecurityStamp);
+        Assert.Equal(0, row.AccessFailedCount);
+        Assert.Null(row.LockoutEnd);
+        Assert.NotNull((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
+        var action = await stores.State.IdentityActionTokens.AsNoTracking().SingleAsync();
+        var receipt = await stores.Employees.RecoveryEffects.AsNoTracking().SingleAsync();
+        Assert.NotNull(action.ConsumedAt);
+        Assert.Equal(receipt.ActionId, action.EffectActionId);
+        Assert.Equal(row.SecurityStamp, receipt.AfterSecurityStamp);
+        Assert.Equal(row.PasswordHash, receipt.PasswordPayloadHash);
+        var completed = await RecoverySnapshotAsync(stores);
+        using var replay = await owner.PostAsJsonAsync(Root + "password-reset/complete",
+            new CompleteEmployeePasswordResetRequest("employee@example.com", challenge.Token!, valid));
+        Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
+        Assert.Equal(completed, await RecoverySnapshotAsync(stores));
+    }
+
+    [Fact]
+    public async Task ResetPasswordPolicy_PreviouslyCommittedWeakReceiptFinalizesWithoutRewritingIdentity()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await SeedOldSessionAsync(stores);
+        using var factory = new RecoveryFactory(stores, production: true);
+        using var owner = factory.Client(factory.Token());
+        using var issuance = await owner.PostAsJsonAsync(Root + "password-reset/request", new EmployeeActionRequest("employee@example.com"));
+        Assert.Equal(HttpStatusCode.OK, issuance.StatusCode);
+        var challenge = (await issuance.Content.ReadFromJsonAsync<EmployeeActionChallenge>())!;
+        var action = await stores.State.IdentityActionTokens.AsNoTracking().SingleAsync();
+        // Independently constructed Identity V2 PBKDF2-SHA1/1000 vector, salt bytes 00..0f, password aaaaaaaa.
+        const string legacyHash = "AAABAgMEBQYHCAkKCwwNDg91ZESw9Z1BEnaDrIvRk7bmBCAdxYXr4aE11Ui5+tlLJQ==";
+        await stores.Employees.Users.ExecuteUpdateAsync(setters => setters
+            .SetProperty(row => row.PasswordHash, legacyHash)
+            .SetProperty(row => row.SecurityStamp, "legacy-reset-applied-stamp")
+            .SetProperty(row => row.ConcurrencyStamp, "legacy-reset-applied-concurrency"));
+        stores.Employees.RecoveryEffects.Add(new EmployeeRecoveryEffect
+        {
+            ActionId = action.Id,
+            TokenSha256 = action.OriginalTokenSha256!,
+            Purpose = action.Purpose,
+            OwnerSubject = action.OwnerSubject!,
+            IdentityId = action.IdentityId,
+            NormalizedEmail = action.BoundNormalizedEmail!,
+            BeforeSecurityStamp = action.BoundSecurityStamp!,
+            AfterSecurityStamp = "legacy-reset-applied-stamp",
+            AfterConcurrencyStamp = "legacy-reset-applied-concurrency",
+            PasswordPayloadHash = legacyHash,
+            AppliedAt = DateTimeOffset.UtcNow,
+        });
+        await stores.Employees.SaveChangesAsync();
+        var before = await RecoverySnapshotAsync(stores);
+        using var changed = await owner.PostAsJsonAsync(Root + "password-reset/complete",
+            new CompleteEmployeePasswordResetRequest("employee@example.com", challenge.Token!, "changed-password"));
+        Assert.Equal(HttpStatusCode.BadRequest, changed.StatusCode);
+        Assert.Equal(before, await RecoverySnapshotAsync(stores));
+        var identityBefore = JsonSerializer.Serialize(await stores.Employees.Users.AsNoTracking().SingleAsync());
+        using var retry = await owner.PostAsJsonAsync(Root + "password-reset/complete",
+            new CompleteEmployeePasswordResetRequest("employee@example.com", challenge.Token!, "aaaaaaaa"));
+        Assert.Equal(HttpStatusCode.NoContent, retry.StatusCode);
+        Assert.Equal(identityBefore, JsonSerializer.Serialize(await stores.Employees.Users.AsNoTracking().SingleAsync()));
+        Assert.NotNull((await stores.State.IdentityActionTokens.AsNoTracking().SingleAsync()).ConsumedAt);
+        Assert.NotNull((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
+        Assert.NotNull((await stores.Employees.RecoveryEffects.AsNoTracking().SingleAsync()).FinalizedAcknowledgedAt);
+        var completed = await RecoverySnapshotAsync(stores);
+        using var replay = await owner.PostAsJsonAsync(Root + "password-reset/complete",
+            new CompleteEmployeePasswordResetRequest("employee@example.com", challenge.Token!, "aaaaaaaa"));
+        Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
+        Assert.Equal(completed, await RecoverySnapshotAsync(stores));
+    }
+
+    private static async Task SeedOldSessionAsync(Stores stores)
+    {
+        var row = await stores.Employees.Users.AsNoTracking().SingleAsync();
+        stores.State.RefreshSessions.Add(new RefreshSession
+        {
+            Id = Guid.NewGuid(),
+            FamilyId = Guid.NewGuid(),
+            IdentityId = row.Id,
+            IdentityKind = IdentityKind.Employee,
+            SecurityStamp = row.SecurityStamp,
+            TokenHash = Convert.ToHexString(SHA256.HashData("reset-policy-old-session"u8.ToArray())).ToLowerInvariant(),
+            CreatedAt = DateTimeOffset.UtcNow,
+            ExpiresAt = DateTimeOffset.UtcNow.AddHours(1),
+        });
+        await stores.State.SaveChangesAsync();
+    }
+
+    private static async Task<string> RecoverySnapshotAsync(Stores stores) => JsonSerializer.Serialize(new
+    {
+        Employees = await stores.Employees.Users.AsNoTracking().OrderBy(row => row.Id).ToListAsync(),
+        Customers = await stores.Customers.Users.AsNoTracking().OrderBy(row => row.Id).ToListAsync(),
+        Effects = await stores.Employees.RecoveryEffects.AsNoTracking().OrderBy(row => row.ActionId).ToListAsync(),
+        Actions = await stores.State.IdentityActionTokens.AsNoTracking().OrderBy(row => row.Id).ToListAsync(),
+        Sessions = await stores.State.RefreshSessions.AsNoTracking().OrderBy(row => row.Id).ToListAsync(),
+    });
 
     [Theory]
     [InlineData("missing-sub", HttpStatusCode.Forbidden)]
@@ -120,13 +252,13 @@ public sealed class EmployeeRecoveryHttpTests(PostgresFixture postgres)
         }
     }
 
-    private sealed class RecoveryFactory(Stores stores, bool enabled = true, FinalizationFault? fault = null) : WebApplicationFactory<Program>
+    private sealed class RecoveryFactory(Stores stores, bool enabled = true, FinalizationFault? fault = null, bool production = false) : WebApplicationFactory<Program>
     {
         private readonly RSA signing = RSA.Create(2048);
 
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            builder.UseEnvironment("Testing");
+            builder.UseEnvironment(production ? "Production" : "Testing");
             builder.UseSetting("CORS:AllowedOrigins", "https://localhost");
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
             {
