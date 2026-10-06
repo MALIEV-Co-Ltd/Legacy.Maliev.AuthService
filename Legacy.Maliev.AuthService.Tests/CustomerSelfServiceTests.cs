@@ -640,6 +640,7 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
 
     [Theory]
     [InlineData(true, 5, false)]
+    [InlineData(true, 0, false)]
     [InlineData(true, -1, true)]
     [InlineData(false, 5, true)]
     public async Task EmailConfirmationRecovery_CurrentLockoutIsCheckedBeforeConsumingGrant(

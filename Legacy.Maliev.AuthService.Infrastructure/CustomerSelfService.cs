@@ -213,7 +213,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
             value => value.Id == recovery.IdentityId,
             cancellationToken);
         if (row is null || row.EmailConfirmed || string.IsNullOrWhiteSpace(row.Email)
-            || (row.LockoutEnabled && row.LockoutEnd > timeProvider.GetUtcNow()))
+            || (row.LockoutEnabled && row.LockoutEnd >= timeProvider.GetUtcNow()))
         {
             return new(false, null);
         }
