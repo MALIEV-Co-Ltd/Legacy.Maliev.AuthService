@@ -164,16 +164,26 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         const string email = "legacy-admin@example.com";
         var identity = new LegacyIdentityRow
         {
-            Id = "legacy-admin-policy", DatabaseID = 73, UserName = email, NormalizedUserName = email.ToUpperInvariant(),
-            Email = email, NormalizedEmail = email.ToUpperInvariant(), EmailConfirmed = true,
-            SecurityStamp = "legacy-admin-stamp", ConcurrencyStamp = "legacy-admin-concurrency", LockoutEnabled = true,
+            Id = "legacy-admin-policy",
+            DatabaseID = 73,
+            UserName = email,
+            NormalizedUserName = email.ToUpperInvariant(),
+            Email = email,
+            NormalizedEmail = email.ToUpperInvariant(),
+            EmailConfirmed = true,
+            SecurityStamp = "legacy-admin-stamp",
+            ConcurrencyStamp = "legacy-admin-concurrency",
+            LockoutEnabled = true,
         };
         identity.PasswordHash = new PasswordHasher<LegacyIdentityRow>().HashPassword(identity, "aaaaaaaa");
         var key = Guid.NewGuid();
         stores.Customers.Users.Add(identity);
         stores.Customers.CreateOperations.Add(new CustomerIdentityCreateOperation
         {
-            ServiceSubject = "service:issuance-test", OperationKey = key, DatabaseId = 73, IdentityId = identity.Id,
+            ServiceSubject = "service:issuance-test",
+            OperationKey = key,
+            DatabaseId = 73,
+            IdentityId = identity.Id,
             PayloadSalt = Enumerable.Range(0, 16).Select(value => (byte)value).ToArray(),
             // Independent Python PBKDF2-SHA256/210000/32 fixture over the original Pascal-case request JSON.
             PayloadHash = Convert.FromHexString("10971819444ebc3d554c2229c8840bb783dab70386418b83b39d5d6c03a755bb"),

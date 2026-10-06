@@ -47,7 +47,8 @@ public sealed class CustomerIdentitiesController(
             CustomerIdentityCreateOutcome.Replayed => Ok(new CustomerIdentityCreateReceipt(databaseId, "replayed")),
             CustomerIdentityCreateOutcome.InvalidPassword => BadRequest(new ProblemDetails
             {
-                Status = StatusCodes.Status400BadRequest, Title = "Invalid initial password",
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Invalid initial password",
             }),
             _ => Conflict(new ProblemDetails { Status = StatusCodes.Status409Conflict, Title = "Identity operation conflicts" }),
         };
