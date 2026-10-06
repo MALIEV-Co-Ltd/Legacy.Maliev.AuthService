@@ -23,6 +23,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
     /// <summary>Creates an unconfirmed customer identity.</summary>
     public async Task<CustomerSelfServiceResult> RegisterAsync(RegisterCustomerIdentityRequest request, CancellationToken cancellationToken)
     {
+        if (!WebIdentityEmailPolicy.Accepts(request.Email)) return new(false, null, null, null);
         var email = request.Email.Trim();
         var normalized = email.ToUpperInvariant();
         await using var identity = NewRegistrationContext();
@@ -357,6 +358,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
             return null;
         }
 
+        if (!WebIdentityEmailPolicy.Accepts(request.NewEmail)) return null;
         var email = request.NewEmail.Trim();
         var normalized = email.ToUpperInvariant();
         if (string.Equals(row.NormalizedEmail, normalized, StringComparison.Ordinal))
@@ -396,6 +398,9 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
             return null;
         }
 
+        // Completed history remains replayable; pending values must be safe before the BFF updates CRM.
+        if (action.ConsumedAt is null && !AdministrativeIdentityPolicy.Accepts(action.TargetEmail, action.TargetEmail)) return null;
+
         var row = await customers.Users.AsNoTracking().SingleOrDefaultAsync(
             value => value.Id == action.IdentityId,
             cancellationToken);
@@ -429,6 +434,7 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
             return false;
         }
 
+        if (!AdministrativeIdentityPolicy.Accepts(action.TargetEmail, action.TargetEmail)) return false;
         var normalized = action.TargetEmail.ToUpperInvariant();
         if (await customers.Users.AnyAsync(
             value => value.Id != row.Id

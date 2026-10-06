@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Security.Cryptography;
+using System.Text.Json;
 using Legacy.Maliev.AuthService.Api.Authorization;
 using Legacy.Maliev.AuthService.Application;
 using Legacy.Maliev.AuthService.Infrastructure;
@@ -310,6 +311,137 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
         Assert.Equal(HttpStatusCode.NoContent, completed.StatusCode);
         Assert.Equal(2, await stores.State.IdentityActionTokens.CountAsync());
     }
+
+    [Fact]
+    public async Task NormalWebIdentityUserPolicy_NewRegistrationRejectsDefaultAlphabetViolationsAndKeepsLegacyResolve()
+    {
+        await using var stores = await Stores.CreateAsync(postgres, confirmed: true);
+        await using var factory = new Factory(stores);
+        using var owner = factory.Client();
+        var before = await WebIdentitySnapshotAsync(stores);
+        foreach (var email in new[] { "\u0e01@example.com", "a!b@example.com", "not-an-email" })
+        {
+            var request = new RegisterCustomerIdentityRequest(72, email, "aaaaaaaa");
+            using var scope = factory.Services.CreateScope();
+            Assert.False((await scope.ServiceProvider.GetRequiredService<CustomerSelfService>().RegisterAsync(request, default)).Succeeded);
+            using var denied = await owner.PostAsJsonAsync(Root + "register", request);
+            Assert.Equal(HttpStatusCode.BadRequest, denied.StatusCode);
+            Assert.DoesNotContain(email, await denied.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+            Assert.Equal(before, await WebIdentitySnapshotAsync(stores));
+        }
+        using var created = await owner.PostAsJsonAsync(Root + "register", new RegisterCustomerIdentityRequest(72, "a+._-b@example.com", "aaaaaaaa"));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var identity = await stores.Customers.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        Assert.Equal("A+._-B@EXAMPLE.COM", identity.NormalizedUserName);
+        Assert.Equal(PasswordVerificationResult.Success, new PasswordHasher<LegacyIdentityRow>().VerifyHashedPassword(identity, identity.PasswordHash!, "aaaaaaaa"));
+        var committed = await WebIdentitySnapshotAsync(stores);
+        using var duplicate = await owner.PostAsJsonAsync(Root + "register", new RegisterCustomerIdentityRequest(73, "a+._-b@example.com", "aaaaaaaa"));
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+        Assert.Equal(committed, await WebIdentitySnapshotAsync(stores));
+        // Independently represent an older committed identity whose username the new policy would reject.
+        await stores.Customers.Users.Where(value => value.DatabaseID == 42).ExecuteUpdateAsync(setters => setters
+            .SetProperty(value => value.UserName, "\u0e01@example.com").SetProperty(value => value.Email, "\u0e01@example.com")
+            .SetProperty(value => value.NormalizedUserName, "\u0e01@EXAMPLE.COM").SetProperty(value => value.NormalizedEmail, "\u0e01@EXAMPLE.COM"));
+        var legacy = await WebIdentitySnapshotAsync(stores);
+        using var resolved = await owner.PostAsJsonAsync(Root + "register/resolve", new ResolveCustomerIdentityRequest(42, "\u0e01@example.com", "original-password"));
+        Assert.Equal(HttpStatusCode.OK, resolved.StatusCode);
+        using var changed = await owner.PostAsJsonAsync(Root + "register/resolve", new ResolveCustomerIdentityRequest(43, "\u0e01@example.com", "original-password"));
+        Assert.Equal(HttpStatusCode.NotFound, changed.StatusCode);
+        Assert.Equal(legacy, await WebIdentitySnapshotAsync(stores));
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task NormalWebIdentityUserPolicy_InvalidNewEmailAndHistoricalPendingTargetNeverMutateOrConsume()
+    {
+        await using var stores = await Stores.CreateAsync(postgres, confirmed: true);
+        await using var factory = new Factory(stores);
+        using var owner = factory.Client();
+        using var customer = factory.Client("customer");
+        var oldToken = await IssueAsync(factory, owner, changeEmail: true);
+        // This seeded pending action represents issuance by the older writer before new-target validation.
+        await stores.State.IdentityActionTokens.ExecuteUpdateAsync(setters => setters
+            .SetProperty(value => value.TargetEmail, "\u0e01@example.com")
+            .SetProperty(value => value.BoundSecurityStamp, "ceg1:61bf62a08579ae6f226487728407e24c27f6d3d579fa6ab67f188bb9df7f2f77"));
+        var before = await WebIdentitySnapshotAsync(stores);
+        foreach (var email in new[] { "\u0e01@example.com", "a!b@example.com", "not-an-email" })
+        {
+            var request = new ChangeCustomerEmailRequest("original-password", email);
+            using var scope = factory.Services.CreateScope();
+            Assert.Null(await scope.ServiceProvider.GetRequiredService<CustomerSelfService>().ChangeEmailAsync("email-generation-customer", request, default));
+            using var denied = await customer.PostAsJsonAsync(Root + "email/change", request);
+            Assert.Equal(HttpStatusCode.BadRequest, denied.StatusCode);
+            Assert.DoesNotContain(email, await denied.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+            Assert.Equal(before, await WebIdentitySnapshotAsync(stores));
+        }
+        // Fixed bindings independently computed with Python SHA256 over the literal UTF8 JSON frame.
+        // The Thai frame uses System.Text.Json's uppercase \u0E01 escape; whitespace normalizes to NEW@EXAMPLE.COM.
+        foreach (var (target, binding) in new[]
+        {
+            ("\u0e01@example.com", "ceg1:61bf62a08579ae6f226487728407e24c27f6d3d579fa6ab67f188bb9df7f2f77"),
+            (" new@example.com ", "ceg1:00300dbecb4a5eec896baa90934339318c559fa15e4ce542e582be640a8f229e"),
+        })
+        {
+            await stores.State.IdentityActionTokens.ExecuteUpdateAsync(setters => setters
+                .SetProperty(value => value.TargetEmail, target).SetProperty(value => value.BoundSecurityStamp, binding));
+            var historical = await WebIdentitySnapshotAsync(stores);
+            var action = await stores.State.IdentityActionTokens.AsNoTracking().SingleAsync();
+            var current = await stores.Customers.Users.AsNoTracking().SingleAsync();
+            var generationPredicate = typeof(CustomerSelfService).GetMethod("CustomerEmailGenerationMatches",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
+            Assert.True(Assert.IsType<bool>(generationPredicate.Invoke(null, [action, current])));
+            var request = new CompleteCustomerActionRequest(target.Trim(), oldToken);
+            using (var scope = factory.Services.CreateScope())
+            {
+                var service = scope.ServiceProvider.GetRequiredService<CustomerSelfService>();
+                Assert.Null(await service.ValidateEmailChangeAsync(request, default));
+                Assert.False(await service.CompleteEmailChangeAsync(request, default));
+            }
+            using var validation = await owner.PostAsJsonAsync(Root + "email-change/validate", request);
+            Assert.Equal(HttpStatusCode.BadRequest, validation.StatusCode);
+            Assert.DoesNotContain("newEmail", await validation.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+            using var completion = await owner.PostAsJsonAsync(Root + "email-change/complete", request);
+            Assert.Equal(HttpStatusCode.BadRequest, completion.StatusCode);
+            Assert.Equal(historical, await WebIdentitySnapshotAsync(stores));
+        }
+        // Independently represent a previously committed invalid username; preserve the producer replay contract.
+        await stores.State.IdentityActionTokens.ExecuteUpdateAsync(setters => setters
+            .SetProperty(value => value.TargetEmail, "\u0e01@example.com").SetProperty(value => value.ConsumedAt, stores.Clock.GetUtcNow()));
+        await stores.Customers.Users.ExecuteUpdateAsync(setters => setters
+            .SetProperty(value => value.Email, "\u0e01@example.com").SetProperty(value => value.UserName, "\u0e01@example.com")
+            .SetProperty(value => value.NormalizedEmail, "\u0e01@EXAMPLE.COM").SetProperty(value => value.NormalizedUserName, "\u0e01@EXAMPLE.COM"));
+        var committedHistory = await WebIdentitySnapshotAsync(stores);
+        using var replay = await owner.PostAsJsonAsync(Root + "email-change/validate", new CompleteCustomerActionRequest("\u0e01@example.com", oldToken));
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+        Assert.True((await replay.Content.ReadFromJsonAsync<CustomerEmailChangeValidation>())!.Completed);
+        Assert.Equal(committedHistory, await WebIdentitySnapshotAsync(stores));
+        using var requested = await customer.PostAsJsonAsync(Root + "email/change", new ChangeCustomerEmailRequest("original-password", "a+._-b@example.com"));
+        Assert.Equal(HttpStatusCode.OK, requested.StatusCode);
+        var challenge = (await requested.Content.ReadFromJsonAsync<CustomerActionChallenge>())!;
+        using var completed = await owner.PostAsJsonAsync(Root + "email-change/complete", new CompleteCustomerActionRequest("a+._-b@example.com", challenge.Token!));
+        Assert.Equal(HttpStatusCode.NoContent, completed.StatusCode);
+        var identity = await stores.Customers.Users.AsNoTracking().SingleAsync();
+        Assert.Equal("email-generation-customer", identity.Id);
+        Assert.Equal(42, identity.DatabaseID);
+        Assert.Equal("a+._-b@example.com", identity.UserName);
+        Assert.Equal("A+._-B@EXAMPLE.COM", identity.NormalizedEmail);
+        Assert.Equal(PasswordVerificationResult.Success, new PasswordHasher<LegacyIdentityRow>().VerifyHashedPassword(identity, identity.PasswordHash!, "original-password"));
+        Assert.True(identity.EmailConfirmed);
+        Assert.NotEqual("original-generation", identity.SecurityStamp);
+        Assert.Equal(2, await stores.State.IdentityActionTokens.CountAsync());
+        Assert.All(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync(), value => Assert.NotNull(value.ConsumedAt));
+    }
+
+    private static async Task<string> WebIdentitySnapshotAsync(Stores stores) => JsonSerializer.Serialize(new
+    {
+        Customers = await stores.Customers.Users.AsNoTracking().OrderBy(value => value.Id).ToListAsync(),
+        Employees = await stores.Employees.Users.AsNoTracking().OrderBy(value => value.Id).ToListAsync(),
+        Receipts = await stores.Customers.CreateOperations.AsNoTracking().OrderBy(value => value.OperationKey).ToListAsync(),
+        Effects = await stores.Employees.RecoveryEffects.AsNoTracking().OrderBy(value => value.ActionId).ToListAsync(),
+        Actions = await stores.State.IdentityActionTokens.AsNoTracking().OrderBy(value => value.Id).ToListAsync(),
+        Sessions = await stores.State.RefreshSessions.AsNoTracking().OrderBy(value => value.Id).ToListAsync(),
+    });
 
     private sealed class Factory(Stores stores) : WebApplicationFactory<Program>
     {
