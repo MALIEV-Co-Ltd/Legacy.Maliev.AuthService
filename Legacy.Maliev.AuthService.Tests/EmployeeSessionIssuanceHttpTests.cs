@@ -108,7 +108,27 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         await AuthorizeAdministrationAsync(client, service: true);
         using var registered = await client.PostAsJsonAsync("/auth/v1/customer-self-service/register",
             new RegisterCustomerIdentityRequest(72, "web-policy@example.com", "aabbccdd"));
-        Assert.Equal(HttpStatusCode.Created, registered.StatusCode);
+        if (registered.StatusCode != HttpStatusCode.Created)
+        {
+            var classification = "non-validation-response";
+            try
+            {
+                var problem = await registered.Content.ReadFromJsonAsync<JsonElement>();
+                if (problem.TryGetProperty("errors", out var errors) && errors.ValueKind == JsonValueKind.Object)
+                {
+                    var fields = errors.EnumerateObject().Take(8).Select(error => error.Name switch
+                    {
+                        "DatabaseId" or "databaseId" => "DatabaseId",
+                        "Email" or "email" => "Email",
+                        "Password" or "password" => "Password",
+                        _ => "other-field",
+                    }).ToArray();
+                    classification = "validation-fields:" + string.Join(",", fields);
+                }
+            }
+            catch (JsonException) { classification = "non-json-response"; }
+            Assert.Fail($"Registration did not return Created: HTTP {(int)registered.StatusCode}; {classification}.");
+        }
         var identity = await stores.Customers.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
         Assert.Equal(PasswordVerificationResult.Success,
             new PasswordHasher<LegacyIdentityRow>().VerifyHashedPassword(identity, identity.PasswordHash!, "aabbccdd"));
