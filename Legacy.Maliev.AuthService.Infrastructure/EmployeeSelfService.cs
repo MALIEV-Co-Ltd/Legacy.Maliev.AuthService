@@ -40,14 +40,15 @@ public sealed class EmployeeSelfService(EmployeeIdentityDbContext employees, Ref
         if (!ValidOwner(owner)) throw new EmployeeRecoveryUnavailableException();
         await EnsureReadyAsync(cancellationToken);
         var normalized = Normalize(email);
+        var canonical = LegacyIdentityKeyOwnership.CanonicalKey(email);
         // Bootstrap is a conditional write before the coordinator, never an overwrite of a winning admin/bootstrap.
         await using var lookup = NewEmployees();
-        var observed = await lookup.Users.AsNoTracking().SingleOrDefaultAsync(x => x.NormalizedEmail == normalized, cancellationToken);
+        var observed = await lookup.Users.AsNoTracking().SingleOrDefaultAsync(x => x.NormalizedEmail == normalized || x.NormalizedEmail == canonical, cancellationToken);
         if (observed is null || (requireUnconfirmed && observed.EmailConfirmed)) return new(true, null);
         if (string.IsNullOrWhiteSpace(observed.SecurityStamp))
         {
             var initial = Guid.NewGuid().ToString();
-            var changed = await lookup.Users.Where(x => x.Id == observed.Id && x.SecurityStamp == observed.SecurityStamp && x.NormalizedEmail == normalized)
+            var changed = await lookup.Users.Where(x => x.Id == observed.Id && x.SecurityStamp == observed.SecurityStamp && x.NormalizedEmail == observed.NormalizedEmail)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.SecurityStamp, initial), cancellationToken);
             if (changed != 1) return new(true, null);
         }
@@ -75,7 +76,7 @@ public sealed class EmployeeSelfService(EmployeeIdentityDbContext employees, Ref
                 await using var fresh = NewEmployees();
                 await using var identityTransaction = await fresh.Database.BeginTransactionAsync(cancellationToken);
                 var row = await LockIdentityAsync(fresh, observed.Id, cancellationToken);
-                if (row is null || row.NormalizedEmail != normalized || string.IsNullOrWhiteSpace(row.SecurityStamp) || (requireUnconfirmed && row.EmailConfirmed)) return null;
+                if (row is null || row.NormalizedEmail != observed.NormalizedEmail || string.IsNullOrWhiteSpace(row.NormalizedEmail) || string.IsNullOrWhiteSpace(row.SecurityStamp) || (requireUnconfirmed && row.EmailConfirmed)) return null;
                 await identityTransaction.CommitAsync(cancellationToken);
                 return row;
             });
@@ -93,10 +94,10 @@ public sealed class EmployeeSelfService(EmployeeIdentityDbContext employees, Ref
                 Id = Guid.NewGuid(),
                 IdentityId = locked.Id,
                 Purpose = purpose,
-                TokenHash = HashBoundToken(token, locked.SecurityStamp!, normalized),
+                TokenHash = HashBoundToken(token, locked.SecurityStamp!, locked.NormalizedEmail!),
                 OriginalTokenSha256 = HashToken(token),
                 OwnerSubject = owner,
-                BoundNormalizedEmail = normalized,
+                BoundNormalizedEmail = locked.NormalizedEmail,
                 BoundSecurityStamp = locked.SecurityStamp,
                 RecoveryVersion = 1,
                 CreatedAt = now,
@@ -114,7 +115,6 @@ public sealed class EmployeeSelfService(EmployeeIdentityDbContext employees, Ref
     {
         if (!ValidOwner(owner)) return false;
         await EnsureReadyAsync(cancellationToken);
-        var normalized = Normalize(email);
         var digest = HashToken(token);
         var attemptedFinalizations = new HashSet<Guid>();
         Guid? acknowledgement = null;
@@ -126,11 +126,11 @@ public sealed class EmployeeSelfService(EmployeeIdentityDbContext employees, Ref
             {
                 await using var auth = NewState();
                 var candidate = await auth.IdentityActionTokens.AsNoTracking().SingleOrDefaultAsync(x => x.OriginalTokenSha256 == digest && x.Purpose == purpose && x.RecoveryVersion == 1, cancellationToken);
-                if (candidate is null || candidate.OwnerSubject != owner || candidate.BoundNormalizedEmail != normalized) return false;
+                if (candidate is null || candidate.OwnerSubject != owner || !MatchesLookupKey(email, candidate.BoundNormalizedEmail)) return false;
                 await using var transaction = await auth.Database.BeginTransactionAsync(cancellationToken);
                 await LockCoordinatorAsync(auth, candidate.IdentityId, cancellationToken);
                 var action = await LockActionAsync(auth, candidate.Id, cancellationToken);
-                if (action is null || action.OwnerSubject != owner || action.BoundNormalizedEmail != normalized) return false;
+                if (action is null || action.OwnerSubject != owner || !MatchesLookupKey(email, action.BoundNormalizedEmail)) return false;
                 await using var probe = NewEmployees();
                 var receipt = await probe.RecoveryEffects.AsNoTracking().SingleOrDefaultAsync(x => x.ActionId == action.Id, cancellationToken);
                 if (action.ConsumedAt is not null)
@@ -360,6 +360,9 @@ public sealed class EmployeeSelfService(EmployeeIdentityDbContext employees, Ref
     private static Task<IdentityActionToken?> LockActionAsync(RefreshSessionDbContext auth, Guid id, CancellationToken cancellationToken) =>
         auth.IdentityActionTokens.FromSqlInterpolated($"SELECT * FROM identity_action_tokens WHERE \"Id\" = {id} FOR UPDATE").AsNoTracking().SingleOrDefaultAsync(cancellationToken);
     private static bool ValidOwner(string owner) => !string.IsNullOrWhiteSpace(owner) && owner.Length <= 256;
+    private static bool MatchesLookupKey(string email, string? bound) =>
+        bound == Normalize(email) || bound == LegacyIdentityKeyOwnership.CanonicalKey(email);
+
     private static string Normalize(string email) => email.Trim().ToUpperInvariant();
     private static string HashToken(string token) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
     private static string HashBoundToken(string token, string stamp, string email) => HashToken($"{token}:{stamp}:{email}");

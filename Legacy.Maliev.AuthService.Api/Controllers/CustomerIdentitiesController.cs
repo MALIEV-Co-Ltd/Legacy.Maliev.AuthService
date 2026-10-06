@@ -127,6 +127,14 @@ public sealed class CustomerIdentitiesController(
         {
             return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Invalid identity fields" });
         }
+        catch (AdministrativeIdentityUnavailableException)
+        {
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Title = "Identity update unavailable",
+            });
+        }
     }
 
     /// <summary>Updates safe fields using the exact strong version obtained from the identity projection.</summary>

@@ -3,6 +3,8 @@ using Legacy.Maliev.AuthService.Domain;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -25,15 +27,17 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
     {
         if (!WebIdentityEmailPolicy.Accepts(request.Email)) return new(false, null, null, null);
         var email = request.Email.Trim();
-        var normalized = email.ToUpperInvariant();
+        var normalized = LegacyIdentityKeyOwnership.CanonicalKey(email);
         await using var identity = NewRegistrationContext();
         await using var transaction = await identity.Database.BeginTransactionAsync(cancellationToken);
+        await CustomerIdentityAdminService.LockProfileAsync(identity, request.DatabaseId, cancellationToken);
         await LockNormalizedEmailAsync(identity, normalized, cancellationToken);
+        await LegacyIdentityKeyOwnership.LockUserNameAsync(identity, normalized, cancellationToken);
         var exists = await identity.Users.AnyAsync(
             value => value.DatabaseID == request.DatabaseId
-                || value.NormalizedEmail == normalized
                 || value.NormalizedUserName == normalized,
-            cancellationToken);
+            cancellationToken) || await LegacyIdentityKeyOwnership.HasOtherUserNameOwnerAsync(identity, email, null, cancellationToken)
+            || await LegacyIdentityKeyOwnership.HasOtherOwnerAsync(identity, email, null, cancellationToken);
         if (exists)
         {
             return new(false, null, null, null);
@@ -67,22 +71,27 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         ResolveCustomerIdentityRequest request,
         CancellationToken cancellationToken)
     {
-        var normalized = request.Email.Trim().ToUpperInvariant();
+        var normalized = LegacyIdentityKeyOwnership.CanonicalKey(request.Email);
+        var retained = request.Email.Trim().ToUpperInvariant();
         await using var identity = NewRegistrationContext();
+        var matches = await identity.Users.AsNoTracking().Where(value => value.NormalizedEmail == normalized
+                || value.NormalizedEmail == retained || value.NormalizedUserName == normalized
+                || value.NormalizedUserName == retained).Take(2).ToListAsync(cancellationToken);
+        if (matches.Count != 1) return new(false, null, null, null);
         await using var transaction = await identity.Database.BeginTransactionAsync(cancellationToken);
+        await CustomerIdentityAdminService.LockProfileAsync(identity, request.DatabaseId, cancellationToken);
+        // Existing writers lock the identity row before the email partition. Re-read after both waits.
+        var observedId = matches[0].Id;
+        var row = await identity.Users.FromSqlInterpolated(
+            $"SELECT * FROM \"AspNetUsers\" WHERE \"Id\" = {observedId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken);
+        if (row is null) return new(false, null, null, null);
         await LockNormalizedEmailAsync(identity, normalized, cancellationToken);
-        var row = await identity.Users
-            .Where(value => value.NormalizedEmail == normalized
-                || value.NormalizedUserName == normalized)
-            .OrderByDescending(value => value.DatabaseID > 0)
-            .ThenByDescending(value => value.EmailConfirmed)
-            .ThenBy(value => value.Id)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (row is null)
-        {
-            await transaction.CommitAsync(cancellationToken);
+        var currentMatches = await identity.Users.AsNoTracking().Where(value => value.NormalizedEmail == normalized
+                || value.NormalizedEmail == retained || value.NormalizedUserName == normalized
+                || value.NormalizedUserName == retained).Select(value => value.Id).Take(2).ToListAsync(cancellationToken);
+        if (currentMatches.Count != 1 || currentMatches[0] != row.Id ||
+            await identity.Users.AnyAsync(value => value.Id != row.Id && value.DatabaseID == request.DatabaseId, cancellationToken))
             return new(false, null, null, null);
-        }
 
         var passwordWasCommitted = row.PasswordHash is not null
             && passwordHasher.VerifyHashedPassword(row, row.PasswordHash, request.Password)
@@ -113,10 +122,14 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
             .UseNpgsql(customers.Database.GetConnectionString(), options => options.CommandTimeout(120))
             .Options);
 
-    private static Task<int> LockNormalizedEmailAsync(CustomerIdentityDbContext identity, string normalizedEmail, CancellationToken cancellationToken) =>
-        identity.Database.ExecuteSqlInterpolatedAsync(
-            $"SELECT pg_advisory_xact_lock(hashtextextended({normalizedEmail}, 0))",
-            cancellationToken);
+    private CustomerIdentityDbContext NewIdentityWriteContext() => new(
+        new DbContextOptionsBuilder<CustomerIdentityDbContext>(
+            (DbContextOptions<CustomerIdentityDbContext>)customers.GetService<IDbContextOptions>())
+            .UseNpgsql(customers.Database.GetConnectionString(), provider => provider.CommandTimeout(120)
+                .ExecutionStrategy(dependencies => new NonRetryingExecutionStrategy(dependencies))).Options);
+
+    private static Task<int> LockNormalizedEmailAsync(CustomerIdentityDbContext identity, string normalizedEmail,
+        CancellationToken cancellationToken) => LegacyIdentityKeyOwnership.LockAsync(identity, normalizedEmail, cancellationToken);
 
     /// <summary>Creates a confirmation challenge for a known unconfirmed identity.</summary>
     public Task<CustomerActionChallenge> RequestEmailConfirmationAsync(CustomerActionRequest request, CancellationToken cancellationToken) => CreateChallengeAsync(request.Email, EmailConfirmation, requireUnconfirmed: true, cancellationToken);
@@ -365,13 +378,10 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         {
             return null;
         }
-        if (await customers.Users.AnyAsync(
-            value => value.Id != identityId
-                && (value.NormalizedEmail == normalized || value.NormalizedUserName == normalized),
-            cancellationToken))
-        {
-            return null;
-        }
+        if (await customers.Users.AnyAsync(value => value.Id != identityId &&
+                value.NormalizedUserName == normalized, cancellationToken) ||
+            await LegacyIdentityKeyOwnership.HasOtherUserNameOwnerAsync(customers, email, identityId, cancellationToken) ||
+            await LegacyIdentityKeyOwnership.HasOtherOwnerAsync(customers, email, identityId, cancellationToken)) return null;
 
         var challenge = await CreateChallengeForIdentityAsync(
             row.Id,
@@ -404,6 +414,9 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         var row = await customers.Users.AsNoTracking().SingleOrDefaultAsync(
             value => value.Id == action.IdentityId,
             cancellationToken);
+        if (row is not null && action.ConsumedAt is null &&
+            (await LegacyIdentityKeyOwnership.HasOtherUserNameOwnerAsync(customers, action.TargetEmail, row.Id, cancellationToken) ||
+             await LegacyIdentityKeyOwnership.HasOtherOwnerAsync(customers, action.TargetEmail, row.Id, cancellationToken))) return null;
         return row is null
             || row.DatabaseID is not > 0
             || string.IsNullOrWhiteSpace(row.Email)
@@ -435,27 +448,31 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
         }
 
         if (!AdministrativeIdentityPolicy.Accepts(action.TargetEmail, action.TargetEmail)) return false;
-        var normalized = action.TargetEmail.ToUpperInvariant();
-        if (await customers.Users.AnyAsync(
-            value => value.Id != row.Id
-                && (value.NormalizedEmail == normalized || value.NormalizedUserName == normalized),
-                cancellationToken))
-        {
-            return false;
-        }
+        var normalized = LegacyIdentityKeyOwnership.CanonicalKey(action.TargetEmail);
+        // The existing challenge remains bound to its raw ceg1 frame. Only the identity key is canonical.
+        await using var identity = NewIdentityWriteContext();
+        await using var identityTransaction = await identity.Database.BeginTransactionAsync(cancellationToken);
+        // Match administrative writer order: identity row before target email. Revalidate before consuming Auth state.
+        var current = await identity.Users.FromSqlInterpolated(
+            $"SELECT * FROM \"AspNetUsers\" WHERE \"Id\" = {row.Id} FOR UPDATE").SingleOrDefaultAsync(cancellationToken);
+        if (current is null || current.SecurityStamp != row.SecurityStamp || current.Email != row.Email) return false;
+        await LegacyIdentityKeyOwnership.LockAsync(identity, action.TargetEmail, cancellationToken);
+        await LegacyIdentityKeyOwnership.LockUserNameAsync(identity, action.TargetEmail, cancellationToken);
+        if (await identity.Users.AnyAsync(value => value.Id != row.Id &&
+                value.NormalizedUserName == normalized, cancellationToken) ||
+            await LegacyIdentityKeyOwnership.HasOtherUserNameOwnerAsync(identity, action.TargetEmail, row.Id, cancellationToken) ||
+            await LegacyIdentityKeyOwnership.HasOtherOwnerAsync(identity, action.TargetEmail, row.Id, cancellationToken)) return false;
+        if (!await TryConsumeAsync(action, cancellationToken)) return false;
 
-        if (!await TryConsumeAsync(action, cancellationToken))
-        {
-            return false;
-        }
-
-        row.Email = action.TargetEmail;
-        row.NormalizedEmail = normalized;
-        row.UserName = action.TargetEmail;
-        row.NormalizedUserName = normalized;
-        row.EmailConfirmed = true;
-        RotateSecurityStamp(row);
-        await customers.SaveChangesAsync(cancellationToken);
+        current.Email = action.TargetEmail;
+        current.NormalizedEmail = normalized;
+        current.UserName = action.TargetEmail;
+        current.NormalizedUserName = normalized;
+        current.EmailConfirmed = true;
+        RotateSecurityStamp(current);
+        await identity.SaveChangesAsync(cancellationToken);
+        await identityTransaction.CommitAsync(cancellationToken);
+        customers.Entry(row).State = EntityState.Detached;
         await RevokeRefreshSessionsAsync(row.Id, cancellationToken);
         await SupersedeActiveChallengesAsync(row.Id, InitialPassword, timeProvider.GetUtcNow(), cancellationToken);
         return true;
@@ -635,9 +652,10 @@ public sealed class CustomerSelfService(CustomerIdentityDbContext customers, Ref
 
     private Task<LegacyIdentityRow?> FindAsync(string email, CancellationToken cancellationToken)
     {
-        var normalized = email.Trim().ToUpperInvariant();
+        var normalized = LegacyIdentityKeyOwnership.CanonicalKey(email);
+        var retained = email.Trim().ToUpperInvariant();
         return customers.Users.SingleOrDefaultAsync(
-            value => value.NormalizedEmail == normalized,
+            value => value.NormalizedEmail == normalized || value.NormalizedEmail == retained,
             cancellationToken);
     }
     private async Task<IdentityActionToken?> FindActionAsync(

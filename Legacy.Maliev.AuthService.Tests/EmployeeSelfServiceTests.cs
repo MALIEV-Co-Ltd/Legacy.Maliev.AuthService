@@ -19,6 +19,89 @@ namespace Legacy.Maliev.AuthService.Tests;
 [Collection(PostgresCollection.Name)]
 public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
 {
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public async Task CanonicalWriterRecovery_BindsExactStoredKeyWithoutChangingHistoricalHashFrame(
+        bool historicalKey, bool confirmation)
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedEmployeeAsync(emailConfirmed: !confirmation);
+        var row = await fixture.Employees.Users.SingleAsync();
+        const string raw = "cafe\u0301@identity.test";
+        const string canonical = "CAF\u00c9@IDENTITY.TEST";
+        row.Email = raw;
+        row.NormalizedEmail = historicalKey ? raw.ToUpperInvariant() : canonical;
+        var bound = row.NormalizedEmail;
+        var stamp = row.SecurityStamp;
+        await fixture.Employees.SaveChangesAsync();
+        var challenge = confirmation
+            ? await fixture.Service.RequestEmailConfirmationAsync(new(raw), "service:legacy-intranet", default)
+            : await fixture.Service.RequestPasswordResetAsync(new(raw), "service:legacy-intranet", default);
+        Assert.NotNull(challenge.Token);
+        var action = await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync();
+        Assert.Equal(bound, action.BoundNormalizedEmail);
+        Assert.Equal(stamp, action.BoundSecurityStamp);
+        var expectedHash = Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes($"{challenge.Token}:{stamp}:{bound}")));
+        Assert.Equal(expectedHash, action.TokenHash);
+        var completed = confirmation
+            ? await fixture.Service.ConfirmEmailAsync(new(raw, challenge.Token!), "service:legacy-intranet", default)
+            : await fixture.Service.CompletePasswordResetAsync(new(raw, challenge.Token!, "updated-password"), "service:legacy-intranet", default);
+        Assert.True(completed);
+        var receipt = await fixture.Employees.RecoveryEffects.AsNoTracking().SingleAsync();
+        Assert.Equal(bound, receipt.NormalizedEmail);
+        Assert.Equal(stamp, receipt.BeforeSecurityStamp);
+        Assert.Equal(expectedHash, (await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync()).TokenHash);
+        Assert.Equal(bound, (await fixture.Employees.Users.AsNoTracking().SingleAsync()).NormalizedEmail);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CanonicalWriterRecovery_HistoricalCommittedReceiptFinalizesWithoutRehashingBinding(bool confirmation)
+    {
+        await using var fixture = await Fixture.CreateAsync(postgres);
+        await fixture.SeedEmployeeAsync(emailConfirmed: !confirmation);
+        var row = await fixture.Employees.Users.SingleAsync();
+        const string raw = "cafe\u0301@identity.test";
+        row.Email = raw;
+        row.NormalizedEmail = raw.ToUpperInvariant();
+        await fixture.Employees.SaveChangesAsync();
+        var challenge = confirmation
+            ? await fixture.Service.RequestEmailConfirmationAsync(new(raw), "service:legacy-intranet", default)
+            : await fixture.Service.RequestPasswordResetAsync(new(raw), "service:legacy-intranet", default);
+        var original = await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync();
+        var fault = new FinalizationAfterEffectFailureInterceptor();
+        await using var faultyState = new RefreshSessionDbContext(new DbContextOptionsBuilder<RefreshSessionDbContext>()
+            .UseNpgsql(fixture.State.Database.GetConnectionString()).AddInterceptors(fault).Options);
+        var faulty = new EmployeeSelfService(fixture.Employees, faultyState, fixture.Hasher, TimeProvider.System,
+            new EmployeeRecoveryOptions { Enabled = true });
+        async Task<bool> CompleteAsync(EmployeeSelfService service) => confirmation
+            ? await service.ConfirmEmailAsync(new(raw, challenge.Token!), "service:legacy-intranet", default)
+            : await service.CompletePasswordResetAsync(new(raw, challenge.Token!, "applied-password"), "service:legacy-intranet", default);
+        await Assert.ThrowsAsync<EmployeeRecoveryUnavailableException>(() => CompleteAsync(faulty));
+        Assert.True(fault.Triggered);
+        var committed = await fixture.Employees.RecoveryEffects.AsNoTracking().SingleAsync();
+        var afterEffect = await fixture.Employees.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(original.BoundNormalizedEmail, committed.NormalizedEmail);
+        Assert.Null(committed.FinalizedAcknowledgedAt);
+        Assert.True(await CompleteAsync(fixture.Service));
+        var finalized = await fixture.Employees.RecoveryEffects.AsNoTracking().SingleAsync();
+        Assert.Equal(committed.NormalizedEmail, finalized.NormalizedEmail);
+        Assert.Equal(committed.BeforeSecurityStamp, finalized.BeforeSecurityStamp);
+        Assert.Equal(committed.AfterSecurityStamp, finalized.AfterSecurityStamp);
+        Assert.Equal(committed.PasswordPayloadHash, finalized.PasswordPayloadHash);
+        Assert.NotNull(finalized.FinalizedAcknowledgedAt);
+        var after = await fixture.Employees.Users.AsNoTracking().SingleAsync();
+        Assert.Equal(afterEffect.PasswordHash, after.PasswordHash);
+        Assert.Equal(afterEffect.SecurityStamp, after.SecurityStamp);
+        Assert.Equal(afterEffect.ConcurrencyStamp, after.ConcurrencyStamp);
+        Assert.Equal(original.TokenHash, (await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync()).TokenHash);
+    }
+
     [Fact]
     public async Task CompletePasswordReset_MissingAuthenticatedOwner_DoesNotApplyIdentityEffect()
     {

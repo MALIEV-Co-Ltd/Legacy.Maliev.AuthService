@@ -148,6 +148,14 @@ jobs:
             -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~NormalProgramUnhandledFailure_" \
             --logger "trx;LogFileName=program-unhandled-failure.trx" --results-directory artifacts/program-unhandled-failure
+      - name: Verify canonical identity writers preserve historical ownership and receipts
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore \
+            -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~CanonicalEmailOwnershipTests|FullyQualifiedName~EmployeeCanonicalWriteTests|FullyQualifiedName~CustomerCanonicalWriteTests|FullyQualifiedName~CanonicalWriterRecovery_|FullyQualifiedName~CanonicalWriterCustomerRecovery_|FullyQualifiedName~CanonicalHistoricalCollision_|FullyQualifiedName~NormalCanonicalIdentityWriter_" \
+            --logger "trx;LogFileName=canonical-identity-writes.trx" --results-directory artifacts/canonical-identity-writes
       - name: Verify customer registration recovery preserves established links
         shell: bash
         run: |
@@ -201,6 +209,7 @@ jobs:
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-password-formats -OutputDirectory artifacts/coverage-evidence/historical-password-formats
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-identity-normalization -OutputDirectory artifacts/coverage-evidence/historical-identity-normalization
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/program-unhandled-failure -OutputDirectory artifacts/coverage-evidence/program-unhandled-failure
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/canonical-identity-writes -OutputDirectory artifacts/coverage-evidence/canonical-identity-writes
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-password-policy -OutputDirectory artifacts/coverage-evidence/administrative-password-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-identity-policy -OutputDirectory artifacts/coverage-evidence/administrative-identity-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/employee-edit-grants -OutputDirectory artifacts/coverage-evidence/employee-edit-grants
