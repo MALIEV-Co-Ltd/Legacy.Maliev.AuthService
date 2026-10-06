@@ -68,6 +68,20 @@ jobs:
             -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~NormalHistoricalSecurity_" \
             --logger "trx;LogFileName=historical-security.trx" --results-directory artifacts/historical-security
+      - name: Verify read-only identity lockout deadlines through normal HTTP
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~NormalReadOnlyLockout_" \
+            --logger "trx;LogFileName=readonly-lockout.trx" --results-directory artifacts/readonly-lockout
+      - name: Verify Web identity user validation through normal HTTP
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~NormalWebIdentityUserPolicy_" \
+            --logger "trx;LogFileName=web-identity-user-policy.trx" --results-directory artifacts/web-identity-user-policy
       - name: Verify employee reset password policy through normal HTTP
         shell: bash
         run: |
@@ -157,6 +171,8 @@ jobs:
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-password-formats -OutputDirectory artifacts/coverage-evidence/historical-password-formats
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-password-policy -OutputDirectory artifacts/coverage-evidence/administrative-password-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-identity-policy -OutputDirectory artifacts/coverage-evidence/administrative-identity-policy
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/readonly-lockout -OutputDirectory artifacts/coverage-evidence/readonly-lockout
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/web-identity-user-policy -OutputDirectory artifacts/coverage-evidence/web-identity-user-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/employee-reset-password-policy -OutputDirectory artifacts/coverage-evidence/employee-reset-password-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/login-accounting -OutputDirectory artifacts/coverage-evidence/login-accounting
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/confirmation-lockout -OutputDirectory artifacts/coverage-evidence/confirmation-lockout

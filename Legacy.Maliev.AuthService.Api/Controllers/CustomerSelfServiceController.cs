@@ -22,6 +22,7 @@ public sealed class CustomerSelfServiceController(CustomerSelfService service) :
     [RequirePermission(CustomerSelfServicePermissions.Use)]
     public async Task<ActionResult<CustomerSelfServiceResult>> Register(RegisterCustomerIdentityRequest request, CancellationToken cancellationToken)
     {
+        if (!WebIdentityEmailPolicy.Accepts(request.Email)) return BadRequest(InvalidAction());
         var result = await service.RegisterAsync(request, cancellationToken);
         return result.Succeeded ? StatusCode(StatusCodes.Status201Created, result) : Conflict(InvalidAction());
     }

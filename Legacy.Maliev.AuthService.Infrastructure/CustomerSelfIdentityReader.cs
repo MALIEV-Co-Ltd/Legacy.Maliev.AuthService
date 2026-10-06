@@ -20,7 +20,7 @@ public sealed class CustomerSelfIdentityReader(CustomerIdentityDbContext custome
 
         // Match LegacyIdentityReader's current customer eligibility rules.
         if (expectedCustomerId <= 0 || row.DatabaseID != expectedCustomerId || !row.EmailConfirmed
-            || (row.LockoutEnabled && row.LockoutEnd is { } lockout && lockout > timeProvider.GetUtcNow()))
+            || (row.LockoutEnabled && row.LockoutEnd is { } lockout && lockout >= timeProvider.GetUtcNow()))
         {
             return new(CustomerSelfIdentityStatus.Forbidden);
         }

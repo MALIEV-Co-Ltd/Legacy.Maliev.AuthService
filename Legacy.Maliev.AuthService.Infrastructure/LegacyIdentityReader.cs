@@ -80,7 +80,7 @@ public sealed class LegacyIdentityReader(
 
     private bool IsUnlocked(LegacyIdentityRow? user) =>
         user is not null
-        && (!user.LockoutEnabled || user.LockoutEnd is null || user.LockoutEnd <= timeProvider.GetUtcNow());
+        && (!user.LockoutEnabled || user.LockoutEnd is null || user.LockoutEnd < timeProvider.GetUtcNow());
 
     private static void DummyPasswordVerification(string password, IPasswordHasher<LegacyIdentityRow> passwordHasher)
     {

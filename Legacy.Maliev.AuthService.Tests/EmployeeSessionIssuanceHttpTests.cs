@@ -1419,6 +1419,144 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }
 
+    [Theory]
+    [InlineData(IdentityKind.Employee)]
+    [InlineData(IdentityKind.Customer)]
+    public async Task NormalReadOnlyLockout_ExactDeadlineDeniesDirectReadAndRefreshWithoutIdentityWrites(IdentityKind kind)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var clock = new FakeTimeProvider(DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+        await using var factory = new Factory(stores, clock: clock);
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+        var tokens = await LoginAsync(client, kind);
+        var context = kind == IdentityKind.Employee ? (LegacyIdentityDbContext)stores.Employees : stores.Customers;
+        var row = await context.Users.SingleAsync();
+        row.LockoutEnd = clock.GetUtcNow();
+        row.AccessFailedCount = 3;
+        await context.SaveChangesAsync();
+        var identities = await SnapshotIdentitiesAsync(stores);
+        using (var scope = factory.Services.CreateScope())
+        {
+            var reader = scope.ServiceProvider.GetRequiredService<LegacyIdentityReader>();
+            Assert.Null(await reader.ValidateAsync(row.UserName!, Login(kind).Password, kind, default));
+            Assert.Null(await reader.FindActiveAsync(row.Id, kind, default));
+            if (kind == IdentityKind.Employee) Assert.Null(await reader.FindActiveEmployeeByEmailAsync(row.Email!, default));
+        }
+        using var denied = await client.PostAsJsonAsync("/auth/v1/refresh", new RefreshRequest(tokens.RefreshToken));
+        Assert.Equal(HttpStatusCode.Unauthorized, denied.StatusCode);
+        Assert.DoesNotContain("accessToken", await denied.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        var family = await stores.State.RefreshSessions.AsNoTracking().ToListAsync();
+        Assert.Equal(2, family.Count);
+        Assert.All(family, value => Assert.NotNull(value.RevokedAt));
+        Assert.Equal(identities, await SnapshotIdentitiesAsync(stores));
+        clock.Advance(TimeSpan.FromTicks(10)); // PostgreSQL timestamp precision is one microsecond.
+        using (var scope = factory.Services.CreateScope())
+        {
+            var reader = scope.ServiceProvider.GetRequiredService<LegacyIdentityReader>();
+            Assert.NotNull(await reader.ValidateAsync(row.UserName!, Login(kind).Password, kind, default));
+            Assert.NotNull(await reader.FindActiveAsync(row.Id, kind, default));
+            if (kind == IdentityKind.Employee) Assert.NotNull(await reader.FindActiveEmployeeByEmailAsync(row.Email!, default));
+        }
+        Assert.Equal(identities, await SnapshotIdentitiesAsync(stores));
+        var active = await LoginAsync(client, kind);
+        var afterLogin = await SnapshotIdentitiesAsync(stores);
+        using var allowed = await client.PostAsJsonAsync("/auth/v1/refresh", new RefreshRequest(active.RefreshToken));
+        _ = await ReadTokensAsync(allowed);
+        Assert.Equal(afterLogin, await SnapshotIdentitiesAsync(stores));
+        using var oldFamily = await client.PostAsJsonAsync("/auth/v1/refresh", new RefreshRequest(tokens.RefreshToken));
+        Assert.Equal(HttpStatusCode.Unauthorized, oldFamily.StatusCode);
+        row.LockoutEnabled = false;
+        row.LockoutEnd = clock.GetUtcNow().AddMinutes(5);
+        await context.SaveChangesAsync();
+        var disabled = await SnapshotIdentitiesAsync(stores);
+        using var disabledScope = factory.Services.CreateScope();
+        var disabledReader = disabledScope.ServiceProvider.GetRequiredService<LegacyIdentityReader>();
+        Assert.NotNull(await disabledReader.ValidateAsync(row.UserName!, Login(kind).Password, kind, default));
+        Assert.NotNull(await disabledReader.FindActiveAsync(row.Id, kind, default));
+        if (kind == IdentityKind.Employee) Assert.NotNull(await disabledReader.FindActiveEmployeeByEmailAsync(row.Email!, default));
+        Assert.Equal(disabled, await SnapshotIdentitiesAsync(stores));
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task NormalReadOnlyLockout_CustomerSelfExactDeadlineIsForbiddenThenExpiredOrDisabledIsFound()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var clock = new FakeTimeProvider(DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+        var row = await stores.Customers.Users.SingleAsync();
+        row.DatabaseID = 42;
+        await stores.Customers.SaveChangesAsync();
+        await using var factory = new Factory(stores, clock: clock);
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+        var tokens = await LoginAsync(client, IdentityKind.Customer);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", tokens.AccessToken);
+        row.LockoutEnd = clock.GetUtcNow();
+        await stores.Customers.SaveChangesAsync();
+        var before = await AdministrativeSnapshotAsync(stores);
+        using var denied = await client.GetAsync("/auth/v1/customer-self-service/identity");
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        clock.Advance(TimeSpan.FromTicks(10));
+        using var expired = await client.GetAsync("/auth/v1/customer-self-service/identity");
+        Assert.Equal(HttpStatusCode.OK, expired.StatusCode);
+        var projection = await expired.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(["customerId", "email", "mobile"], projection.EnumerateObject().Select(value => value.Name).Order().ToArray());
+        Assert.Equal(42, projection.GetProperty("customerId").GetInt32());
+        Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        row.LockoutEnabled = false;
+        row.LockoutEnd = clock.GetUtcNow().AddMinutes(5);
+        await stores.Customers.SaveChangesAsync();
+        var disabled = await AdministrativeSnapshotAsync(stores);
+        using var allowed = await client.GetAsync("/auth/v1/customer-self-service/identity");
+        Assert.Equal(HttpStatusCode.OK, allowed.StatusCode);
+        Assert.Equal(disabled, await AdministrativeSnapshotAsync(stores));
+    }
+
+    [Fact]
+    public async Task NormalReadOnlyLockout_GoogleExactDeadlineDeniesWithoutSessionThenExpiredOrDisabledIssues()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var clock = new FakeTimeProvider(DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()));
+        var row = await stores.Employees.Users.SingleAsync();
+        row.LockoutEnd = clock.GetUtcNow();
+        row.AccessFailedCount = 3;
+        await stores.Employees.SaveChangesAsync();
+        var identities = await SnapshotIdentitiesAsync(stores);
+        await using var factory = new Factory(stores, clock: clock, googleReadOnlyBoundary: true);
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+        await AuthorizeAdministrationAsync(client, true);
+        async Task<GoogleExchangeRequest> NewExchangeAsync()
+        {
+            using var response = await client.PostAsJsonAsync("/auth/v1/exchange/google/nonce", new GoogleIdentityNonceRequest("intranet"));
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var nonce = (await response.Content.ReadFromJsonAsync<GoogleIdentityNonceResponse>())!;
+            return new(new string('g', 128), "intranet", nonce.Nonce);
+        }
+        var request = await NewExchangeAsync();
+        using var denied = await client.PostAsJsonAsync("/auth/v1/exchange/google", request);
+        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        Assert.DoesNotContain("accessToken", await denied.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+        Assert.Equal(identities, await SnapshotIdentitiesAsync(stores));
+        using var replay = await client.PostAsJsonAsync("/auth/v1/exchange/google", request);
+        Assert.Equal(HttpStatusCode.Unauthorized, replay.StatusCode);
+        clock.Advance(TimeSpan.FromTicks(10));
+        using var expired = await client.PostAsJsonAsync("/auth/v1/exchange/google", await NewExchangeAsync());
+        var tokens = await ReadTokensAsync(expired);
+        Assert.Equal(row.Id, Assert.Single(ReadJwt(tokens.AccessToken, factory).Claims, value => value.Type == "sub").Value);
+        Assert.Single(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+        Assert.Equal(identities, await SnapshotIdentitiesAsync(stores));
+        row.LockoutEnabled = false;
+        row.LockoutEnd = clock.GetUtcNow().AddMinutes(5);
+        await stores.Employees.SaveChangesAsync();
+        var disabled = await SnapshotIdentitiesAsync(stores);
+        using var allowed = await client.PostAsJsonAsync("/auth/v1/exchange/google", await NewExchangeAsync());
+        _ = await ReadTokensAsync(allowed);
+        Assert.Equal(2, await stores.State.RefreshSessions.CountAsync());
+        Assert.Equal(disabled, await SnapshotIdentitiesAsync(stores));
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+    }
+
     private static LoginRequest Login(IdentityKind kind) => new(kind == IdentityKind.Employee ? "issuance@example.com" : "customer@example.com", "issuance-password", kind);
     private static async Task<TokenResponse> LoginAsync(HttpClient client, IdentityKind kind)
     {
@@ -1475,7 +1613,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         }
     }
 
-    private sealed class Factory(Stores stores, RejectSave? fault = null, TimeProvider? clock = null, bool tinyIdentityPool = false, bool identityAdministration = false, bool identityValidation = false, IInterceptor[]? conditionalFaults = null) : WebApplicationFactory<Program>
+    private sealed class Factory(Stores stores, RejectSave? fault = null, TimeProvider? clock = null, bool tinyIdentityPool = false, bool identityAdministration = false, bool identityValidation = false, IInterceptor[]? conditionalFaults = null, bool googleReadOnlyBoundary = false) : WebApplicationFactory<Program>
     {
         public const string ServiceSecret = "issuance-test-only-secret-0123456789";
         private readonly RSA signing = RSA.Create(2048);
@@ -1504,6 +1642,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
                     settings["ServiceClients:Clients:issuance-test:Permissions:1"] = LegacyAccessTokenPermissions.CustomerIdentitiesReconcileCreate;
                     settings["ServiceClients:Clients:issuance-test:Permissions:2"] = CustomerSelfServicePermissions.Use;
                 }
+                if (googleReadOnlyBoundary) settings["ServiceClients:Clients:issuance-test:Permissions:3"] = LegacyAccessTokenPermissions.GoogleIdentityExchange;
                 if (identityValidation) settings["EmployeeRecovery:Enabled"] = "true";
                 configuration.AddInMemoryCollection(settings);
             });
