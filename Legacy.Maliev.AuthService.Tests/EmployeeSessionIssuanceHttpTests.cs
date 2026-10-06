@@ -1429,6 +1429,18 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         await using var factory = new Factory(stores, clock: clock);
         using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
         var tokens = await LoginAsync(client, kind);
+        var originalTokens = tokens;
+        using (var preparedRotation = await client.PostAsJsonAsync("/auth/v1/refresh", new RefreshRequest(tokens.RefreshToken)))
+            tokens = await ReadTokensAsync(preparedRotation);
+        var preparedFamily = await stores.State.RefreshSessions.AsNoTracking().OrderBy(value => value.Id).ToListAsync();
+        Assert.Equal(2, preparedFamily.Count);
+        Assert.Single(preparedFamily.Select(value => value.FamilyId).Distinct());
+        var originalSession = Assert.Single(preparedFamily, value => value.TokenHash == Hash(originalTokens.RefreshToken));
+        var activeSession = Assert.Single(preparedFamily, value => value.TokenHash == Hash(tokens.RefreshToken));
+        Assert.NotNull(originalSession.RotatedAt);
+        Assert.Equal(activeSession.Id, originalSession.ReplacedById);
+        Assert.Null(originalSession.RevokedAt);
+        Assert.Null(activeSession.RevokedAt);
         var context = kind == IdentityKind.Employee ? (LegacyIdentityDbContext)stores.Employees : stores.Customers;
         var row = await context.Users.SingleAsync();
         row.LockoutEnd = clock.GetUtcNow();
@@ -1447,6 +1459,9 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.DoesNotContain("accessToken", await denied.Content.ReadAsStringAsync(), StringComparison.Ordinal);
         var family = await stores.State.RefreshSessions.AsNoTracking().ToListAsync();
         Assert.Equal(2, family.Count);
+        Assert.Equal(preparedFamily.Select(value => value.Id), family.OrderBy(value => value.Id).Select(value => value.Id));
+        Assert.Equal(preparedFamily.Select(value => value.TokenHash), family.OrderBy(value => value.Id).Select(value => value.TokenHash));
+        Assert.All(family, value => Assert.Equal(originalSession.FamilyId, value.FamilyId));
         Assert.All(family, value => Assert.NotNull(value.RevokedAt));
         Assert.Equal(identities, await SnapshotIdentitiesAsync(stores));
         clock.Advance(TimeSpan.FromTicks(10)); // PostgreSQL timestamp precision is one microsecond.
@@ -1465,6 +1480,8 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal(afterLogin, await SnapshotIdentitiesAsync(stores));
         using var oldFamily = await client.PostAsJsonAsync("/auth/v1/refresh", new RefreshRequest(tokens.RefreshToken));
         Assert.Equal(HttpStatusCode.Unauthorized, oldFamily.StatusCode);
+        using var oldParent = await client.PostAsJsonAsync("/auth/v1/refresh", new RefreshRequest(originalTokens.RefreshToken));
+        Assert.Equal(HttpStatusCode.Unauthorized, oldParent.StatusCode);
         row.LockoutEnabled = false;
         row.LockoutEnd = clock.GetUtcNow().AddMinutes(5);
         await context.SaveChangesAsync();
