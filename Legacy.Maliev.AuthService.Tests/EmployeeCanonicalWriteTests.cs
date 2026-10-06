@@ -55,7 +55,7 @@ public sealed class EmployeeCanonicalWriteTests(PostgresFixture postgres)
         var results = await Task.WhenAll(
             NewService(first).CreateAsync(42, new("first-user", "cafe\u0301@identity.test", "abcdef", false, null), deadline.Token),
             NewService(second).CreateAsync(43, new("second-user", "caf\u00e9@identity.test", "abcdef", false, null), deadline.Token));
-        Assert.Single(results.Where(value => value is not null));
+        Assert.Single(results, value => value is not null);
         var stored = Assert.Single(await first.Users.AsNoTracking().ToListAsync(deadline.Token));
         Assert.Equal("CAF\u00c9@IDENTITY.TEST", stored.NormalizedEmail);
     }

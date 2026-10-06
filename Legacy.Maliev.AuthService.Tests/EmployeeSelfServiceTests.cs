@@ -48,7 +48,7 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
             System.Text.Encoding.UTF8.GetBytes($"{challenge.Token}:{stamp}:{bound}")));
         Assert.Equal(expectedHash, action.TokenHash);
         var completed = confirmation
-            ? await fixture.Service.CompleteEmailConfirmationAsync(new(raw, challenge.Token!), "service:legacy-intranet", default)
+            ? await fixture.Service.ConfirmEmailAsync(new(raw, challenge.Token!), "service:legacy-intranet", default)
             : await fixture.Service.CompletePasswordResetAsync(new(raw, challenge.Token!, "updated-password"), "service:legacy-intranet", default);
         Assert.True(completed);
         var receipt = await fixture.Employees.RecoveryEffects.AsNoTracking().SingleAsync();
@@ -80,7 +80,7 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         var faulty = new EmployeeSelfService(fixture.Employees, faultyState, fixture.Hasher, TimeProvider.System,
             new EmployeeRecoveryOptions { Enabled = true });
         async Task<bool> CompleteAsync(EmployeeSelfService service) => confirmation
-            ? await service.CompleteEmailConfirmationAsync(new(raw, challenge.Token!), "service:legacy-intranet", default)
+            ? await service.ConfirmEmailAsync(new(raw, challenge.Token!), "service:legacy-intranet", default)
             : await service.CompletePasswordResetAsync(new(raw, challenge.Token!, "applied-password"), "service:legacy-intranet", default);
         await Assert.ThrowsAsync<EmployeeRecoveryUnavailableException>(() => CompleteAsync(faulty));
         Assert.True(fault.Triggered);

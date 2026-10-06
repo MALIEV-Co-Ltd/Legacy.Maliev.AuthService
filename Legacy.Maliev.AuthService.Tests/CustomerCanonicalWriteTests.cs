@@ -59,15 +59,15 @@ public sealed class CustomerCanonicalWriteTests(PostgresFixture postgres)
             var results = await Task.WhenAll(
                 NewService(first).CreateOrReconcileAsync(42, "service:legacy-intranet", Guid.NewGuid(), firstRequest, deadline.Token),
                 NewService(second).CreateOrReconcileAsync(43, "service:legacy-intranet", Guid.NewGuid(), secondRequest, deadline.Token));
-            Assert.Single(results.Where(value => value.Outcome == CustomerIdentityCreateOutcome.Created));
-            Assert.Single(results.Where(value => value.Outcome == CustomerIdentityCreateOutcome.Conflict));
+            Assert.Single(results, value => value.Outcome == CustomerIdentityCreateOutcome.Created);
+            Assert.Single(results, value => value.Outcome == CustomerIdentityCreateOutcome.Conflict);
             Assert.Single(await first.CreateOperations.AsNoTracking().ToListAsync(deadline.Token));
         }
         else
         {
             var results = await Task.WhenAll(NewService(first).CreateAsync(42, firstRequest, deadline.Token),
                 NewService(second).CreateAsync(43, secondRequest, deadline.Token));
-            Assert.Single(results.Where(value => value is not null));
+            Assert.Single(results, value => value is not null);
             Assert.Empty(await first.CreateOperations.AsNoTracking().ToListAsync(deadline.Token));
         }
         var stored = Assert.Single(await first.Users.AsNoTracking().ToListAsync(deadline.Token));
