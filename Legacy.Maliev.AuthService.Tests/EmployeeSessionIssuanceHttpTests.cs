@@ -1172,6 +1172,67 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
             Assert.DoesNotContain(token.Claims, claim => claim.Type is "sid" or "permissions");
     }
 
+    private static readonly string[] EmployeeEditGrants =
+    [
+        "legacy-employee.employees.update", "legacy-employee.addresses.read",
+        "legacy-employee.addresses.create", "legacy-employee.addresses.update", "legacy-employee.roles.read",
+    ];
+
+    [Theory]
+    [InlineData("password")]
+    [InlineData("refresh")]
+    [InlineData("google")]
+    public async Task NormalEmployeeEditGrants_ActualInteractiveIssuerAllowsFiveScopesAndCustomerCannotEscalate(string flow)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores, googleReadOnlyBoundary: flow == "google");
+        using var client = factory.CreateClient(new() { BaseAddress = new Uri("https://localhost"), AllowAutoRedirect = false });
+        TokenResponse tokens;
+        if (flow == "google")
+        {
+            await AuthorizeAdministrationAsync(client, true);
+            using var nonceResponse = await client.PostAsJsonAsync("/auth/v1/exchange/google/nonce", new GoogleIdentityNonceRequest("intranet"));
+            Assert.Equal(HttpStatusCode.OK, nonceResponse.StatusCode);
+            var nonce = (await nonceResponse.Content.ReadFromJsonAsync<GoogleIdentityNonceResponse>())!;
+            using var exchange = await client.PostAsJsonAsync("/auth/v1/exchange/google", new GoogleExchangeRequest(new string('g', 128), "intranet", nonce.Nonce));
+            tokens = await ReadTokensAsync(exchange);
+        }
+        else
+        {
+            tokens = await LoginAsync(client, IdentityKind.Employee);
+            if (flow == "refresh")
+            {
+                using var refreshed = await client.PostAsJsonAsync("/auth/v1/refresh", new RefreshRequest(tokens.RefreshToken));
+                tokens = await ReadTokensAsync(refreshed);
+            }
+        }
+        var jwt = ReadJwt(tokens.AccessToken, factory);
+        Assert.Equal("Employee", Assert.Single(jwt.Claims, value => value.Type == "role").Value);
+        Assert.Equal("Employee", Assert.Single(jwt.Claims, value => value.Type == ClaimTypes.Role).Value);
+        Assert.Equal("employee", Assert.Single(jwt.Claims, value => value.Type == "identity_kind").Value);
+        foreach (var permission in EmployeeEditGrants)
+            Assert.Single(jwt.Claims, value => value.Type == "permissions" && value.Value == permission);
+        var sid = Guid.Parse(Assert.Single(jwt.Claims, value => value.Type == "sid").Value);
+        await AssertStoredBindingAsync(tokens, stores, sid, factory);
+        await using var consumer = await CreateDefaultsConsumerAsync(factory);
+        using var consumerClient = consumer.GetTestClient();
+        consumerClient.DefaultRequestHeaders.Authorization = new("Bearer", tokens.AccessToken);
+        foreach (var permission in EmployeeEditGrants)
+        {
+            using var allowed = await consumerClient.GetAsync("/grant/" + permission);
+            Assert.Equal(HttpStatusCode.NoContent, allowed.StatusCode);
+        }
+        var customer = await LoginAsync(client, IdentityKind.Customer);
+        var customerJwt = ReadJwt(customer.AccessToken, factory);
+        Assert.DoesNotContain(customerJwt.Claims, value => value.Type == "permissions" && EmployeeEditGrants.Contains(value.Value));
+        consumerClient.DefaultRequestHeaders.Authorization = new("Bearer", customer.AccessToken);
+        foreach (var permission in EmployeeEditGrants)
+        {
+            using var denied = await consumerClient.GetAsync("/grant/" + permission);
+            Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        }
+    }
+
     [Fact]
     public async Task NormalServiceExchange_DoesNotBecomeAnInteractiveActor()
     {
@@ -1185,11 +1246,17 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
             .Get(JwtBearerDefaults.AuthenticationScheme).TokenValidationParameters;
         var principal = new JwtSecurityTokenHandler { MapInboundClaims = false }.ValidateToken(token.AccessToken, parameters, out _);
         Assert.DoesNotContain(principal.Claims, claim => claim.Type is ClaimTypes.Role or "role" or "sid");
+        Assert.DoesNotContain(principal.Claims, claim => claim.Type == "permissions" && EmployeeEditGrants.Contains(claim.Value));
         await using var consumer = await CreateDefaultsConsumerAsync(factory);
         using var consumerClient = consumer.GetTestClient();
         consumerClient.DefaultRequestHeaders.Authorization = new("Bearer", token.AccessToken);
         using var denied = await consumerClient.GetAsync("/Employee");
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        foreach (var permission in EmployeeEditGrants)
+        {
+            using var scopeDenied = await consumerClient.GetAsync("/grant/" + permission);
+            Assert.Equal(HttpStatusCode.Forbidden, scopeDenied.StatusCode);
+        }
         await using var scope = factory.Services.CreateAsyncScope();
         var authorization = scope.ServiceProvider.GetRequiredService<IAuthorizationService>();
         Assert.False((await authorization.AuthorizeAsync(principal, null,
@@ -1216,11 +1283,17 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         parameters.ValidAudience = capability ? QuotationInvoiceCapabilityContract.Audience : InvoiceDelegationContract.Audience;
         var principal = new JwtSecurityTokenHandler { MapInboundClaims = false }.ValidateToken(issued.Value, parameters, out _);
         Assert.DoesNotContain(principal.Claims, claim => claim.Type is ClaimTypes.Role or "role" or "sid");
+        Assert.DoesNotContain(principal.Claims, claim => claim.Type == "permissions" && EmployeeEditGrants.Contains(claim.Value));
         await using var consumer = await CreateDefaultsConsumerAsync(factory, parameters.ValidAudience);
         using var consumerClient = consumer.GetTestClient();
         consumerClient.DefaultRequestHeaders.Authorization = new("Bearer", issued.Value);
         using var denied = await consumerClient.GetAsync("/Employee");
         Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
+        foreach (var permission in EmployeeEditGrants)
+        {
+            using var scopeDenied = await consumerClient.GetAsync("/grant/" + permission);
+            Assert.Equal(HttpStatusCode.Forbidden, scopeDenied.StatusCode);
+        }
         var authorization = scope.ServiceProvider.GetRequiredService<IAuthorizationService>();
         Assert.False((await authorization.AuthorizeAsync(principal, null,
             new[] { new RolesAuthorizationRequirement(["Employee", "Customer"]) })).Succeeded);
@@ -1259,6 +1332,9 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         app.UseAuthorization();
         app.MapGet("/Employee", () => Results.NoContent()).RequireAuthorization(policy => policy.RequireRole("Employee"));
         app.MapGet("/Customer", () => Results.NoContent()).RequireAuthorization(policy => policy.RequireRole("Customer"));
+        foreach (var permission in EmployeeEditGrants)
+            app.MapGet("/grant/" + permission, () => Results.NoContent()).RequireAuthorization(policy =>
+                policy.RequireAuthenticatedUser().RequireRole("Employee").RequireClaim("permissions", permission));
         try
         {
             await app.StartAsync();

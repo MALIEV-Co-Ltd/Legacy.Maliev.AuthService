@@ -79,6 +79,16 @@ public static class LegacyAccessTokenPermissions
     public const string EmployeesCreate = "legacy-employee.employees.create";
     /// <summary>Allows an authenticated employee to read a legacy employee profile.</summary>
     public const string EmployeesRead = "legacy-employee.employees.read";
+    /// <summary>Allows an authenticated employee to update a legacy employee profile.</summary>
+    public const string EmployeesUpdate = "legacy-employee.employees.update";
+    /// <summary>Allows an authenticated employee to read legacy employee addresses.</summary>
+    public const string EmployeeAddressesRead = "legacy-employee.addresses.read";
+    /// <summary>Allows an authenticated employee to create a legacy employee address.</summary>
+    public const string EmployeeAddressesCreate = "legacy-employee.addresses.create";
+    /// <summary>Allows an authenticated employee to update a legacy employee address.</summary>
+    public const string EmployeeAddressesUpdate = "legacy-employee.addresses.update";
+    /// <summary>Allows an authenticated employee to read the legacy employee-role catalog.</summary>
+    public const string EmployeeRolesRead = "legacy-employee.roles.read";
     /// <summary>Allows an authenticated employee to read legacy orders.</summary>
     public const string OrdersRead = "legacy.orders.read";
     /// <summary>Allows an authenticated employee to create a legacy order.</summary>
