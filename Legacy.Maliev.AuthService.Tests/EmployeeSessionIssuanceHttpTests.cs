@@ -36,6 +36,31 @@ namespace Legacy.Maliev.AuthService.Tests;
 [Collection(PostgresCollection.Name)]
 public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
 {
+    [Fact]
+    public async Task NormalEmployeeProfileBinding_SupplementaryUnicodeUsesProducerScalarBoundsAndStoredCopy()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores);
+        var storedEmail = string.Concat(Enumerable.Repeat("\U0001f600", 249)) + "@x.test";
+        var storedPhone = string.Concat(Enumerable.Repeat("\U0001f600", 256));
+        Assert.Equal(256, storedEmail.EnumerateRunes().Count());
+        Assert.True(storedEmail.Length > 320);
+        Assert.True(new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(storedEmail));
+        Assert.Equal(storedEmail, new System.Net.Mail.MailAddress(storedEmail).Address);
+        Assert.Equal(256, storedPhone.EnumerateRunes().Count());
+        Assert.True(storedPhone.Length > 256);
+        factory.Profiles[72] = new(72, storedEmail, storedPhone);
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, false);
+        using var created = await client.PostAsJsonAsync("/auth/v1/employee-identities/72",
+            new CreateEmployeeIdentityRequest("caller-name@profile.test", "untrusted@request.test", "abcdef", true, "+66999999999"));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var identity = await stores.Employees.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        Assert.Equal(storedEmail, identity.Email);
+        Assert.Equal(storedPhone, identity.PhoneNumber);
+        Assert.Equal(1, factory.ProfileReads);
+    }
+
     [Theory]
     [InlineData(65)]
     [InlineData(256)]
@@ -100,6 +125,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
     [InlineData("invalid-email", 503)]
     [InlineData("wrong-phone-type", 503)]
     [InlineData("beyond-phone-schema", 503)]
+    [InlineData("beyond-email-schema", 503)]
     [InlineData("oversized", 503)]
     [InlineData("missing-own-grant", 503)]
     public async Task NormalEmployeeProfileBinding_FailedAuthorityHasNoIdentityOrSessionEffects(string failure, int expected)
@@ -124,6 +150,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
             "wrong-case" => "{\"id\":72,\"email\":\"persisted@profile.test\"}",
             "invalid-email" => "{\"Id\":72,\"Email\":\"invalid\"}",
             "wrong-phone-type" => "{\"Id\":72,\"Email\":\"persisted@profile.test\",\"PhoneNumber\":42}",
+            "beyond-email-schema" => JsonSerializer.Serialize(new { Id = 72, Email = new string('a', 250) + "@x.test" }),
             "beyond-phone-schema" => JsonSerializer.Serialize(new { Id = 72, Email = "persisted@profile.test", PhoneNumber = new string('1', 257) }),
             "oversized" => new string('x', 32769),
             _ => null,

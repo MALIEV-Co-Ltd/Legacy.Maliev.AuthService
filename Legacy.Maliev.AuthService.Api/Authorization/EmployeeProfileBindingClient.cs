@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using Legacy.Maliev.AuthService.Application;
 using Maliev.Aspire.ServiceDefaults.LegacyAuth;
@@ -55,14 +56,14 @@ public sealed class EmployeeProfileBindingClient(
             if (properties.Select(value => value.Name).Distinct(StringComparer.Ordinal).Count() != properties.Length
                 || !root.TryGetProperty("Id", out var id) || !id.TryGetInt32(out var actualId) || actualId != databaseId
                 || !root.TryGetProperty("Email", out var email) || email.ValueKind != JsonValueKind.String
-                || string.IsNullOrWhiteSpace(email.GetString()) || email.GetString()!.Length > 320)
+                || string.IsNullOrWhiteSpace(email.GetString()) || email.GetString()!.EnumerateRunes().Count() > 256)
                 return new(EmployeeProfileBindingStatus.Unavailable);
             string? phoneNumber = null;
             if (root.TryGetProperty("PhoneNumber", out var phone))
             {
                 if (phone.ValueKind is not (JsonValueKind.String or JsonValueKind.Null)) return new(EmployeeProfileBindingStatus.Unavailable);
                 phoneNumber = phone.GetString();
-                if (phoneNumber?.Length > 256) return new(EmployeeProfileBindingStatus.Unavailable);
+                if (phoneNumber is not null && phoneNumber.EnumerateRunes().Count() > 256) return new(EmployeeProfileBindingStatus.Unavailable);
             }
             return new(EmployeeProfileBindingStatus.Verified, new(actualId, email.GetString()!, phoneNumber));
         }
