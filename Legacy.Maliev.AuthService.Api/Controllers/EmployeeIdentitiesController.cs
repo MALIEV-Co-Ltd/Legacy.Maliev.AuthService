@@ -24,6 +24,9 @@ public sealed class EmployeeIdentitiesController(IEmployeeIdentityAdminService s
         if (!AdministrativePasswordPolicy.Accepts(request.Password))
             return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Invalid initial password" });
 
+        if (!AdministrativeIdentityPolicy.Accepts(request.UserName, request.Email))
+            return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Invalid identity fields" });
+
         var identity = await service.CreateAsync(databaseId, request, cancellationToken);
         return identity is null
             ? Conflict(new ProblemDetails { Status = StatusCodes.Status409Conflict, Title = "Identity already exists" })
@@ -37,6 +40,7 @@ public sealed class EmployeeIdentitiesController(IEmployeeIdentityAdminService s
     public async Task<ActionResult<EmployeeIdentityResponse>> Get(int databaseId, CancellationToken cancellationToken)
     {
         var identity = await service.GetAsync(databaseId, cancellationToken);
+        if (identity?.Version is { } version) Response.Headers.ETag = "\"" + version + "\"";
         return identity is null ? NotFound() : identity;
     }
 
@@ -50,6 +54,39 @@ public sealed class EmployeeIdentitiesController(IEmployeeIdentityAdminService s
         CancellationToken cancellationToken)
     {
         try { return await service.UpdateAsync(databaseId, request, cancellationToken) ? NoContent() : NotFound(); }
+        catch (AdministrativeIdentityValidationException)
+        {
+            return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Invalid identity fields" });
+        }
+        catch (EmployeeRecoveryUnavailableException) { return Unavailable(); }
+    }
+
+    /// <summary>Updates safe fields using the exact strong version obtained from the identity projection.</summary>
+    [HttpPut("{databaseId:int}/versioned")]
+    [RequirePermission(LegacyAccessTokenPermissions.EmployeeIdentitiesUpdate)]
+    [Authorize(Policy = "LegacyEmployee")]
+    public async Task<IActionResult> UpdateVersioned(int databaseId, UpdateEmployeeIdentityRequest request,
+        [FromHeader(Name = "If-Match")] string? expectedVersion, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(expectedVersion))
+            return StatusCode(StatusCodes.Status428PreconditionRequired, new ProblemDetails
+            {
+                Status = StatusCodes.Status428PreconditionRequired,
+                Title = "Identity version required",
+            });
+        try { return await service.UpdateVersionedAsync(databaseId, request, expectedVersion, cancellationToken) ? NoContent() : NotFound(); }
+        catch (AdministrativeIdentityConflictException)
+        {
+            return StatusCode(StatusCodes.Status412PreconditionFailed, new ProblemDetails
+            {
+                Status = StatusCodes.Status412PreconditionFailed,
+                Title = "Identity version changed",
+            });
+        }
+        catch (AdministrativeIdentityValidationException)
+        {
+            return BadRequest(new ProblemDetails { Status = StatusCodes.Status400BadRequest, Title = "Invalid identity fields" });
+        }
         catch (EmployeeRecoveryUnavailableException) { return Unavailable(); }
     }
 

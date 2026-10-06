@@ -40,13 +40,14 @@ public sealed record CustomerIdentityResponse(
     int AccessFailedCount,
     int DatabaseID,
     string? FaxNumber,
-    string? MobileNumber);
+    string? MobileNumber,
+    string? Version = null);
 
 /// <summary>Non-PII result of an operation-keyed customer identity create.</summary>
 public sealed record CustomerIdentityCreateReceipt(int DatabaseId, string Status);
 
 /// <summary>Outcome of an operation-keyed create attempt.</summary>
-public enum CustomerIdentityCreateOutcome { Created, Replayed, Conflict, InvalidPassword }
+public enum CustomerIdentityCreateOutcome { Created, Replayed, Conflict, InvalidPassword, InvalidIdentity }
 
 /// <summary>Result of an operation-keyed create attempt.</summary>
 public sealed record CustomerIdentityCreateResult(CustomerIdentityCreateOutcome Outcome, int DatabaseId);
@@ -66,6 +67,9 @@ public interface ICustomerIdentityAdminService
 
     /// <summary>Updates safe identity fields.</summary>
     Task<bool> UpdateAsync(int databaseId, UpdateCustomerIdentityRequest request, CancellationToken cancellationToken);
+
+    /// <summary>Updates safe fields only when the quoted strong version still identifies the current row.</summary>
+    Task<bool> UpdateVersionedAsync(int databaseId, UpdateCustomerIdentityRequest request, string expectedVersion, CancellationToken cancellationToken);
 
     /// <summary>Deletes an identity while leaving the customer profile untouched.</summary>
     Task<bool> DeleteAsync(int databaseId, CancellationToken cancellationToken);

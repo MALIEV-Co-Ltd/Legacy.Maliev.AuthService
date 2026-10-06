@@ -1,6 +1,8 @@
 using Legacy.Maliev.AuthService.Application;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using Npgsql;
 using System.Security.Cryptography;
 using System.Text;
@@ -25,6 +27,9 @@ public sealed class CustomerIdentityAdminService(
         {
             return await ReconcileAsync(existing, databaseId, request, cancellationToken);
         }
+
+        if (!AdministrativeIdentityPolicy.Accepts(request.UserName, request.Email))
+            return new(CustomerIdentityCreateOutcome.InvalidIdentity, databaseId);
 
         var normalizedUserName = request.UserName.Trim().ToUpperInvariant();
         var normalizedEmail = request.Email.Trim().ToUpperInvariant();
@@ -108,6 +113,8 @@ public sealed class CustomerIdentityAdminService(
         CancellationToken cancellationToken)
     {
         if (!AdministrativePasswordPolicy.Accepts(request.Password)) return null;
+        if (!AdministrativeIdentityPolicy.Accepts(request.UserName, request.Email))
+            throw new AdministrativeIdentityValidationException();
 
         var normalizedUserName = request.UserName.Trim().ToUpperInvariant();
         var normalizedEmail = request.Email.Trim().ToUpperInvariant();
@@ -174,6 +181,12 @@ public sealed class CustomerIdentityAdminService(
             return false;
         }
 
+        if (!AdministrativeIdentityPolicy.Accepts(request.UserName, request.Email) ||
+            await dbContext.Users.AnyAsync(value => value.Id != user.Id &&
+                (value.NormalizedUserName == request.UserName.Trim().ToUpperInvariant() ||
+                 value.NormalizedEmail == request.Email.Trim().ToUpperInvariant()), cancellationToken))
+            throw new AdministrativeIdentityValidationException();
+
         user.UserName = request.UserName.Trim();
         user.NormalizedUserName = user.UserName.ToUpperInvariant();
         user.Email = request.Email.Trim();
@@ -190,6 +203,54 @@ public sealed class CustomerIdentityAdminService(
         user.ConcurrencyStamp = Guid.NewGuid().ToString();
         await dbContext.SaveChangesAsync(cancellationToken);
         return true;
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> UpdateVersionedAsync(int databaseId, UpdateCustomerIdentityRequest request,
+        string expectedVersion, CancellationToken cancellationToken)
+    {
+        var options = new DbContextOptionsBuilder<CustomerIdentityDbContext>(
+            (DbContextOptions<CustomerIdentityDbContext>)dbContext.GetService<IDbContextOptions>())
+            .UseNpgsql(dbContext.Database.GetConnectionString(), provider =>
+                provider.ExecutionStrategy(dependencies => new NonRetryingExecutionStrategy(dependencies))).Options;
+        await using var fresh = new CustomerIdentityDbContext(options);
+        try
+        {
+            var user = await fresh.Users.AsNoTracking().SingleOrDefaultAsync(value => value.DatabaseID == databaseId, cancellationToken);
+            if (user is null) return false;
+            if (!IdentityAdminVersion.Matches(user, expectedVersion)) throw new AdministrativeIdentityConflictException();
+            if (!AdministrativeIdentityPolicy.Accepts(request.UserName, request.Email) ||
+                await fresh.Users.AnyAsync(value => value.Id != user.Id &&
+                    (value.NormalizedUserName == request.UserName.Trim().ToUpperInvariant() ||
+                     value.NormalizedEmail == request.Email.Trim().ToUpperInvariant()), cancellationToken))
+                throw new AdministrativeIdentityValidationException();
+            var name = request.UserName.Trim();
+            var email = request.Email.Trim();
+            var stamp = Guid.NewGuid().ToString();
+            var concurrency = Guid.NewGuid().ToString();
+            var written = await fresh.Users.Where(value => value.Id == user.Id && value.ConcurrencyStamp == user.ConcurrencyStamp)
+                .ExecuteUpdateAsync(update => update
+                    .SetProperty(value => value.UserName, name)
+                    .SetProperty(value => value.NormalizedUserName, name.ToUpperInvariant())
+                    .SetProperty(value => value.Email, email)
+                    .SetProperty(value => value.NormalizedEmail, email.ToUpperInvariant())
+                    .SetProperty(value => value.EmailConfirmed, request.EmailConfirmed)
+                    .SetProperty(value => value.PhoneNumber, request.PhoneNumber)
+                    .SetProperty(value => value.PhoneNumberConfirmed, request.PhoneNumberConfirmed)
+                    .SetProperty(value => value.TwoFactorEnabled, request.TwoFactorEnabled)
+                    .SetProperty(value => value.LockoutEnd, request.LockoutEnd)
+                    .SetProperty(value => value.LockoutEnabled, request.LockoutEnabled)
+                    .SetProperty(value => value.FaxNumber, request.FaxNumber)
+                    .SetProperty(value => value.MobileNumber, request.MobileNumber)
+                    .SetProperty(value => value.SecurityStamp, stamp)
+                    .SetProperty(value => value.ConcurrencyStamp, concurrency), cancellationToken);
+            if (written != 1) throw new AdministrativeIdentityConflictException();
+            return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch (AdministrativeIdentityConflictException) { throw; }
+        catch (AdministrativeIdentityValidationException) { throw; }
+        catch { throw new AdministrativeIdentityUnavailableException(); }
     }
 
     /// <inheritdoc />
@@ -220,5 +281,6 @@ public sealed class CustomerIdentityAdminService(
         user.AccessFailedCount,
         user.DatabaseID ?? 0,
         user.FaxNumber,
-        user.MobileNumber);
+        user.MobileNumber,
+        IdentityAdminVersion.Get(user));
 }

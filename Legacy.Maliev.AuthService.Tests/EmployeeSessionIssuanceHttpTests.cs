@@ -1,4 +1,5 @@
 using System.IdentityModel.Tokens.Jwt;
+using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
@@ -552,6 +553,419 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         ? new CreateEmployeeIdentityRequest(email, email, password!, true, null)
         : new CreateCustomerIdentityRequest(email, email, password!, true, null, null, null);
 
+    [Theory]
+    [InlineData(IdentityKind.Employee, false)]
+    [InlineData(IdentityKind.Customer, false)]
+    [InlineData(IdentityKind.Customer, true)]
+    public async Task NormalAdministrativeIdentityPolicy_NewCreationUsesDefaultAlphabetWithoutEffects(IdentityKind kind, bool reconcile)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores, identityAdministration: true);
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, reconcile);
+        var before = await AdministrativeSnapshotAsync(stores);
+        var route = $"/auth/v1/{kind.ToString().ToLowerInvariant()}-identities/72" + (reconcile ? "/reconcile-create" : "");
+        if (reconcile) client.DefaultRequestHeaders.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        foreach (var fields in new[] { ("\u0e01@example.com", "new@example.com"), ("a!b@example.com", "new@example.com"), ("valid@example.com", "not-an-email") })
+        {
+            var userName = fields.Item1;
+            var request = AdministrativeIdentityRequest(kind, userName, fields.Item2);
+            using var rejected = await client.PostAsJsonAsync(route, request);
+            Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+            Assert.DoesNotContain(userName, await rejected.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+            Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+            await using var scope = factory.Services.CreateAsyncScope();
+            if (kind == IdentityKind.Employee)
+                await Assert.ThrowsAsync<AdministrativeIdentityValidationException>(() => scope.ServiceProvider.GetRequiredService<IEmployeeIdentityAdminService>().CreateAsync(72, (CreateEmployeeIdentityRequest)request, default));
+            else if (reconcile)
+                Assert.Equal(CustomerIdentityCreateOutcome.InvalidIdentity, (await scope.ServiceProvider.GetRequiredService<ICustomerIdentityAdminService>().CreateOrReconcileAsync(72, "service:issuance-test", Guid.NewGuid(), (CreateCustomerIdentityRequest)request, default)).Outcome);
+            else
+                await Assert.ThrowsAsync<AdministrativeIdentityValidationException>(() => scope.ServiceProvider.GetRequiredService<ICustomerIdentityAdminService>().CreateAsync(72, (CreateCustomerIdentityRequest)request, default));
+            Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        }
+        using var created = await client.PostAsJsonAsync(route, AdministrativeIdentityRequest(kind, "a+._-b@example.com", "new@example.com"));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var users = kind == IdentityKind.Employee ? stores.Employees.Users : stores.Customers.Users;
+        var row = await users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        Assert.Equal("A+._-B@EXAMPLE.COM", row.NormalizedUserName);
+        Assert.Equal(PasswordVerificationResult.Success, new PasswordHasher<LegacyIdentityRow>().VerifyHashedPassword(row, row.PasswordHash!, "abcdef"));
+        var committed = await AdministrativeSnapshotAsync(stores);
+        if (reconcile)
+        {
+            client.DefaultRequestHeaders.Remove("Idempotency-Key");
+            client.DefaultRequestHeaders.Add("Idempotency-Key", Guid.NewGuid().ToString());
+        }
+        using var duplicate = await client.PostAsJsonAsync(route, AdministrativeIdentityRequest(kind, "a+._-b@example.com", "new@example.com"));
+        Assert.Equal(HttpStatusCode.Conflict, duplicate.StatusCode);
+        Assert.Equal(committed, await AdministrativeSnapshotAsync(stores));
+        if (reconcile)
+        {
+            var legacy = new LegacyIdentityRow
+            {
+                Id = "legacy-invalid-user-name",
+                DatabaseID = 74,
+                UserName = "a!b@example.com",
+                NormalizedUserName = "A!B@EXAMPLE.COM",
+                Email = "legacy-invalid@example.com",
+                NormalizedEmail = "LEGACY-INVALID@EXAMPLE.COM",
+                EmailConfirmed = true,
+                SecurityStamp = "legacy-name-stamp",
+                ConcurrencyStamp = "legacy-name-concurrency",
+                LockoutEnabled = true,
+            };
+            legacy.PasswordHash = new PasswordHasher<LegacyIdentityRow>().HashPassword(legacy, "abcdef");
+            var key = Guid.NewGuid();
+            stores.Customers.Users.Add(legacy);
+            stores.Customers.CreateOperations.Add(new CustomerIdentityCreateOperation
+            {
+                ServiceSubject = "service:issuance-test",
+                OperationKey = key,
+                DatabaseId = 74,
+                IdentityId = legacy.Id,
+                PayloadSalt = Enumerable.Range(0, 16).Select(value => (byte)value).ToArray(),
+                // Independent Python PBKDF2-SHA256/210000/32 over the fixed Pascal-case request JSON.
+                PayloadHash = Convert.FromHexString("fffbc2b5e4a580c6561adf8cf52c3a7c066e4ced75396faca14217218adf531c"),
+            });
+            await stores.Customers.SaveChangesAsync();
+            var grandfathered = await AdministrativeSnapshotAsync(stores);
+            client.DefaultRequestHeaders.Remove("Idempotency-Key");
+            client.DefaultRequestHeaders.Add("Idempotency-Key", key.ToString());
+            using var replay = await client.PostAsJsonAsync("/auth/v1/customer-identities/74/reconcile-create", AdministrativeIdentityRequest(kind, legacy.UserName!, legacy.Email!));
+            Assert.Equal(HttpStatusCode.OK, replay.StatusCode);
+            using var changed = await client.PostAsJsonAsync("/auth/v1/customer-identities/74/reconcile-create", AdministrativeIdentityRequest(kind, "other@example.com", legacy.Email!));
+            Assert.Equal(HttpStatusCode.Conflict, changed.StatusCode);
+            Assert.Equal(grandfathered, await AdministrativeSnapshotAsync(stores));
+        }
+    }
+
+    [Theory]
+    [InlineData(IdentityKind.Employee)]
+    [InlineData(IdentityKind.Customer)]
+    public async Task NormalAdministrativeIdentityPolicy_UpdatePreservesRejectionsAndAcceptsSameOwner(IdentityKind kind)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores, identityAdministration: true, identityValidation: true);
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, false);
+        var route = $"/auth/v1/{kind.ToString().ToLowerInvariant()}-identities/";
+        foreach (var id in new[] { 72, 73 })
+        {
+            using var created = await client.PostAsJsonAsync(route + id, AdministrativeIdentityRequest(kind, $"target{id}@example.com", $"target{id}@example.com"));
+            Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        }
+        var users = kind == IdentityKind.Employee ? stores.Employees.Users : stores.Customers.Users;
+        var old = await users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        var before = await AdministrativeSnapshotAsync(stores);
+        foreach (var fields in new[] { ("\u0e01@example.com", "next@example.com"), ("target73@example.com", "next@example.com"), ("next@example.com", "TARGET73@EXAMPLE.COM") })
+        {
+            using var rejected = await client.PutAsJsonAsync(route + "72", AdministrativeUpdateRequest(kind, fields.Item1, fields.Item2));
+            Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+            var body = await rejected.Content.ReadAsStringAsync();
+            Assert.DoesNotContain(fields.Item1, body, StringComparison.Ordinal);
+            Assert.DoesNotContain(fields.Item2, body, StringComparison.Ordinal);
+            Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        }
+        using var missing = await client.PutAsJsonAsync(route + "999", AdministrativeUpdateRequest(kind, "valid@example.com", "valid@example.com"));
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        using var same = await client.PutAsJsonAsync(route + "72", AdministrativeUpdateRequest(kind, "TARGET72@example.com", "TARGET72@example.com"));
+        Assert.Equal(HttpStatusCode.NoContent, same.StatusCode);
+        var changed = await users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        Assert.Equal(old.Id, changed.Id);
+        Assert.Equal(old.DatabaseID, changed.DatabaseID);
+        Assert.Equal(old.PasswordHash, changed.PasswordHash);
+        Assert.Equal(old.AccessFailedCount, changed.AccessFailedCount);
+        Assert.NotEqual(old.SecurityStamp, changed.SecurityStamp);
+        Assert.NotEqual(old.ConcurrencyStamp, changed.ConcurrencyStamp);
+        using var renamed = await client.PutAsJsonAsync(route + "72", AdministrativeUpdateRequest(kind, "a+._-b@example.com", "renamed@example.com"));
+        Assert.Equal(HttpStatusCode.NoContent, renamed.StatusCode);
+        Assert.Empty(await stores.Employees.RecoveryEffects.AsNoTracking().ToListAsync());
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+    }
+
+    [Theory]
+    [InlineData(IdentityKind.Employee)]
+    [InlineData(IdentityKind.Customer)]
+    public async Task NormalAdministrativeIdentityPolicy_VersionedConcurrentWritesAcceptOneAndNeverOverwriteStaleEdit(IdentityKind kind)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores, identityAdministration: true, identityValidation: true);
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, false);
+        var route = $"/auth/v1/{kind.ToString().ToLowerInvariant()}-identities/72";
+        using var created = await client.PostAsJsonAsync(route, AdministrativeIdentityRequest(kind, "versioned@example.com", "versioned@example.com"));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        using var projected = await client.GetAsync(route);
+        Assert.Equal(HttpStatusCode.OK, projected.StatusCode);
+        var wire = await projected.Content.ReadFromJsonAsync<JsonElement>();
+        var version = wire.GetProperty("version").GetString()!;
+        Assert.Equal(64, version.Length);
+        Assert.All(version, value => Assert.True(char.IsAsciiHexDigit(value)));
+        var etag = projected.Headers.ETag!.ToString();
+        Assert.Equal("\"" + version + "\"", etag);
+        Assert.False(projected.Headers.ETag.IsWeak);
+        foreach (var field in new[] { "passwordHash", "securityStamp", "concurrencyStamp", "normalizedUserName", "normalizedEmail" })
+            Assert.False(wire.TryGetProperty(field, out _));
+        var before = await AdministrativeSnapshotAsync(stores);
+        using var anonymous = factory.CreateClient();
+        using var unauthorized = await anonymous.PutAsJsonAsync(route + "/versioned", AdministrativeUpdateRequest(kind, "valid@example.com", "valid@example.com"));
+        Assert.Equal(HttpStatusCode.Unauthorized, unauthorized.StatusCode);
+        using var missingVersion = await client.PutAsJsonAsync(route + "/versioned", AdministrativeUpdateRequest(kind, "valid@example.com", "valid@example.com"));
+        Assert.Equal((HttpStatusCode)428, missingVersion.StatusCode);
+        Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        using var serviceOnly = factory.CreateClient();
+        await AuthorizeAdministrationAsync(serviceOnly, true);
+        using var forbidden = await serviceOnly.PutAsJsonAsync(route + "/versioned", AdministrativeUpdateRequest(kind, "valid@example.com", "valid@example.com"));
+        Assert.Equal(HttpStatusCode.Forbidden, forbidden.StatusCode);
+        using var absent = new HttpRequestMessage(HttpMethod.Put, route.Replace("72", "999", StringComparison.Ordinal) + "/versioned")
+        {
+            Content = JsonContent.Create(AdministrativeUpdateRequest(kind, "valid@example.com", "valid@example.com")),
+        };
+        absent.Headers.TryAddWithoutValidation("If-Match", etag);
+        using var missing = await client.SendAsync(absent);
+        Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
+        using var wildcard = new HttpRequestMessage(HttpMethod.Put, route + "/versioned")
+        {
+            Content = JsonContent.Create(AdministrativeUpdateRequest(kind, "valid@example.com", "valid@example.com")),
+        };
+        wildcard.Headers.TryAddWithoutValidation("If-Match", "*");
+        using var malformed = await client.SendAsync(wildcard);
+        Assert.Equal(HttpStatusCode.PreconditionFailed, malformed.StatusCode);
+        Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        using var invalid = new HttpRequestMessage(HttpMethod.Put, route + "/versioned")
+        {
+            Content = JsonContent.Create(AdministrativeUpdateRequest(kind, "a!b@example.com", "valid@example.com")),
+        };
+        invalid.Headers.TryAddWithoutValidation("If-Match", etag);
+        using var invalidResponse = await client.SendAsync(invalid);
+        Assert.Equal(HttpStatusCode.BadRequest, invalidResponse.StatusCode);
+        Assert.DoesNotContain("a!b@example.com", await invalidResponse.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        if (kind == IdentityKind.Employee)
+        {
+            var recovery = factory.Services.GetRequiredService<EmployeeRecoveryOptions>();
+            recovery.Enabled = false;
+            try
+            {
+                using var gated = new HttpRequestMessage(HttpMethod.Put, route + "/versioned")
+                {
+                    Content = JsonContent.Create(AdministrativeUpdateRequest(kind, "valid@example.com", "valid@example.com")),
+                };
+                gated.Headers.TryAddWithoutValidation("If-Match", etag);
+                using var unavailable = await client.SendAsync(gated);
+                Assert.Equal(HttpStatusCode.ServiceUnavailable, unavailable.StatusCode);
+                Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+            }
+            finally { recovery.Enabled = true; }
+        }
+        using var first = new HttpRequestMessage(HttpMethod.Put, route + "/versioned")
+        {
+            Content = JsonContent.Create(AdministrativeUpdateRequest(kind, "first@example.com", "first@example.com")),
+        };
+        using var second = new HttpRequestMessage(HttpMethod.Put, route + "/versioned")
+        {
+            Content = JsonContent.Create(AdministrativeUpdateRequest(kind, "second@example.com", "second@example.com")),
+        };
+        first.Headers.TryAddWithoutValidation("If-Match", etag);
+        second.Headers.TryAddWithoutValidation("If-Match", etag);
+        var context = kind == IdentityKind.Employee ? (LegacyIdentityDbContext)stores.Employees : stores.Customers;
+        await using var fence = await context.Database.BeginTransactionAsync();
+        _ = await context.Users.FromSqlInterpolated($"SELECT * FROM \"AspNetUsers\" WHERE \"DatabaseID\" = {72} FOR UPDATE").SingleAsync();
+        var pending = new[] { client.SendAsync(first), client.SendAsync(second) };
+        var released = false;
+        try
+        {
+            var waiting = 0;
+            for (int attempt = 0; attempt < 200 && waiting < 2; attempt++)
+            {
+                await context.Database.ExecuteSqlRawAsync("SELECT pg_stat_clear_snapshot()");
+                waiting = await context.Database.SqlQueryRaw<int>("""
+                    SELECT count(*)::integer AS "Value" FROM pg_stat_activity
+                    WHERE datname = current_database() AND wait_event_type = 'Lock'
+                    """).SingleAsync();
+                if (waiting < 2) await Task.Delay(50);
+            }
+            Assert.True(waiting >= 2, "Both actual administrative writes must reach the identity row fence before release.");
+            Assert.All(pending, value => Assert.False(value.IsCompleted));
+            await fence.CommitAsync();
+            released = true;
+        }
+        finally
+        {
+            if (!released)
+            {
+                try { await fence.DisposeAsync(); }
+                catch (Exception) { /* Preserve the primary fence assertion; the context retains disposal ownership. */ }
+                await DrainFailedFenceRequestsAsync(pending);
+            }
+            else await fence.DisposeAsync();
+        }
+        var outcomes = await Task.WhenAll(pending).WaitAsync(TimeSpan.FromSeconds(15));
+        try
+        {
+            Assert.Single(outcomes, value => value.StatusCode == HttpStatusCode.NoContent);
+            Assert.Single(outcomes, value => value.StatusCode == HttpStatusCode.PreconditionFailed);
+        }
+        finally { foreach (var outcome in outcomes) outcome.Dispose(); }
+        var committed = await AdministrativeSnapshotAsync(stores);
+        using var stale = new HttpRequestMessage(HttpMethod.Put, route + "/versioned")
+        {
+            Content = JsonContent.Create(AdministrativeUpdateRequest(kind, "stale@example.com", "stale@example.com")),
+        };
+        stale.Headers.TryAddWithoutValidation("If-Match", etag);
+        using var rejected = await client.SendAsync(stale);
+        Assert.Equal(HttpStatusCode.PreconditionFailed, rejected.StatusCode);
+        Assert.Equal(committed, await AdministrativeSnapshotAsync(stores));
+        using var current = await client.GetAsync(route);
+        Assert.NotEqual(etag, current.Headers.ETag!.ToString());
+        var users = kind == IdentityKind.Employee ? stores.Employees.Users : stores.Customers.Users;
+        var row = await users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        Assert.Contains(row.UserName, new[] { "first@example.com", "second@example.com" });
+        Assert.Equal(PasswordVerificationResult.Success, new PasswordHasher<LegacyIdentityRow>().VerifyHashedPassword(row, row.PasswordHash!, "abcdef"));
+    }
+
+    [Theory]
+    [InlineData(IdentityKind.Employee)]
+    [InlineData(IdentityKind.Customer)]
+    public async Task NormalAdministrativeIdentityPolicy_CommittedAcknowledgmentLossReturnsUnavailableWithoutRetryingAsStale(IdentityKind kind)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        var control = new ConditionalAckState(kind);
+        await using var factory = new Factory(stores, identityAdministration: true, identityValidation: true,
+            conditionalFaults: [new ConditionalCommandAckLoss(control), new ConditionalCommitAckLoss(control)]);
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, false);
+        var route = $"/auth/v1/{kind.ToString().ToLowerInvariant()}-identities/72";
+        using var created = await client.PostAsJsonAsync(route, AdministrativeIdentityRequest(kind, "before-ack@example.com", "before-ack@example.com"));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        using var projected = await client.GetAsync(route);
+        var version = projected.Headers.ETag!.ToString();
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var normal = kind == IdentityKind.Employee
+                ? (LegacyIdentityDbContext)scope.ServiceProvider.GetRequiredService<EmployeeIdentityDbContext>()
+                : scope.ServiceProvider.GetRequiredService<CustomerIdentityDbContext>();
+            Assert.True(normal.Database.CreateExecutionStrategy().RetriesOnFailure);
+        }
+        var users = kind == IdentityKind.Employee ? stores.Employees.Users : stores.Customers.Users;
+        var original = await users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        control.Enabled = true;
+        using var request = new HttpRequestMessage(HttpMethod.Put, route + "/versioned")
+        {
+            Content = JsonContent.Create(AdministrativeUpdateRequest(kind, "after-ack@example.com", "after-ack@example.com")),
+        };
+        request.Headers.TryAddWithoutValidation("If-Match", version);
+        using var uncertain = await client.SendAsync(request);
+        Assert.Equal(HttpStatusCode.ServiceUnavailable, uncertain.StatusCode);
+        Assert.True(control.Injected);
+        Assert.False(control.ObservedRetries ?? true);
+        Assert.Equal(1, control.Attempts);
+        Assert.Equal(1, control.CompletedWrites);
+        var body = await uncertain.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("after-ack@example.com", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("Synthetic", body, StringComparison.Ordinal);
+        var actual = await users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        Assert.Equal("after-ack@example.com", actual.UserName);
+        Assert.Equal(original.PasswordHash, actual.PasswordHash);
+        Assert.Equal(original.Id, actual.Id);
+        Assert.Equal(original.DatabaseID, actual.DatabaseID);
+        Assert.Equal(original.AccessFailedCount, actual.AccessFailedCount);
+        Assert.NotEqual(original.SecurityStamp, actual.SecurityStamp);
+        Assert.NotEqual(original.ConcurrencyStamp, actual.ConcurrencyStamp);
+        var committed = await AdministrativeSnapshotAsync(stores);
+        control.Enabled = false;
+        using var retry = new HttpRequestMessage(HttpMethod.Put, route + "/versioned")
+        {
+            Content = JsonContent.Create(AdministrativeUpdateRequest(kind, "replayed@example.com", "replayed@example.com")),
+        };
+        retry.Headers.TryAddWithoutValidation("If-Match", version);
+        using var stale = await client.SendAsync(retry);
+        Assert.Equal(HttpStatusCode.PreconditionFailed, stale.StatusCode);
+        Assert.Equal(committed, await AdministrativeSnapshotAsync(stores));
+        Assert.Equal(1, control.Attempts);
+    }
+
+    private sealed class ConditionalAckState(IdentityKind kind)
+    {
+        public IdentityKind Kind { get; } = kind;
+        public bool Enabled { get; set; }
+        public bool Injected { get; set; }
+        public bool? ObservedRetries { get; set; }
+        public int Attempts { get; set; }
+        public int CompletedWrites { get; set; }
+        public static NpgsqlException Failure() => new("Synthetic conditional acknowledgment loss", new TimeoutException("Synthetic acknowledgment failure"));
+    }
+
+    private sealed class ConditionalCommandAckLoss(ConditionalAckState state) : DbCommandInterceptor
+    {
+        private bool Matches(DbCommand command) => state.Enabled && state.Kind == IdentityKind.Customer &&
+            command.CommandText.StartsWith("UPDATE \"AspNetUsers\"", StringComparison.Ordinal) &&
+            command.CommandText.Contains("\"UserName\"", StringComparison.Ordinal);
+        public override ValueTask<InterceptionResult<int>> NonQueryExecutingAsync(DbCommand command, CommandEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
+        {
+            if (Matches(command))
+            {
+                state.Attempts++;
+                state.ObservedRetries = eventData.Context?.Database.CreateExecutionStrategy().RetriesOnFailure;
+            }
+            return ValueTask.FromResult(result);
+        }
+        public override ValueTask<int> NonQueryExecutedAsync(DbCommand command, CommandExecutedEventData eventData,
+            int result, CancellationToken cancellationToken = default)
+        {
+            if (Matches(command) && result == 1)
+            {
+                state.CompletedWrites++;
+                state.Injected = true;
+                throw ConditionalAckState.Failure();
+            }
+            return ValueTask.FromResult(result);
+        }
+    }
+
+    private sealed class ConditionalCommitAckLoss(ConditionalAckState state) : DbTransactionInterceptor
+    {
+        public override ValueTask<InterceptionResult<DbTransaction>> TransactionStartingAsync(DbConnection connection,
+            TransactionStartingEventData eventData, InterceptionResult<DbTransaction> result, CancellationToken cancellationToken = default)
+        {
+            if (state.Enabled && state.Kind == IdentityKind.Employee)
+            {
+                state.Attempts++;
+                state.ObservedRetries = eventData.Context?.Database.CreateExecutionStrategy().RetriesOnFailure;
+            }
+            return ValueTask.FromResult(result);
+        }
+        public override Task TransactionCommittedAsync(DbTransaction transaction, TransactionEndEventData eventData,
+            CancellationToken cancellationToken = default)
+        {
+            if (state.Enabled && state.Kind == IdentityKind.Employee)
+            {
+                state.CompletedWrites++;
+                state.Injected = true;
+                throw ConditionalAckState.Failure();
+            }
+            return Task.CompletedTask;
+        }
+    }
+
+    private static object AdministrativeIdentityRequest(IdentityKind kind, string userName, string email) => kind == IdentityKind.Employee
+        ? new CreateEmployeeIdentityRequest(userName, email, "abcdef", true, null)
+        : new CreateCustomerIdentityRequest(userName, email, "abcdef", true, null, null, null);
+
+    private static object AdministrativeUpdateRequest(IdentityKind kind, string userName, string email) => kind == IdentityKind.Employee
+        ? new UpdateEmployeeIdentityRequest(userName, email, true, null, false, false, null, true)
+        : new UpdateCustomerIdentityRequest(userName, email, true, null, false, false, null, true, null, null);
+
+    private static async Task<string> AdministrativeSnapshotAsync(Stores stores) => JsonSerializer.Serialize(new
+    {
+        Identities = await SnapshotIdentitiesAsync(stores),
+        Receipts = await stores.Customers.CreateOperations.AsNoTracking().OrderBy(value => value.OperationKey).ToListAsync(),
+        Effects = await stores.Employees.RecoveryEffects.AsNoTracking().OrderBy(value => value.ActionId).ToListAsync(),
+        Actions = await stores.State.IdentityActionTokens.AsNoTracking().OrderBy(value => value.Id).ToListAsync(),
+        Sessions = await stores.State.RefreshSessions.AsNoTracking().OrderBy(value => value.Id).ToListAsync(),
+    });
+
     private static async Task AuthorizeAdministrationAsync(HttpClient client, bool service)
     {
         string token;
@@ -1061,7 +1475,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         }
     }
 
-    private sealed class Factory(Stores stores, RejectSave? fault = null, TimeProvider? clock = null, bool tinyIdentityPool = false, bool identityAdministration = false) : WebApplicationFactory<Program>
+    private sealed class Factory(Stores stores, RejectSave? fault = null, TimeProvider? clock = null, bool tinyIdentityPool = false, bool identityAdministration = false, bool identityValidation = false, IInterceptor[]? conditionalFaults = null) : WebApplicationFactory<Program>
     {
         public const string ServiceSecret = "issuance-test-only-secret-0123456789";
         private readonly RSA signing = RSA.Create(2048);
@@ -1090,6 +1504,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
                     settings["ServiceClients:Clients:issuance-test:Permissions:1"] = LegacyAccessTokenPermissions.CustomerIdentitiesReconcileCreate;
                     settings["ServiceClients:Clients:issuance-test:Permissions:2"] = CustomerSelfServicePermissions.Use;
                 }
+                if (identityValidation) settings["EmployeeRecovery:Enabled"] = "true";
                 configuration.AddInMemoryCollection(settings);
             });
             builder.ConfigureTestServices(services =>
@@ -1102,6 +1517,13 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
                 {
                     services.RemoveAll<TimeProvider>();
                     services.AddSingleton(clock);
+                }
+                if (identityValidation)
+                    foreach (var descriptor in services.Where(value => value.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService) && value.ImplementationType == typeof(EmployeeRecoveryWorker)).ToArray()) services.Remove(descriptor);
+                if (conditionalFaults is not null)
+                {
+                    services.AddDbContext<CustomerIdentityDbContext>(options => options.AddInterceptors(conditionalFaults));
+                    services.AddDbContext<EmployeeIdentityDbContext>(options => options.AddInterceptors(conditionalFaults));
                 }
                 if (fault is not null) services.AddDbContext<RefreshSessionDbContext>(options => options.AddInterceptors(fault));
             });
