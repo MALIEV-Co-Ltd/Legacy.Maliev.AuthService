@@ -887,7 +887,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         private static string? IdentityConnection(LegacyIdentityDbContext context, bool tinyPool) => tinyPool
             ? new NpgsqlConnectionStringBuilder(context.Database.GetConnectionString())
             {
-                MaxPoolSize = 2, MinPoolSize = 1, Timeout = 5, ApplicationName = "login-accounting-tiny-pool",
+                MaxPoolSize = 2,
+                MinPoolSize = 1,
+                Timeout = 5,
+                ApplicationName = "login-accounting-tiny-pool",
             }.ConnectionString
             : context.Database.GetConnectionString();
         public override async ValueTask DisposeAsync()
