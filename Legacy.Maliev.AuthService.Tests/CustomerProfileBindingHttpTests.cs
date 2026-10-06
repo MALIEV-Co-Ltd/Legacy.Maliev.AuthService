@@ -418,6 +418,7 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
+            builder.UseSetting("CORS:AllowedOrigins:0", "https://localhost");
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["ConnectionStrings:EmployeeIdentity"] = stores.Employees.Database.GetConnectionString(),
@@ -492,14 +493,14 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
-            builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
+            foreach (var setting in new Dictionary<string, string?>
             {
                 ["ConnectionStrings:CustomerDbContext"] = stores.Profiles.Database.GetConnectionString(),
                 ["Cache:RedisEnabled"] = "false", ["CORS:AllowedOrigins:0"] = "https://localhost",
                 ["Jwt:PublicKey"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(publicKey)),
                 ["Jwt:Issuer"] = "https://customer-binding.test", ["Jwt:Audience"] = "customer-binding-test",
                 ["Features:ResourceScopedAuthEnabled"] = "true", ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "",
-            }));
+            }) builder.UseSetting(setting.Key, setting.Value);
         }
     }
 
