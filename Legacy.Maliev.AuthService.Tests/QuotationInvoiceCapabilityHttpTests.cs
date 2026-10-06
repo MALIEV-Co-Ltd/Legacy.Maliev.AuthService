@@ -163,9 +163,15 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         {
             var row = new LegacyIdentityRow
             {
-                Id = "bound-customer", UserName = "customer@capability.test", NormalizedUserName = "CUSTOMER@CAPABILITY.TEST",
-                Email = "customer@capability.test", NormalizedEmail = "CUSTOMER@CAPABILITY.TEST", EmailConfirmed = true,
-                SecurityStamp = "bound-customer-stamp", ConcurrencyStamp = "bound-customer-concurrency", LockoutEnabled = true,
+                Id = "bound-customer",
+                UserName = "customer@capability.test",
+                NormalizedUserName = "CUSTOMER@CAPABILITY.TEST",
+                Email = "customer@capability.test",
+                NormalizedEmail = "CUSTOMER@CAPABILITY.TEST",
+                EmailConfirmed = true,
+                SecurityStamp = "bound-customer-stamp",
+                ConcurrencyStamp = "bound-customer-concurrency",
+                LockoutEnabled = true,
             };
             row.PasswordHash = new Microsoft.AspNetCore.Identity.PasswordHasher<LegacyIdentityRow>().HashPassword(row, "bound-customer-credential");
             stores.Customers.Users.Add(row);
@@ -276,9 +282,14 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     {
         var body = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(new
         {
-            ContractVersion = 1, OperationId = Operation.ToString("D"), QuotationId = 84, InvoiceId = 1234,
-            OriginIssuer = "https://quotation-capability.test", EmployeeSubject = "capability-employee",
-            RequesterSubject = "service:legacy-intranet", OriginalQuotationVersion = "2026-10-06T04:00:00.0000000Z",
+            ContractVersion = 1,
+            OperationId = Operation.ToString("D"),
+            QuotationId = 84,
+            InvoiceId = 1234,
+            OriginIssuer = "https://quotation-capability.test",
+            EmployeeSubject = "capability-employee",
+            RequesterSubject = "service:legacy-intranet",
+            OriginalQuotationVersion = "2026-10-06T04:00:00.0000000Z",
             FinancialBinding = new string('A', 64),
         }))!.AsObject();
         switch (mutation)
