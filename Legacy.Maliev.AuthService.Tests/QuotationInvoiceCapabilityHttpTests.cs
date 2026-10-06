@@ -220,9 +220,9 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         await using var stores = await Stores.CreateAsync(postgres);
         await using var app = new Factory(stores, invoiceBoundary: true, pauseSecondFinancial: true);
         using var client = app.CreateObservedClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
         var employee = await LoginAsync(client);
         var caller = await CallerAsync(client);
-        client.Timeout = TimeSpan.FromSeconds(30);
         using var abort = new CancellationTokenSource();
         var pending = SendAsync(client, caller, employee, cancellationToken: abort.Token, invoiceId: 1234);
         var responseObserved = false;
