@@ -2,21 +2,43 @@ using Legacy.Maliev.AuthService.Application;
 using Legacy.Maliev.AuthService.Infrastructure;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
 [Collection(PostgresCollection.Name)]
-public sealed class CustomerCanonicalWriteTests(PostgresFixture postgres)
+public sealed class CustomerCanonicalWriteTests(PostgresFixture postgres) : IAsyncLifetime
 {
+    // Each test owns unique database pools. Clear only those pools after the
+    // method's await-using contexts and concurrent operations have completed.
+    private readonly List<NpgsqlConnection> ownedPools = [];
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public Task DisposeAsync()
+    {
+        foreach (var connection in ownedPools) NpgsqlConnection.ClearPool(connection);
+        ownedPools.Clear();
+        return Task.CompletedTask;
+    }
+
+    private void RegisterPool(NpgsqlConnection connection) => ownedPools.Add(connection);
+
+    private T TrackPool<T>(T context) where T : DbContext
+    {
+        ownedPools.Add((NpgsqlConnection)context.Database.GetDbConnection());
+        return context;
+    }
+
     [Fact]
     public async Task KeyedCreate_CanonicalKeyNeverChangesRawPayloadReceiptOrReplayOwnership()
     {
-        await using var schema = await postgres.CreateCustomerContextAsync();
+        await using var schema = await postgres.CreateCustomerContextAsync(RegisterPool);
         var connection = new Npgsql.NpgsqlConnectionStringBuilder(schema.Database.GetConnectionString()) { MaxPoolSize = 1 };
-        await using var context = new CustomerIdentityDbContext(new DbContextOptionsBuilder<CustomerIdentityDbContext>()
-            .UseNpgsql(connection.ConnectionString).Options);
+        await using var context = TrackPool(new CustomerIdentityDbContext(new DbContextOptionsBuilder<CustomerIdentityDbContext>()
+            .UseNpgsql(connection.ConnectionString).Options));
         var service = NewService(context);
         var request = new CreateCustomerIdentityRequest("customer-user", "cafe\u0301@identity.test", "abcdef", false, null, null, null);
         var key = Guid.NewGuid();
@@ -48,7 +70,7 @@ public sealed class CustomerCanonicalWriteTests(PostgresFixture postgres)
     [InlineData(true)]
     public async Task ConcurrentCanonicalAliases_CommitOneIdentityAndOnlyItsReceipt(bool keyed)
     {
-        await using var first = await postgres.CreateCustomerContextAsync();
+        await using var first = await postgres.CreateCustomerContextAsync(RegisterPool);
         await using var second = new CustomerIdentityDbContext(new DbContextOptionsBuilder<CustomerIdentityDbContext>()
             .UseNpgsql(first.Database.GetConnectionString()).Options);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -82,10 +104,10 @@ public sealed class CustomerCanonicalWriteTests(PostgresFixture postgres)
     [InlineData(true)]
     public async Task ConcurrentAdministrativeAndWebCreation_ShareEmailAndProfileOwnership(bool sameProfile)
     {
-        await using var first = await postgres.CreateCustomerContextAsync();
+        await using var first = await postgres.CreateCustomerContextAsync(RegisterPool);
         await using var second = new CustomerIdentityDbContext(new DbContextOptionsBuilder<CustomerIdentityDbContext>()
             .UseNpgsql(first.Database.GetConnectionString()).Options);
-        await using var state = await postgres.CreateStateContextAsync();
+        await using var state = await postgres.CreateStateContextAsync(RegisterPool);
         var self = new CustomerSelfService(second, state, new PasswordHasher<LegacyIdentityRow>(), TimeProvider.System);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         var admin = NewService(first).CreateAsync(42,

@@ -2,18 +2,34 @@ using Legacy.Maliev.AuthService.Application;
 using Legacy.Maliev.AuthService.Infrastructure;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
 [Collection(PostgresCollection.Name)]
-public sealed class EmployeeCanonicalWriteTests(PostgresFixture postgres)
+public sealed class EmployeeCanonicalWriteTests(PostgresFixture postgres) : IAsyncLifetime
 {
+    // Each test owns unique database pools. Clear only those pools after the
+    // method's await-using contexts and concurrent operations have completed.
+    private readonly List<NpgsqlConnection> ownedPools = [];
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public Task DisposeAsync()
+    {
+        foreach (var connection in ownedPools) NpgsqlConnection.ClearPool(connection);
+        ownedPools.Clear();
+        return Task.CompletedTask;
+    }
+
+    private void RegisterPool(NpgsqlConnection connection) => ownedPools.Add(connection);
+
     [Theory]
     [InlineData("cafe\u0301@identity.test", "CAF\u00c9@IDENTITY.TEST")]
     [InlineData("\u00c5\u0301@identity.test", "\u01fa@IDENTITY.TEST")]
     public async Task Creation_CanonicalizesOnlyNewKeyAndPreservesRawEmail(string email, string canonical)
     {
-        await using var context = await postgres.CreateEmployeeContextAsync();
+        await using var context = await postgres.CreateEmployeeContextAsync(RegisterPool);
         var service = NewService(context);
         Assert.NotNull(await service.CreateAsync(42, new("new-user", email, "abcdef", false, null), default));
         var stored = Assert.Single(await context.Users.AsNoTracking().ToListAsync());
@@ -27,7 +43,7 @@ public sealed class EmployeeCanonicalWriteTests(PostgresFixture postgres)
     [InlineData("\u00c5\u0301@identity.test", "\u01fa@identity.test")]
     public async Task HistoricalOtherOwner_DeniesCreateWithoutRewritingRetainedKey(string historicalEmail, string email)
     {
-        await using var context = await postgres.CreateEmployeeContextAsync();
+        await using var context = await postgres.CreateEmployeeContextAsync(RegisterPool);
         var historical = new LegacyIdentityRow
         {
             Id = "historical", DatabaseID = 7, UserName = "historical-user",
@@ -48,7 +64,7 @@ public sealed class EmployeeCanonicalWriteTests(PostgresFixture postgres)
     [Fact]
     public async Task ConcurrentCanonicalAliases_CreateOneOwnerAcrossDistinctUserNames()
     {
-        await using var first = await postgres.CreateEmployeeContextAsync();
+        await using var first = await postgres.CreateEmployeeContextAsync(RegisterPool);
         await using var second = new EmployeeIdentityDbContext(new DbContextOptionsBuilder<EmployeeIdentityDbContext>()
             .UseNpgsql(first.Database.GetConnectionString()).Options);
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));

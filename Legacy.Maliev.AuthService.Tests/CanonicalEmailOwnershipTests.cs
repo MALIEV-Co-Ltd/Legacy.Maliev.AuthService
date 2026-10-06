@@ -1,11 +1,27 @@
 using Legacy.Maliev.AuthService.Infrastructure;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
 [Collection(PostgresCollection.Name)]
-public sealed class CanonicalEmailOwnershipTests(PostgresFixture postgres)
+public sealed class CanonicalEmailOwnershipTests(PostgresFixture postgres) : IAsyncLifetime
 {
+    // Each test owns unique database pools. Clear only those pools after the
+    // method's await-using contexts and concurrent operations have completed.
+    private readonly List<NpgsqlConnection> ownedPools = [];
+
+    public Task InitializeAsync() => Task.CompletedTask;
+
+    public Task DisposeAsync()
+    {
+        foreach (var connection in ownedPools) NpgsqlConnection.ClearPool(connection);
+        ownedPools.Clear();
+        return Task.CompletedTask;
+    }
+
+    private void RegisterPool(NpgsqlConnection connection) => ownedPools.Add(connection);
+
     [Theory]
     [InlineData(false, "caf\u00e9@identity.test", "cafe\u0301@identity.test")]
     [InlineData(true, "caf\u00e9@identity.test", "cafe\u0301@identity.test")]
@@ -17,8 +33,8 @@ public sealed class CanonicalEmailOwnershipTests(PostgresFixture postgres)
         bool employee, string suppliedEmail, string historicalEmail)
     {
         await using LegacyIdentityDbContext context = employee
-            ? await postgres.CreateEmployeeContextAsync()
-            : await postgres.CreateCustomerContextAsync();
+            ? await postgres.CreateEmployeeContextAsync(RegisterPool)
+            : await postgres.CreateCustomerContextAsync(RegisterPool);
         Assert.Equal("UTF8", await context.Database.SqlQuery<string>(
             $"SELECT current_setting('server_encoding') AS \"Value\"").SingleAsync());
         var retainedKey = historicalEmail.Trim().ToUpperInvariant();
@@ -66,8 +82,8 @@ public sealed class CanonicalEmailOwnershipTests(PostgresFixture postgres)
     public async Task HistoricalUserName_DeniesCanonicalOtherOwnerWithoutCompatibilityFolding(bool employee)
     {
         await using LegacyIdentityDbContext context = employee
-            ? await postgres.CreateEmployeeContextAsync()
-            : await postgres.CreateCustomerContextAsync();
+            ? await postgres.CreateEmployeeContextAsync(RegisterPool)
+            : await postgres.CreateCustomerContextAsync(RegisterPool);
         context.Users.Add(new()
         {
             Id = "historical-username", UserName = "\u212a-user", NormalizedUserName = "\u212a-USER",
@@ -88,7 +104,7 @@ public sealed class CanonicalEmailOwnershipTests(PostgresFixture postgres)
     [Fact]
     public async Task CanonicalAliases_ContendOnOneTransactionLockAndReleaseAfterRollback()
     {
-        await using var first = await postgres.CreateCustomerContextAsync();
+        await using var first = await postgres.CreateCustomerContextAsync(RegisterPool);
         await using var second = new CustomerIdentityDbContext(
             new DbContextOptionsBuilder<CustomerIdentityDbContext>()
                 .UseNpgsql(first.Database.GetConnectionString()).Options);

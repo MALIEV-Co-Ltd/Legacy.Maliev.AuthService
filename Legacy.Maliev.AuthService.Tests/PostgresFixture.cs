@@ -30,34 +30,61 @@ public sealed class PostgresFixture : IAsyncLifetime
         }
     }
 
-    public async Task<CustomerIdentityDbContext> CreateCustomerContextAsync()
+    public async Task<CustomerIdentityDbContext> CreateCustomerContextAsync(Action<NpgsqlConnection>? registerPool = null)
     {
         var context = new CustomerIdentityDbContext(
             new DbContextOptionsBuilder<CustomerIdentityDbContext>()
                 .UseNpgsql(await CreateDatabaseAsync())
                 .Options);
-        await context.Database.MigrateAsync();
-        return context;
+        registerPool?.Invoke((NpgsqlConnection)context.Database.GetDbConnection());
+        try
+        {
+            await context.Database.MigrateAsync();
+            return context;
+        }
+        catch
+        {
+            await context.DisposeAsync();
+            throw;
+        }
     }
 
-    public async Task<EmployeeIdentityDbContext> CreateEmployeeContextAsync()
+    public async Task<EmployeeIdentityDbContext> CreateEmployeeContextAsync(Action<NpgsqlConnection>? registerPool = null)
     {
         var context = new EmployeeIdentityDbContext(
             new DbContextOptionsBuilder<EmployeeIdentityDbContext>()
                 .UseNpgsql(await CreateDatabaseAsync())
                 .Options);
-        await context.Database.MigrateAsync();
-        return context;
+        registerPool?.Invoke((NpgsqlConnection)context.Database.GetDbConnection());
+        try
+        {
+            await context.Database.MigrateAsync();
+            return context;
+        }
+        catch
+        {
+            await context.DisposeAsync();
+            throw;
+        }
     }
 
-    public async Task<RefreshSessionDbContext> CreateStateContextAsync()
+    public async Task<RefreshSessionDbContext> CreateStateContextAsync(Action<NpgsqlConnection>? registerPool = null)
     {
         var context = new RefreshSessionDbContext(
             new DbContextOptionsBuilder<RefreshSessionDbContext>()
                 .UseNpgsql(await CreateDatabaseAsync())
                 .Options);
-        await context.Database.MigrateAsync();
-        return context;
+        registerPool?.Invoke((NpgsqlConnection)context.Database.GetDbConnection());
+        try
+        {
+            await context.Database.MigrateAsync();
+            return context;
+        }
+        catch
+        {
+            await context.DisposeAsync();
+            throw;
+        }
     }
 
     private async Task<string> CreateDatabaseAsync()
