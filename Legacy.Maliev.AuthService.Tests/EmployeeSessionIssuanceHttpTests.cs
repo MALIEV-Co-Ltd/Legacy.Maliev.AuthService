@@ -230,6 +230,8 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
             var waiting = 0;
             for (int attempt = 0; attempt < 100 && waiting == 0; attempt++)
             {
+                // The row-fence transaction otherwise retains its first activity snapshot.
+                await context.Database.ExecuteSqlRawAsync("SELECT pg_stat_clear_snapshot()");
                 waiting = await context.Database.SqlQueryRaw<int>("""
                     SELECT count(*)::integer AS "Value" FROM pg_stat_activity
                     WHERE datname = current_database() AND wait_event_type = 'Lock'
@@ -299,6 +301,8 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
             var waiting = 0;
             for (int attempt = 0; attempt < 100 && waiting < 2; attempt++)
             {
+                // The row-fence transaction otherwise retains its first activity snapshot.
+                await context.Database.ExecuteSqlRawAsync("SELECT pg_stat_clear_snapshot()");
                 waiting = await context.Database.SqlQueryRaw<int>("""
                     SELECT count(*)::integer AS "Value" FROM pg_stat_activity WHERE datname = current_database()
                     AND application_name = 'login-accounting-tiny-pool' AND wait_event_type = 'Lock'
