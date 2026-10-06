@@ -19,7 +19,7 @@ public sealed class LegacyIdentityReader(
         IdentityKind kind,
         CancellationToken cancellationToken)
     {
-        var normalized = userName.ToUpperInvariant();
+        var normalized = userName.Normalize().ToUpperInvariant();
         var user = await Users(kind)
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.NormalizedUserName == normalized, cancellationToken);
@@ -59,7 +59,9 @@ public sealed class LegacyIdentityReader(
         string email,
         CancellationToken cancellationToken)
     {
-        var normalized = email.Trim().ToUpperInvariant();
+        var normalized = email.Trim().Normalize().ToUpperInvariant();
+        // Preserve the exact key previously emitted by Auth's administrative email writers.
+        var legacyNormalized = email.Trim().ToUpperInvariant();
         if (normalized.Length == 0)
         {
             return null;
@@ -67,7 +69,7 @@ public sealed class LegacyIdentityReader(
 
         var user = await employeeContext.Users
             .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.NormalizedEmail == normalized, cancellationToken);
+            .SingleOrDefaultAsync(x => x.NormalizedEmail == normalized || x.NormalizedEmail == legacyNormalized, cancellationToken);
         return IsActive(user) ? Project(user!, IdentityKind.Employee) : null;
     }
 

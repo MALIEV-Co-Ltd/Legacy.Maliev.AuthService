@@ -27,6 +27,34 @@ namespace Legacy.Maliev.AuthService.Tests;
 public sealed class LoginRateLimitContractTests
 {
     [Fact]
+    public async Task NormalHistoricalIdentityNormalization_CanonicalAliasesShareOnePrivateRateLimitPartition()
+    {
+        using var limiter = new LoginAttemptRateLimiter(TimeProvider.System);
+        var filter = new LoginRateLimitFilter(limiter);
+        var executed = 0;
+        for (var attempt = 0; attempt < LoginAttemptRateLimiter.PermitLimit; attempt++)
+        {
+            var alias = attempt % 2 == 0 ? "caf\u00e9@identity.test" : "cafe\u0301@identity.test";
+            var context = CreateContext(new LoginRequest(alias, "invalid", IdentityKind.Employee));
+            await filter.OnActionExecutionAsync(context, Next(context, () => executed++));
+            Assert.Null(context.Result);
+        }
+        Assert.Equal(1, limiter.TrackedPartitionCount);
+        var rejected = CreateContext(new LoginRequest("  CAFE\u0301@IDENTITY.TEST  ", "invalid", IdentityKind.Employee));
+        await filter.OnActionExecutionAsync(rejected, Next(rejected, () => executed++));
+        Assert.Equal(StatusCodes.Status429TooManyRequests, Assert.IsType<StatusCodeResult>(rejected.Result).StatusCode);
+        Assert.Equal(LoginAttemptRateLimiter.PermitLimit, executed);
+        var customer = CreateContext(new LoginRequest("cafe\u0301@identity.test", "invalid", IdentityKind.Customer));
+        await filter.OnActionExecutionAsync(customer, Next(customer, () => executed++));
+        Assert.Null(customer.Result);
+        var compatibility = CreateContext(new LoginRequest("\uff43afe\u0301@identity.test", "invalid", IdentityKind.Employee));
+        await filter.OnActionExecutionAsync(compatibility, Next(compatibility, () => executed++));
+        Assert.Null(compatibility.Result);
+        Assert.Equal(3, limiter.TrackedPartitionCount);
+        Assert.Equal(LoginAttemptRateLimiter.PermitLimit + 2, executed);
+    }
+
+    [Fact]
     public async Task UndefinedNumericIdentityKind_IsRejectedByHttpPipelineBeforeCredentialVerification()
     {
         var validator = new RecordingCredentialValidator();
