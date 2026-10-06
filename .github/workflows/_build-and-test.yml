@@ -68,6 +68,13 @@ jobs:
             -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~NormalHistoricalSecurity_" \
             --logger "trx;LogFileName=historical-security.trx" --results-directory artifacts/historical-security
+      - name: Verify persistent login accounting through normal HTTP
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~NormalLoginAccounting_" \
+            --logger "trx;LogFileName=login-accounting.trx" --results-directory artifacts/login-accounting
       - name: Verify historical Identity password formats through normal HTTP
         shell: bash
         run: |
@@ -119,6 +126,7 @@ jobs:
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/recovery-callback -OutputDirectory artifacts/coverage-evidence/recovery-callback
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-security -OutputDirectory artifacts/coverage-evidence/historical-security
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-password-formats -OutputDirectory artifacts/coverage-evidence/historical-password-formats
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/login-accounting -OutputDirectory artifacts/coverage-evidence/login-accounting
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/registration-links -OutputDirectory artifacts/coverage-evidence/registration-links
       - name: Retain private validation evidence
         if: always()

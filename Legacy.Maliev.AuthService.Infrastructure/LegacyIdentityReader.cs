@@ -24,9 +24,15 @@ public sealed class LegacyIdentityReader(
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.NormalizedUserName == normalized, cancellationToken);
 
-        if (!IsUnlocked(user) || string.IsNullOrEmpty(user!.PasswordHash))
+        return VerifyAndProject(IsUnlocked(user) ? user : null, password, kind, passwordHasher);
+    }
+
+    internal static LegacyIdentity? VerifyAndProject(LegacyIdentityRow? user, string password,
+        IdentityKind kind, IPasswordHasher<LegacyIdentityRow> passwordHasher)
+    {
+        if (user is null || string.IsNullOrEmpty(user.PasswordHash))
         {
-            DummyPasswordVerification(password);
+            DummyPasswordVerification(password, passwordHasher);
             return null;
         }
 
@@ -76,7 +82,7 @@ public sealed class LegacyIdentityReader(
         user is not null
         && (!user.LockoutEnabled || user.LockoutEnd is null || user.LockoutEnd <= timeProvider.GetUtcNow());
 
-    private void DummyPasswordVerification(string password)
+    private static void DummyPasswordVerification(string password, IPasswordHasher<LegacyIdentityRow> passwordHasher)
     {
         var dummy = new LegacyIdentityRow { Id = "dummy" };
         var hash = passwordHasher.HashPassword(dummy, "constant-invalid-password");
