@@ -42,6 +42,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IServiceAccessTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
         services.AddSingleton<IInvoiceDelegationTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
         services.AddSingleton<IQuotationInvoiceCapabilityTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
+        services.AddSingleton<IQuotationInvoiceAttachmentTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<AuthenticationService>();
         services.AddScoped<GoogleAuthenticationService>();

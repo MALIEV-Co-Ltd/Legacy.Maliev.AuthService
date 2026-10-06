@@ -18,7 +18,9 @@ public sealed class QuotationInvoiceCapabilityService(
     TimeProvider clock,
     RefreshSessionDbContext sessions,
     ILegacyIdentityReader identities,
-    IQuotationInvoiceLiveAuthorityClient live)
+    IQuotationInvoiceLiveAuthorityClient live,
+    IInvoiceFinancialOwnershipClient financial,
+    IQuotationInvoiceAttachmentTokenIssuer attachmentIssuer)
 {
     /// <summary>Issues no capability from stale sessions, ambiguous claims or unavailable live authority.</summary>
     public async Task<QuotationInvoiceCapabilityResult> IssueAsync(ClaimsPrincipal caller, string? callerToken,
@@ -26,7 +28,7 @@ public sealed class QuotationInvoiceCapabilityService(
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (request is null || request.EmployeeAccessToken is not { Length: > 0 and <= 16384 }
-            || request.QuotationId <= 0 || !Guid.TryParseExact(request.OperationId, "D", out var operationId)
+            || request.QuotationId <= 0 || request.InvoiceId is <= 0 || !Guid.TryParseExact(request.OperationId, "D", out var operationId)
             || operationId == Guid.Empty || request.OperationId != operationId.ToString("D"))
             return new(QuotationInvoiceCapabilityStatus.InvalidRequest);
         if (!HasUnambiguousPayload(callerToken) || Single(caller, "sub") != QuotationInvoiceCapabilityContract.Requester
@@ -74,11 +76,37 @@ public sealed class QuotationInvoiceCapabilityService(
         if (await CurrentSessionAsync(subject, sessionId, cancellationToken) is null)
             return new(QuotationInvoiceCapabilityStatus.Unauthorized);
 
+        InvoiceFinancialOwnership? ownership = null;
+        if (request.InvoiceId is { } invoiceId)
+        {
+            var readback = await financial.ReadAsync(operationId, cancellationToken);
+            if (readback.Status != InvoiceFinancialOwnershipStatus.Verified)
+                return new(readback.Status == InvoiceFinancialOwnershipStatus.Denied
+                    ? QuotationInvoiceCapabilityStatus.Forbidden : QuotationInvoiceCapabilityStatus.Unavailable);
+            ownership = readback.Ownership;
+            if (ownership is null || !InvoiceFinancialOwnershipContract.IsCanonical(ownership)
+                || ownership.OriginIssuer != options.Value.Issuer || ownership.EmployeeSubject != subject
+                || ownership.RequesterSubject != QuotationInvoiceCapabilityContract.Requester
+                || ownership.QuotationId != request.QuotationId || ownership.InvoiceId != invoiceId
+                || ownership.OperationId != operationId.ToString("D"))
+                return new(QuotationInvoiceCapabilityStatus.Forbidden);
+        }
+
         var decision = await live.CheckAsync(subject, request.QuotationId, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
         if (decision != QuotationInvoiceLiveAuthorityResult.Allowed)
             return new(decision == QuotationInvoiceLiveAuthorityResult.Denied
                 ? QuotationInvoiceCapabilityStatus.Forbidden : QuotationInvoiceCapabilityStatus.Unavailable);
+
+        if (ownership is not null)
+        {
+            var observedAgain = await financial.ReadAsync(operationId, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (observedAgain.Status == InvoiceFinancialOwnershipStatus.Denied)
+                return new(QuotationInvoiceCapabilityStatus.Forbidden);
+            if (observedAgain.Status != InvoiceFinancialOwnershipStatus.Verified || observedAgain.Ownership != ownership)
+                return new(QuotationInvoiceCapabilityStatus.Unavailable);
+        }
 
         // Fresh no-tracking reads after the await, never the pre-check's tracked projection.
         var session = await CurrentSessionAsync(subject, sessionId, cancellationToken);
@@ -90,8 +118,11 @@ public sealed class QuotationInvoiceCapabilityService(
         var lifetime = expires - now.ToUnixTimeSeconds();
         if (lifetime <= 0) return new(QuotationInvoiceCapabilityStatus.Unauthorized);
         cancellationToken.ThrowIfCancellationRequested();
-        var token = issuer.IssueQuotationInvoiceCapability(subject, request.QuotationId,
-            operationId, DateTimeOffset.FromUnixTimeSeconds(now.ToUnixTimeSeconds()), (int)lifetime);
+        var token = ownership is null
+            ? issuer.IssueQuotationInvoiceCapability(subject, request.QuotationId, operationId,
+                DateTimeOffset.FromUnixTimeSeconds(now.ToUnixTimeSeconds()), (int)lifetime)
+            : attachmentIssuer.IssueQuotationInvoiceAttachment(subject, ownership,
+                DateTimeOffset.FromUnixTimeSeconds(now.ToUnixTimeSeconds()), (int)lifetime);
         return new(QuotationInvoiceCapabilityStatus.Issued, new(token.Value, "Bearer", token.ExpiresInSeconds));
     }
 

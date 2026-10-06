@@ -33,6 +33,305 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public async Task NormalInvoiceBoundCapability_ActualIssuerBindsFinancialProofAndPreservesUnboundContract(bool bound)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var app = new Factory(stores, invoiceBoundary: bound);
+        using var client = app.CreateObservedClient();
+        var employee = await LoginAsync(client);
+        var caller = await CallerAsync(client);
+        var before = await SnapshotCapabilityStateAsync(stores);
+        using var response = await SendAsync(client, caller, employee, invoiceId: bound ? 1234 : null);
+        var issued = await AssertCapabilityAsync(response, app, 120);
+        var jwt = app.ValidateCapability(issued.AccessToken);
+        Assert.Equal(bound ? 2 : 0, app.FinancialRequests);
+        Assert.Equal(1, app.IamRequests);
+        if (bound)
+        {
+            Assert.Equal("1234", Assert.Single(jwt.Claims, value => value.Type == "invoice_id").Value);
+            Assert.Equal("2026-10-06T04:00:00.0000000Z", Assert.Single(jwt.Claims, value => value.Type == "quotation_version").Value);
+            Assert.Equal(new string('A', 64), Assert.Single(jwt.Claims, value => value.Type == "financial_binding").Value);
+            Assert.Equal("invoice-creation-financial-v1", Assert.Single(jwt.Claims, value => value.Type == "financial_binding_version").Value);
+        }
+        else Assert.DoesNotContain(jwt.Claims, value => value.Type is "invoice_id" or "quotation_version" or "financial_binding" or "financial_binding_version");
+        Assert.Equal(before, await SnapshotCapabilityStateAsync(stores));
+    }
+
+    [Theory]
+    [InlineData("invoice", 403)]
+    [InlineData("quotation", 403)]
+    [InlineData("employee", 403)]
+    [InlineData("issuer", 403)]
+    [InlineData("operation", 503)]
+    [InlineData("requester", 503)]
+    public async Task NormalInvoiceBoundCapability_ForeignFinancialOwnershipNeverMints(string mutation, int expectedStatus)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var app = new Factory(stores, invoiceBoundary: true, financialBody: FinancialProof(mutation));
+        using var client = app.CreateObservedClient();
+        var employee = await LoginAsync(client);
+        var caller = await CallerAsync(client);
+        var before = await SnapshotCapabilityStateAsync(stores);
+        using var response = await SendAsync(client, caller, employee, invoiceId: 1234);
+        await AssertOpaqueAsync(response, (HttpStatusCode)expectedStatus, employee);
+        Assert.Equal(1, app.FinancialRequests);
+        Assert.Equal(0, app.IamRequests);
+        Assert.Equal(before, await SnapshotCapabilityStateAsync(stores));
+    }
+
+    [Theory]
+    [InlineData("version")]
+    [InlineData("duplicate")]
+    [InlineData("extra")]
+    [InlineData("string-id")]
+    [InlineData("binding")]
+    [InlineData("non-utc")]
+    [InlineData("malformed")]
+    [InlineData("oversize")]
+    public async Task NormalInvoiceBoundCapability_AmbiguousOrMalformedReadbackIsUnavailable(string mutation)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var app = new Factory(stores, invoiceBoundary: true, financialBody: FinancialProof(mutation));
+        using var client = app.CreateObservedClient();
+        var employee = await LoginAsync(client);
+        var caller = await CallerAsync(client);
+        var before = await SnapshotCapabilityStateAsync(stores);
+        using var response = await SendAsync(client, caller, employee, invoiceId: 1234);
+        await AssertOpaqueAsync(response, HttpStatusCode.ServiceUnavailable, employee);
+        Assert.Equal(1, app.FinancialRequests);
+        Assert.Equal(0, app.IamRequests);
+        Assert.Equal(before, await SnapshotCapabilityStateAsync(stores));
+    }
+
+    [Fact]
+    public async Task NormalInvoiceBoundCapability_MissingOwnWorkloadReadGrantNeverSendsFinancialRequest()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var app = new Factory(stores, invoiceBoundary: true, missingFinancialGrant: true);
+        using var client = app.CreateObservedClient();
+        var employee = await LoginAsync(client);
+        var caller = await CallerAsync(client);
+        var before = await SnapshotCapabilityStateAsync(stores);
+        using var response = await SendAsync(client, caller, employee, invoiceId: 1234);
+        await AssertOpaqueAsync(response, HttpStatusCode.ServiceUnavailable, employee);
+        Assert.Equal(0, app.FinancialRequests);
+        Assert.Equal(0, app.IamRequests);
+        Assert.Equal(before, await SnapshotCapabilityStateAsync(stores));
+    }
+
+    [Theory]
+    [InlineData(404, 403)]
+    [InlineData(409, 403)]
+    [InlineData(401, 503)]
+    [InlineData(403, 503)]
+    [InlineData(500, 503)]
+    [InlineData(302, 503)]
+    public async Task NormalInvoiceBoundCapability_ReadbackAbsenceAndTransportFailureRemainDistinct(int upstreamStatus, int expectedStatus)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var app = new Factory(stores, invoiceBoundary: true, financialStatus: (HttpStatusCode)upstreamStatus);
+        using var client = app.CreateObservedClient();
+        var employee = await LoginAsync(client);
+        var caller = await CallerAsync(client);
+        var before = await SnapshotCapabilityStateAsync(stores);
+        using var response = await SendAsync(client, caller, employee, invoiceId: 1234);
+        await AssertOpaqueAsync(response, (HttpStatusCode)expectedStatus, employee);
+        Assert.Equal(1, app.FinancialRequests);
+        Assert.Equal(0, app.IamRequests);
+        Assert.Equal(before, await SnapshotCapabilityStateAsync(stores));
+    }
+
+    [Theory]
+    [InlineData("customer")]
+    [InlineData("service")]
+    [InlineData("scoped")]
+    public async Task NormalInvoiceBoundCapability_GenuineNonemployeeCredentialsNeverReachFinancialAuthority(string kind)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var app = new Factory(stores, invoiceBoundary: true);
+        using var client = app.CreateObservedClient();
+        var caller = await CallerAsync(client);
+        string credential;
+        if (kind == "service") credential = await CallerAsync(client, "legacy-auth");
+        else if (kind == "scoped")
+        {
+            var employee = await LoginAsync(client);
+            using var unbound = await SendAsync(client, caller, employee);
+            credential = (await AssertCapabilityAsync(unbound, app, 120)).AccessToken;
+        }
+        else
+        {
+            var row = new LegacyIdentityRow
+            {
+                Id = "bound-customer",
+                UserName = "customer@capability.test",
+                NormalizedUserName = "CUSTOMER@CAPABILITY.TEST",
+                Email = "customer@capability.test",
+                NormalizedEmail = "CUSTOMER@CAPABILITY.TEST",
+                EmailConfirmed = true,
+                SecurityStamp = "bound-customer-stamp",
+                ConcurrencyStamp = "bound-customer-concurrency",
+                LockoutEnabled = true,
+            };
+            row.PasswordHash = new Microsoft.AspNetCore.Identity.PasswordHasher<LegacyIdentityRow>().HashPassword(row, "bound-customer-credential");
+            stores.Customers.Users.Add(row);
+            await stores.Customers.SaveChangesAsync();
+            using var login = await client.PostAsJsonAsync("/auth/v1/login", new LoginRequest(row.UserName!, "bound-customer-credential", IdentityKind.Customer));
+            Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+            credential = (await login.Content.ReadFromJsonAsync<TokenResponse>())!.AccessToken;
+        }
+        var iamBefore = app.IamRequests;
+        var before = await SnapshotCapabilityStateAsync(stores);
+        using var response = await SendAsync(client, caller, credential, invoiceId: 1234);
+        await AssertOpaqueAsync(response, HttpStatusCode.Unauthorized, credential);
+        Assert.Equal(0, app.FinancialRequests);
+        Assert.Equal(iamBefore, app.IamRequests);
+        Assert.Equal(before, await SnapshotCapabilityStateAsync(stores));
+    }
+
+    [Theory]
+    [InlineData("invoice")]
+    [InlineData("binding")]
+    [InlineData("version")]
+    [InlineData("issuer")]
+    [InlineData("employee")]
+    public async Task NormalInvoiceBoundCapability_DirectSignerRejectsInvalidFinancialBinding(string mutation)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var app = new Factory(stores);
+        var proof = new InvoiceFinancialOwnership(1, Operation.ToString("D"), 84, 1234,
+            "https://quotation-capability.test", "capability-employee", "service:legacy-intranet",
+            "2026-10-06T04:00:00.0000000Z", new string('A', 64));
+        proof = mutation switch
+        {
+            "invoice" => proof with { InvoiceId = 0 },
+            "binding" => proof with { FinancialBinding = new string('a', 64) },
+            "version" => proof with { OriginalQuotationVersion = "2026-10-06T04:00:00.0000000+00:00" },
+            "issuer" => proof with { OriginIssuer = "https://foreign-issuer.test" },
+            _ => proof with { EmployeeSubject = "another-employee" },
+        };
+        var signer = app.Services.GetRequiredService<IQuotationInvoiceAttachmentTokenIssuer>();
+        Assert.ThrowsAny<ArgumentException>(() => signer.IssueQuotationInvoiceAttachment("capability-employee", proof, app.Clock.GetUtcNow(), 120));
+        Assert.Equal(0, app.FinancialRequests);
+        Assert.Equal(0, app.IamRequests);
+        Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
+    }
+
+    [Theory]
+    [InlineData("stamp", 401)]
+    [InlineData("revoke", 401)]
+    [InlineData("financial-drift", 503)]
+    public async Task NormalInvoiceBoundCapability_ChangesDuringSecondFinancialReadNeverMint(string mutation, int expectedStatus)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var app = new Factory(stores, invoiceBoundary: true, pauseSecondFinancial: true);
+        using var client = app.CreateObservedClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
+        var employee = await LoginAsync(client);
+        var caller = await CallerAsync(client);
+        using var abort = new CancellationTokenSource();
+        var pending = SendAsync(client, caller, employee, cancellationToken: abort.Token, invoiceId: 1234);
+        var responseObserved = false;
+        try
+        {
+            var checkpoint = await Task.WhenAny(app.FinancialReached.Task, pending).WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Same(app.FinancialReached.Task, checkpoint);
+            Assert.False(pending.IsCompleted);
+            if (mutation == "stamp")
+            {
+                (await stores.Employees.Users.SingleAsync()).SecurityStamp = "independently-changed-stamp";
+                await stores.Employees.SaveChangesAsync();
+            }
+            else if (mutation == "revoke")
+            {
+                (await stores.State.RefreshSessions.SingleAsync()).RevokedAt = app.Clock.GetUtcNow();
+                await stores.State.SaveChangesAsync();
+            }
+            else app.SecondFinancialBody = FinancialProof().Replace(new string('A', 64), new string('B', 64), StringComparison.Ordinal);
+            var before = await SnapshotCapabilityStateAsync(stores);
+            app.FinancialRelease.TrySetResult();
+            using var response = await pending;
+            responseObserved = true;
+            await AssertOpaqueAsync(response, (HttpStatusCode)expectedStatus, employee);
+            Assert.Equal(2, app.FinancialRequests);
+            Assert.Equal(1, app.IamRequests);
+            Assert.Equal(before, await SnapshotCapabilityStateAsync(stores));
+        }
+        finally
+        {
+            app.FinancialRelease.TrySetResult();
+            if (!responseObserved)
+            {
+                abort.Cancel();
+                try { using var abandoned = await pending.WaitAsync(TimeSpan.FromSeconds(5)); }
+                catch (TimeoutException)
+                {
+                    // Keep observation/disposal attached to the finite HTTP request if cancellation is delayed.
+                    _ = pending.ContinueWith(completed =>
+                    {
+                        if (completed.IsCompletedSuccessfully) completed.Result.Dispose();
+                        else _ = completed.Exception;
+                    }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                }
+                catch (Exception) { _ = pending.Exception; } // Preserve the original checkpoint/mutation failure.
+            }
+        }
+    }
+
+    private static string FinancialProof(string? mutation = null)
+    {
+        var body = System.Text.Json.Nodes.JsonNode.Parse(System.Text.Json.JsonSerializer.Serialize(new
+        {
+            ContractVersion = 1,
+            OperationId = Operation.ToString("D"),
+            QuotationId = 84,
+            InvoiceId = 1234,
+            OriginIssuer = "https://quotation-capability.test",
+            EmployeeSubject = "capability-employee",
+            RequesterSubject = "service:legacy-intranet",
+            OriginalQuotationVersion = "2026-10-06T04:00:00.0000000Z",
+            FinancialBinding = new string('A', 64),
+        }))!.AsObject();
+        switch (mutation)
+        {
+            case "invoice": body["InvoiceId"] = 1235; break;
+            case "quotation": body["QuotationId"] = 85; break;
+            case "employee": body["EmployeeSubject"] = "other-employee"; break;
+            case "issuer": body["OriginIssuer"] = "https://other-issuer.test"; break;
+            case "operation": body["OperationId"] = Guid.NewGuid().ToString("D"); break;
+            case "requester": body["RequesterSubject"] = "service:legacy-accounting"; break;
+            case "version": body["ContractVersion"] = 2; break;
+            case "extra": body["CallerSuppliedAuthority"] = true; break;
+            case "string-id": body["InvoiceId"] = "1234"; break;
+            case "binding": body["FinancialBinding"] = new string('a', 64); break;
+            case "non-utc": body["OriginalQuotationVersion"] = "2026-10-06T04:00:00.0000000+00:00"; break;
+            case "malformed": return "{";
+            case "oversize": return new string('x', 32769);
+        }
+        var json = body.ToJsonString();
+        return mutation == "duplicate" ? json.Replace("\"InvoiceId\":1234", "\"InvoiceId\":1234,\"InvoiceId\":1234", StringComparison.Ordinal) : json;
+    }
+
+    private static async Task<string> SnapshotCapabilityStateAsync(Stores stores)
+    {
+        var identities = new List<Dictionary<string, object?>>();
+        foreach (var context in new LegacyIdentityDbContext[] { stores.Employees, stores.Customers })
+        {
+            var properties = context.Model.FindEntityType(typeof(LegacyIdentityRow))!.GetProperties().OrderBy(value => value.Name).ToArray();
+            foreach (var row in await context.Users.AsNoTracking().OrderBy(value => value.Id).ToListAsync())
+                identities.Add(properties.ToDictionary(value => value.Name, value => value.PropertyInfo!.GetValue(row)));
+        }
+        return System.Text.Json.JsonSerializer.Serialize(new
+        {
+            Identities = identities,
+            Sessions = await stores.State.RefreshSessions.AsNoTracking().OrderBy(value => value.Id).ToListAsync(),
+            Actions = await stores.State.IdentityActionTokens.AsNoTracking().OrderBy(value => value.Id).ToListAsync(),
+        });
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public async Task PersistedWrongOwnerOrCustomerSession_IsRejectedByExactSid(bool customerKind)
     {
         await using var stores = await Stores.CreateAsync(postgres);
@@ -570,11 +869,13 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
     }
 
     private static async Task<HttpResponseMessage> SendAsync(HttpClient client, string? caller, string employee,
-        string path = Endpoint, int quote = 84, string? operation = null, CancellationToken cancellationToken = default)
+        string path = Endpoint, int quote = 84, string? operation = null, CancellationToken cancellationToken = default, int? invoiceId = null)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, path)
         {
-            Content = JsonContent.Create(new { EmployeeAccessToken = employee, QuotationId = quote, OperationId = operation ?? Operation.ToString("D") }),
+            Content = invoiceId is null
+                ? JsonContent.Create(new { EmployeeAccessToken = employee, QuotationId = quote, OperationId = operation ?? Operation.ToString("D") })
+                : JsonContent.Create(new { EmployeeAccessToken = employee, QuotationId = quote, OperationId = operation ?? Operation.ToString("D"), InvoiceId = invoiceId }),
         };
         if (caller is not null) request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", caller);
         return await client.SendAsync(request, cancellationToken);
@@ -614,7 +915,9 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
 
     private sealed class Factory(Stores stores, string iamBody = "{\"allowed\":true}", bool missingLive = false,
         bool pauseIam = false, HttpStatusCode iamStatus = HttpStatusCode.OK, TimeProvider? clockOverride = null,
-        HttpStatusCode standardAdmissionStatus = HttpStatusCode.NotFound) : WebApplicationFactory<Program>
+        HttpStatusCode standardAdmissionStatus = HttpStatusCode.NotFound, bool invoiceBoundary = false,
+        string? financialBody = null, HttpStatusCode financialStatus = HttpStatusCode.OK,
+        bool missingFinancialGrant = false, bool pauseSecondFinancial = false) : WebApplicationFactory<Program>
     {
         public const string Secret = "capability-disposable-service-credential";
         private readonly RSA key = RSA.Create(2048);
@@ -623,6 +926,10 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         public int ExchangeRequests { get; private set; }
         // Scoped employee live authority is counted separately from standard route admission.
         public int IamRequests { get; private set; }
+        public int FinancialRequests { get; private set; }
+        public string? SecondFinancialBody { get; set; }
+        public TaskCompletionSource FinancialReached { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource FinancialRelease { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int StandardAdmissionRequests { get; private set; }
         private int standardAdmissionFailures;
         private readonly ConcurrentQueue<string> boundaryOrder = new();
@@ -679,6 +986,12 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
                     ["Services:IAMService:BaseUrl"] = missingLive ? null : "https://capability-iam.test",
                     ["IAM:LivePermissionChecks:Credential"] = missingLive ? null : "synthetic-capability-live-key",
                 };
+                if (invoiceBoundary)
+                {
+                    values["Services:AccountingService:BaseUrl"] = "https://capability-accounting.test";
+                    if (!missingFinancialGrant)
+                        values["ServiceClients:Clients:legacy-auth:Permissions:1"] = "legacy.accounting.invoice-financial-ownership.read";
+                }
                 foreach (var service in new[] { "legacy-intranet", "legacy-accounting" })
                 {
                     values[$"ServiceClients:Clients:{service}:SecretSha256"] = ServiceClientCredential.HashSecret(Secret);
@@ -800,7 +1113,9 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
             Assert.Equal(["quotation-capability-access"], Assert.IsType<JwtSecurityToken>(verified).Audiences);
             Assert.Equal("service:legacy-auth", Assert.Single(principal.Claims, x => x.Type == "sub").Value);
             Assert.Equal("service", Assert.Single(principal.Claims, x => x.Type == "identity_kind").Value);
-            Assert.Equal("legacy.iam.permissions.check", Assert.Single(principal.Claims, x => x.Type == "permissions").Value);
+            Assert.Equal(invoiceBoundary && !missingFinancialGrant
+                ? new[] { "legacy.iam.permissions.check", "legacy.accounting.invoice-financial-ownership.read" }
+                : new[] { "legacy.iam.permissions.check" }, principal.FindAll("permissions").Select(value => value.Value));
             Assert.DoesNotContain(principal.Claims, x => x.Type is "sid" or "executor");
         }
 
@@ -892,6 +1207,31 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
             };
         }
 
+        private async Task<HttpResponseMessage> FinancialAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            FinancialRequests++;
+            Assert.True(invoiceBoundary);
+            Assert.Equal(HttpMethod.Get, request.Method);
+            Assert.Equal("https://capability-accounting.test/internal/invoice-creation/operations/" + Operation.ToString("D")
+                + "/financial-ownership", request.RequestUri!.AbsoluteUri);
+            Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+            ValidateOwnMachine(request.Headers.Authorization.Parameter!);
+            Assert.False(request.Headers.Contains("X-Maliev-IAM-Live-Check-Key"));
+            Assert.True(request.Headers.CacheControl?.NoCache == true);
+            Assert.True(request.Headers.CacheControl?.NoStore == true);
+            Assert.Null(request.Headers.IfModifiedSince);
+            Assert.Empty(request.Headers.IfNoneMatch);
+            if (pauseSecondFinancial && FinancialRequests == 2)
+            {
+                FinancialReached.TrySetResult();
+                await FinancialRelease.Task.WaitAsync(cancellationToken);
+            }
+            return new(financialStatus)
+            {
+                Content = new StringContent((FinancialRequests == 2 ? SecondFinancialBody : null) ?? financialBody ?? FinancialProof(), System.Text.Encoding.UTF8, "application/json"),
+            };
+        }
+
         private sealed class BoundaryFilter(Factory app) : IHttpMessageHandlerBuilderFilter
         {
             public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) => builder =>
@@ -899,6 +1239,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
                 next(builder);
                 if (builder.Name == "LegacyAuthServiceTokenExchange") builder.PrimaryHandler = new BoundaryHandler(app.ExchangeAsync);
                 if (builder.Name == "QuotationInvoiceLiveAuthority") builder.PrimaryHandler = new BoundaryHandler(app.IamAsync);
+                if (builder.Name == "InvoiceFinancialOwnership") builder.PrimaryHandler = new BoundaryHandler(app.FinancialAsync);
                 if (builder.Name == "IAMService") builder.PrimaryHandler = new BoundaryHandler(app.StandardAdmissionAsync);
             };
         }
