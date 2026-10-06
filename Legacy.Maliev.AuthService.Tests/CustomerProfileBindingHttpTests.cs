@@ -80,7 +80,7 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
             Assert.Equal(Rfc2898DeriveBytes.Pbkdf2(JsonSerializer.SerializeToUtf8Bytes(Submitted),
                 receipt.PayloadSalt, 210_000, HashAlgorithmName.SHA256, 32), receipt.PayloadHash);
             Assert.NotEqual(Rfc2898DeriveBytes.Pbkdf2(JsonSerializer.SerializeToUtf8Bytes(Submitted with
-                { Email = user.Email!, PhoneNumber = user.PhoneNumber, FaxNumber = user.FaxNumber, MobileNumber = user.MobileNumber }),
+            { Email = user.Email!, PhoneNumber = user.PhoneNumber, FaxNumber = user.FaxNumber, MobileNumber = user.MobileNumber }),
                 receipt.PayloadSalt, 210_000, HashAlgorithmName.SHA256, 32), receipt.PayloadHash);
         }
         else Assert.Empty(receipts);
@@ -243,9 +243,14 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         await using var stores = await Stores.CreateAsync(postgres);
         stores.Identities.Users.Add(new LegacyIdentityRow
         {
-            Id = "existing-owner", DatabaseID = 71, UserName = "other-user@identity.test",
-            NormalizedUserName = "OTHER-USER@IDENTITY.TEST", Email = "caf\u00e9@profile.test",
-            NormalizedEmail = "CAF\u00c9@PROFILE.TEST", SecurityStamp = "existing-security", ConcurrencyStamp = "existing-concurrency",
+            Id = "existing-owner",
+            DatabaseID = 71,
+            UserName = "other-user@identity.test",
+            NormalizedUserName = "OTHER-USER@IDENTITY.TEST",
+            Email = "caf\u00e9@profile.test",
+            NormalizedEmail = "CAF\u00c9@PROFILE.TEST",
+            SecurityStamp = "existing-security",
+            ConcurrencyStamp = "existing-concurrency",
         });
         await stores.Identities.SaveChangesAsync();
         await using var factory = new AuthFactory(stores);
@@ -430,12 +435,15 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
                 ["ConnectionStrings:CustomerIdentity"] = stores.Identities.Database.GetConnectionString(),
                 ["ConnectionStrings:RefreshSessions"] = stores.State.Database.GetConnectionString(),
                 ["CORS:AllowedOrigins:0"] = "https://localhost",
-                ["Jwt:Issuer"] = "https://customer-binding.test", ["Jwt:Audience"] = "customer-binding-test",
-                ["Jwt:PrivateKeyPem"] = signing.ExportPkcs8PrivateKeyPem(), ["Jwt:KeyId"] = "customer-binding-test",
+                ["Jwt:Issuer"] = "https://customer-binding.test",
+                ["Jwt:Audience"] = "customer-binding-test",
+                ["Jwt:PrivateKeyPem"] = signing.ExportPkcs8PrivateKeyPem(),
+                ["Jwt:KeyId"] = "customer-binding-test",
                 ["Jwt:AccessTokenLifetimeSeconds"] = "900",
                 ["Services:Auth:BaseUrl"] = "https://customer-binding.test",
                 ["Services:CustomerService:BaseUrl"] = "https://customer-producer.test",
-                ["ServiceAuthentication:ClientId"] = "legacy-auth", ["ServiceAuthentication:ClientSecret"] = Secret,
+                ["ServiceAuthentication:ClientId"] = "legacy-auth",
+                ["ServiceAuthentication:ClientSecret"] = Secret,
                 ["ServiceClients:Clients:legacy-auth:SecretSha256"] = ServiceClientCredential.HashSecret(Secret),
                 ["ServiceClients:Clients:legacy-auth:Permissions:0"] = ownReadGrant ? CustomerProfileBindingClient.ReadPermission : "legacy-contact.messages.create",
                 ["ServiceClients:Clients:profile-writer:SecretSha256"] = ServiceClientCredential.HashSecret(Secret),
@@ -518,10 +526,13 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
             foreach (var setting in new Dictionary<string, string?>
             {
                 ["ConnectionStrings:CustomerDbContext"] = stores.Profiles.Database.GetConnectionString(),
-                ["Cache:RedisEnabled"] = "false", ["CORS:AllowedOrigins:0"] = "https://localhost",
+                ["Cache:RedisEnabled"] = "false",
+                ["CORS:AllowedOrigins:0"] = "https://localhost",
                 ["Jwt:PublicKey"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(publicKey)),
-                ["Jwt:Issuer"] = "https://customer-binding.test", ["Jwt:Audience"] = "customer-binding-test",
-                ["Features:ResourceScopedAuthEnabled"] = "true", ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "",
+                ["Jwt:Issuer"] = "https://customer-binding.test",
+                ["Jwt:Audience"] = "customer-binding-test",
+                ["Features:ResourceScopedAuthEnabled"] = "true",
+                ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "",
             }) builder.UseSetting(setting.Key, setting.Value);
             builder.ConfigureTestServices(services => services.AddDbContext<CustomerDbContext>(options => options.AddInterceptors(new OwnedPoolCapture(stores))));
         }
