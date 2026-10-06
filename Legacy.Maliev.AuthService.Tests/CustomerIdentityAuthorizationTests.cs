@@ -280,6 +280,8 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
                 services.AddSingleton<ICustomerIdentityAdminService, StubCustomerIdentityAdminService>();
                 services.RemoveAll<IEmployeeIdentityAdminService>();
                 services.AddSingleton<IEmployeeIdentityAdminService, StubEmployeeIdentityAdminService>();
+                services.RemoveAll<IEmployeeProfileBindingClient>();
+                services.AddSingleton<IEmployeeProfileBindingClient, AuthorizationEmployeeProfileStub>();
             });
         }
 

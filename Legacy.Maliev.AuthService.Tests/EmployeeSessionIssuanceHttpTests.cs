@@ -29,12 +29,168 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using Npgsql;
+using Maliev.Aspire.ServiceDefaults.LegacyAuth;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
 [Collection(PostgresCollection.Name)]
 public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
 {
+    [Fact]
+    public async Task NormalEmployeeProfileBinding_SupplementaryUnicodeUsesProducerScalarBoundsAndStoredCopy()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores);
+        var storedEmail = string.Concat(Enumerable.Repeat("\U0001f600", 249)) + "@x.test";
+        var storedPhone = string.Concat(Enumerable.Repeat("\U0001f600", 256));
+        Assert.Equal(256, storedEmail.EnumerateRunes().Count());
+        Assert.True(storedEmail.Length > 320);
+        Assert.True(new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(storedEmail));
+        Assert.Equal(storedEmail, new System.Net.Mail.MailAddress(storedEmail).Address);
+        Assert.Equal(256, storedPhone.EnumerateRunes().Count());
+        Assert.True(storedPhone.Length > 256);
+        factory.Profiles[72] = new(72, storedEmail, storedPhone);
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, false);
+        using var created = await client.PostAsJsonAsync("/auth/v1/employee-identities/72",
+            new CreateEmployeeIdentityRequest("caller-name@profile.test", "untrusted@request.test", "abcdef", true, "+66999999999"));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var identity = await stores.Employees.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        Assert.Equal(storedEmail, identity.Email);
+        Assert.Equal(storedPhone, identity.PhoneNumber);
+        Assert.Equal(1, factory.ProfileReads);
+    }
+
+    [Theory]
+    [InlineData(65)]
+    [InlineData(256)]
+    public async Task NormalEmployeeProfileBinding_PersistedPhonePreservesProducerLengthsBeyondRequestLimit(int length)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores);
+        var storedPhone = new string('1', length);
+        factory.Profiles[72] = new(72, "persisted@profile.test", storedPhone);
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, false);
+        using var created = await client.PostAsJsonAsync("/auth/v1/employee-identities/72",
+            new CreateEmployeeIdentityRequest("caller-name@profile.test", "untrusted@request.test", "abcdef", true, "+66999999999"));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var identity = await stores.Employees.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        Assert.Equal(storedPhone, identity.PhoneNumber);
+        Assert.Equal("persisted@profile.test", identity.Email);
+        Assert.Equal(1, factory.ProfileReads);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task NormalEmployeeProfileBinding_CreateUsesPersistedFieldsWithOwnWorkloadAuthority(bool serviceCaller)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores);
+        factory.Profiles[72] = new(72, "cafe\u0301@profile.test", "+66812345678");
+        using var client = factory.CreateClient();
+        if (serviceCaller)
+        {
+            using var login = await client.PostAsJsonAsync("/auth/v1/service/login", new ServiceLoginRequest("profile-create-test", Factory.ServiceSecret));
+            Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+            client.DefaultRequestHeaders.Authorization = new("Bearer", (await login.Content.ReadFromJsonAsync<ServiceTokenResponse>())!.AccessToken);
+        }
+        else await AuthorizeAdministrationAsync(client, false);
+        var beforeSessions = await stores.State.RefreshSessions.CountAsync();
+        using var response = await client.PostAsJsonAsync("/auth/v1/employee-identities/72",
+            new CreateEmployeeIdentityRequest("caller-name@profile.test", "untrusted@request.test", "abcdef", false, "+66999999999"));
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var identity = await stores.Employees.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72);
+        Assert.Equal("caller-name@profile.test", identity.UserName);
+        Assert.Equal("cafe\u0301@profile.test", identity.Email);
+        Assert.Equal("CAF\u00c9@PROFILE.TEST", identity.NormalizedEmail);
+        Assert.Equal("+66812345678", identity.PhoneNumber);
+        Assert.False(identity.EmailConfirmed);
+        Assert.Equal(beforeSessions, await stores.State.RefreshSessions.CountAsync());
+        Assert.Equal(1, factory.ProfileReads);
+        Assert.Empty(await stores.Customers.CreateOperations.AsNoTracking().ToListAsync());
+        Assert.Empty(await stores.Employees.RecoveryEffects.AsNoTracking().ToListAsync());
+    }
+
+    [Theory]
+    [InlineData("missing", 404)]
+    [InlineData("unavailable", 503)]
+    [InlineData("forbidden", 503)]
+    [InlineData("redirect", 503)]
+    [InlineData("malformed", 503)]
+    [InlineData("wrong-id", 503)]
+    [InlineData("duplicate-id", 503)]
+    [InlineData("wrong-case", 503)]
+    [InlineData("invalid-email", 503)]
+    [InlineData("wrong-phone-type", 503)]
+    [InlineData("beyond-phone-schema", 503)]
+    [InlineData("beyond-email-schema", 503)]
+    [InlineData("oversized", 503)]
+    [InlineData("missing-own-grant", 503)]
+    public async Task NormalEmployeeProfileBinding_FailedAuthorityHasNoIdentityOrSessionEffects(string failure, int expected)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores);
+        factory.Profiles[72] = new(72, "persisted@profile.test", null);
+        factory.ProfileStatus = failure switch
+        {
+            "missing" => HttpStatusCode.NotFound,
+            "unavailable" => HttpStatusCode.ServiceUnavailable,
+            "forbidden" => HttpStatusCode.Forbidden,
+            "redirect" => HttpStatusCode.Redirect,
+            _ => HttpStatusCode.OK,
+        };
+        factory.ProfileReadGrant = failure != "missing-own-grant";
+        factory.ProfileBody = failure switch
+        {
+            "malformed" => "{",
+            "wrong-id" => "{\"Id\":73,\"Email\":\"persisted@profile.test\"}",
+            "duplicate-id" => "{\"Id\":72,\"Id\":72,\"Email\":\"persisted@profile.test\"}",
+            "wrong-case" => "{\"id\":72,\"email\":\"persisted@profile.test\"}",
+            "invalid-email" => "{\"Id\":72,\"Email\":\"invalid\"}",
+            "wrong-phone-type" => "{\"Id\":72,\"Email\":\"persisted@profile.test\",\"PhoneNumber\":42}",
+            "beyond-email-schema" => JsonSerializer.Serialize(new { Id = 72, Email = new string('a', 250) + "@x.test" }),
+            "beyond-phone-schema" => JsonSerializer.Serialize(new { Id = 72, Email = "persisted@profile.test", PhoneNumber = new string('1', 257) }),
+            "oversized" => new string('x', 32769),
+            _ => null,
+        };
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, false);
+        var before = await AdministrativeSnapshotAsync(stores);
+        using var response = await client.PostAsJsonAsync("/auth/v1/employee-identities/72",
+            new CreateEmployeeIdentityRequest("caller-name@profile.test", "untrusted@request.test", "abcdef", true, "+66999999999"));
+        Assert.Equal(expected, (int)response.StatusCode);
+        Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        Assert.Equal(failure == "missing-own-grant" ? 0 : 1, factory.ProfileReads);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("persisted@profile.test", body, StringComparison.Ordinal);
+        Assert.DoesNotContain("untrusted@request.test", body, StringComparison.Ordinal);
+        Assert.Empty(await stores.Employees.RecoveryEffects.AsNoTracking().ToListAsync());
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
+    }
+
+    [Fact]
+    public async Task NormalEmployeeProfileBinding_NullStoredPhoneClearsPostedPhoneAndStoredCollisionDeniesCreate()
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        await using var factory = new Factory(stores);
+        factory.Profiles[72] = new(72, "persisted@profile.test", null);
+        factory.Profiles[73] = new(73, "PERSISTED@PROFILE.TEST", "+66812345678");
+        using var client = factory.CreateClient();
+        await AuthorizeAdministrationAsync(client, false);
+        using var created = await client.PostAsJsonAsync("/auth/v1/employee-identities/72",
+            new CreateEmployeeIdentityRequest("first@profile.test", "untrusted@request.test", "abcdef", true, "+66999999999"));
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        Assert.Null((await stores.Employees.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72)).PhoneNumber);
+        var before = await AdministrativeSnapshotAsync(stores);
+        using var conflict = await client.PostAsJsonAsync("/auth/v1/employee-identities/73",
+            new CreateEmployeeIdentityRequest("second@profile.test", "different@request.test", "abcdef", true, null));
+        Assert.Equal(HttpStatusCode.Conflict, conflict.StatusCode);
+        Assert.Equal(before, await AdministrativeSnapshotAsync(stores));
+        Assert.Equal(2, factory.ProfileReads);
+    }
+
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
@@ -363,6 +519,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var factory = new Factory(stores, identityAdministration: true);
+        factory.Profiles[71] = new(71, "new-admin@example.com", null);
         using var client = factory.CreateClient();
         await AuthorizeAdministrationAsync(client, reconcile);
         var identities = await SnapshotIdentitiesAsync(stores);
@@ -538,6 +695,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         var password = unicode ? "abc\uD83D\uDE00d" : "abcdef" + new string('a', 1018);
         await using var stores = await Stores.CreateAsync(postgres);
         await using var factory = new Factory(stores);
+        factory.Profiles[74] = new(74, "boundary-admin@example.com", null);
         using var client = factory.CreateClient();
         await AuthorizeAdministrationAsync(client, service: false);
         using var created = await client.PostAsJsonAsync("/auth/v1/employee-identities/74",
@@ -561,6 +719,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var factory = new Factory(stores, identityAdministration: true);
+        factory.Profiles[72] = new(72, "new@example.com", null);
         using var client = factory.CreateClient();
         await AuthorizeAdministrationAsync(client, reconcile);
         var before = await AdministrativeSnapshotAsync(stores);
@@ -645,6 +804,8 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var factory = new Factory(stores, identityAdministration: true, identityValidation: true);
+        factory.Profiles[72] = new(72, "target72@example.com", null);
+        factory.Profiles[73] = new(73, "target73@example.com", null);
         using var client = factory.CreateClient();
         await AuthorizeAdministrationAsync(client, false);
         var route = $"/auth/v1/{kind.ToString().ToLowerInvariant()}-identities/";
@@ -690,6 +851,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var factory = new Factory(stores, identityAdministration: true, identityValidation: true);
+        factory.Profiles[72] = new(72, "versioned@example.com", null);
         using var client = factory.CreateClient();
         await AuthorizeAdministrationAsync(client, false);
         var route = $"/auth/v1/{kind.ToString().ToLowerInvariant()}-identities/72";
@@ -833,6 +995,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         var control = new ConditionalAckState(kind);
         await using var factory = new Factory(stores, identityAdministration: true, identityValidation: true,
             conditionalFaults: [new ConditionalCommandAckLoss(control), new ConditionalCommitAckLoss(control)]);
+        factory.Profiles[72] = new(72, "before-ack@example.com", null);
         using var client = factory.CreateClient();
         await AuthorizeAdministrationAsync(client, false);
         var route = $"/auth/v1/{kind.ToString().ToLowerInvariant()}-identities/72";
@@ -892,6 +1055,9 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
     {
         await using var stores = await Stores.CreateAsync(postgres);
         await using var factory = new Factory(stores, identityAdministration: true, identityValidation: true);
+        factory.Profiles[72] = new(72, "cafe\u0301@identity.test", null);
+        factory.Profiles[73] = new(73, "\u01fa@identity.test", null);
+        factory.Profiles[74] = new(74, "otherwise-unique@identity.test", null);
         using var client = factory.CreateClient();
         await AuthorizeAdministrationAsync(client, false);
         LegacyIdentityDbContext identity = kind == IdentityKind.Employee ? stores.Employees : stores.Customers;
@@ -1945,6 +2111,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
     {
         public const string ServiceSecret = "issuance-test-only-secret-0123456789";
         private readonly RSA signing = RSA.Create(2048);
+        public Dictionary<int, EmployeeProfileBinding> Profiles { get; } = [];
+        public HttpStatusCode? ProfileStatus { get; set; }
+        public string? ProfileBody { get; set; }
+        public int ProfileReads { get; private set; }
+        public bool ProfileReadGrant { get; set; } = true;
         public string PublicKey => signing.ExportSubjectPublicKeyInfoPem();
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
@@ -1964,6 +2135,14 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
                     ["Jwt:AccessTokenLifetimeSeconds"] = "900",
                     ["ServiceClients:Clients:issuance-test:SecretSha256"] = ServiceClientCredential.HashSecret(ServiceSecret),
                     ["ServiceClients:Clients:issuance-test:Permissions:0"] = "legacy-contact.messages.create",
+                    ["Services:Auth:BaseUrl"] = "https://issuance.test",
+                    ["Services:EmployeeService:BaseUrl"] = "https://employee-profile.test",
+                    ["ServiceAuthentication:ClientId"] = "legacy-auth",
+                    ["ServiceAuthentication:ClientSecret"] = ServiceSecret,
+                    ["ServiceClients:Clients:legacy-auth:SecretSha256"] = ServiceClientCredential.HashSecret(ServiceSecret),
+                    ["ServiceClients:Clients:legacy-auth:Permissions:0"] = ProfileReadGrant ? EmployeeProfileBindingClient.ReadPermission : "legacy-contact.messages.create",
+                    ["ServiceClients:Clients:profile-create-test:SecretSha256"] = ServiceClientCredential.HashSecret(ServiceSecret),
+                    ["ServiceClients:Clients:profile-create-test:Permissions:0"] = LegacyAccessTokenPermissions.EmployeeIdentitiesCreate,
                 };
                 if (identityAdministration)
                 {
@@ -1976,6 +2155,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
             });
             builder.ConfigureTestServices(services =>
             {
+                services.AddHttpClient(LegacyServiceAccessTokenProvider.HttpClientName)
+                    .ConfigurePrimaryHttpMessageHandler(() => Server.CreateHandler());
+                services.AddHttpClient(EmployeeProfileBindingClient.HttpClientName)
+                    .ConfigurePrimaryHttpMessageHandler(() => new ProfileBackend(this));
                 // Only Google's external credential validation is controlled. The
                 // actual nonce, reader, issuer, session store and runtime DI remain.
                 services.RemoveAll<IGoogleIdentityTokenValidator>();
@@ -1994,6 +2177,29 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
                 }
                 if (fault is not null) services.AddDbContext<RefreshSessionDbContext>(options => options.AddInterceptors(fault));
             });
+        }
+        private sealed class ProfileBackend(Factory owner) : HttpMessageHandler
+        {
+            protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                owner.ProfileReads++;
+                Assert.Equal(HttpMethod.Get, request.Method);
+                Assert.Equal("employee-profile.test", request.RequestUri!.Host);
+                Assert.True(request.Headers.CacheControl!.NoCache);
+                Assert.True(request.Headers.CacheControl.NoStore);
+                var jwt = ReadJwt(request.Headers.Authorization!.Parameter!, owner);
+                Assert.Equal("Bearer", request.Headers.Authorization.Scheme);
+                Assert.Equal("service:legacy-auth", Assert.Single(jwt.Claims, value => value.Type == "sub").Value);
+                Assert.Equal("service", Assert.Single(jwt.Claims, value => value.Type == "identity_kind").Value);
+                Assert.Equal(EmployeeProfileBindingClient.ReadPermission, Assert.Single(jwt.Claims, value => value.Type == "permissions").Value);
+                Assert.DoesNotContain(jwt.Claims, value => value.Type is "sid" or "employeeId" or "role");
+                var id = int.Parse(request.RequestUri.AbsolutePath["/employees/".Length..], System.Globalization.CultureInfo.InvariantCulture);
+                var status = owner.ProfileStatus ?? (owner.Profiles.ContainsKey(id) ? HttpStatusCode.OK : HttpStatusCode.NotFound);
+                var body = owner.ProfileBody ?? (owner.Profiles.TryGetValue(id, out var profile)
+                    ? JsonSerializer.Serialize(new { profile.Id, profile.Email, profile.PhoneNumber, FirstName = "Controlled", LastName = "Profile" }) : "{}");
+                return Task.FromResult(new HttpResponseMessage(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") });
+            }
         }
         private static string? IdentityConnection(LegacyIdentityDbContext context, bool tinyPool) => tinyPool
             ? new NpgsqlConnectionStringBuilder(context.Database.GetConnectionString())

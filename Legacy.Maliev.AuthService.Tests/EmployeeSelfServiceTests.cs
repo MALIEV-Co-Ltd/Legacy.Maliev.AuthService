@@ -675,7 +675,7 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         await using var fixture = await Fixture.CreateAsync(postgres);
         await fixture.SeedEmployeeAsync();
         await PendingResetAsync(fixture);
-        var controller = new EmployeeIdentitiesController(new EmployeeIdentityAdminService(fixture.Employees, fixture.Hasher, new EmployeeRecoveryOptions { Enabled = true }));
+        var controller = new EmployeeIdentitiesController(new EmployeeIdentityAdminService(fixture.Employees, fixture.Hasher, new EmployeeRecoveryOptions { Enabled = true }), new AuthorizationEmployeeProfileStub());
         var result = delete ? await controller.Delete(7, default)
             : await controller.Update(7, new("employee@example.com", "employee@example.com", true, null, false, false, null, true), default);
         Assert.Equal(503, Assert.IsType<ObjectResult>(result).StatusCode);
