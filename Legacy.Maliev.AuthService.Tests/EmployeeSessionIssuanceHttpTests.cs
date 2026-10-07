@@ -2181,6 +2181,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
     {
         public const string ServiceSecret = "issuance-test-only-secret-0123456789";
         private readonly RSA signing = RSA.Create(2048);
+        private readonly OwnedFixtureConnectionPools pools = new();
         public Dictionary<int, EmployeeProfileBinding> Profiles { get; } = [];
         public Dictionary<int, CustomerProfileBinding> CustomerProfiles { get; } = [];
         public HttpStatusCode? ProfileStatus { get; set; }
@@ -2228,6 +2229,9 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
             });
             builder.ConfigureTestServices(services =>
             {
+                services.AddDbContext<CustomerIdentityDbContext>(options => options.AddInterceptors(pools));
+                services.AddDbContext<EmployeeIdentityDbContext>(options => options.AddInterceptors(pools));
+                services.AddDbContext<RefreshSessionDbContext>(options => options.AddInterceptors(pools));
                 services.AddHttpClient(LegacyServiceAccessTokenProvider.HttpClientName)
                     .ConfigurePrimaryHttpMessageHandler(() => Server.CreateHandler());
                 services.AddHttpClient(EmployeeProfileBindingClient.HttpClientName)
@@ -2306,25 +2310,12 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
             : context.Database.GetConnectionString();
         public override async ValueTask DisposeAsync()
         {
-            var connections = new List<NpgsqlConnection>();
-            await using (var scope = Services.CreateAsyncScope())
+            try { await base.DisposeAsync(); }
+            finally
             {
-                var contexts = new DbContext[]
-                {
-                    scope.ServiceProvider.GetRequiredService<EmployeeIdentityDbContext>(),
-                    scope.ServiceProvider.GetRequiredService<CustomerIdentityDbContext>(),
-                    scope.ServiceProvider.GetRequiredService<RefreshSessionDbContext>(),
-                };
-                foreach (var context in contexts)
-                {
-                    await context.Database.OpenConnectionAsync();
-                    connections.Add((NpgsqlConnection)context.Database.GetDbConnection());
-                    await context.Database.CloseConnectionAsync();
-                }
+                try { signing.Dispose(); }
+                finally { pools.Clear(); }
             }
-            await base.DisposeAsync();
-            signing.Dispose();
-            foreach (var connection in connections) NpgsqlConnection.ClearPool(connection);
         }
     }
     private sealed class GoogleValidator : IGoogleIdentityTokenValidator
