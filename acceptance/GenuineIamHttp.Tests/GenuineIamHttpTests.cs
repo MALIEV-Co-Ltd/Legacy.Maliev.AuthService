@@ -175,6 +175,8 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
     private readonly OwnedHelperSafety helperSafety = new();
     private readonly List<OwnedProcessLease> quarantinedHelpers = [];
     private bool helperCleanupFailed;
+    private readonly OwnedHostDisposal authDisposal = new();
+    private readonly OwnedHostDisposal wrongAudienceAuthDisposal = new();
     public AuthFactory Auth { get; private set; } = null!;
     public AuthFactory WrongAudienceAuth { get; private set; } = null!;
     public OwnedIamProcess Iam { get; private set; } = null!;
@@ -276,8 +278,8 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
     {
         await OwnedCleanup.RunAsync(
             [("IamHost", token => Iam is null ? Task.CompletedTask : Iam.DisposeAsync(token)),
-             ("AuthHost", token => Auth is null ? Task.CompletedTask : Auth.DisposeAsync().AsTask().WaitAsync(token)),
-             ("WrongAudienceAuthHost", token => WrongAudienceAuth is null ? Task.CompletedTask : WrongAudienceAuth.DisposeAsync().AsTask().WaitAsync(token)),
+             ("AuthHost", token => Auth is null ? Task.CompletedTask : authDisposal.WaitAsync(() => Auth.DisposeAsync().AsTask(), token)),
+             ("WrongAudienceAuthHost", token => WrongAudienceAuth is null ? Task.CompletedTask : wrongAudienceAuthDisposal.WaitAsync(() => WrongAudienceAuth.DisposeAsync().AsTask(), token)),
              ("AuthValidationRsa", _ => { authValidationRsa?.Dispose(); authValidationRsa = null; return Task.CompletedTask; }),
              ("WrongAudienceAuthValidationRsa", _ => { wrongAudienceAuthValidationRsa?.Dispose(); wrongAudienceAuthValidationRsa = null; return Task.CompletedTask; }),
              ("FixtureRsa", _ => { signing.Dispose(); return Task.CompletedTask; }),
@@ -288,11 +290,18 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
             TimeSpan.FromSeconds(30));
         if (helperCleanupFailed)
             throw new OwnedHelperCleanupException([new InvalidOperationException("Owned helper cleanup previously failed; independent quiescence recovery does not erase the failure.")]);
+        if (authDisposal.FailureObserved || wrongAudienceAuthDisposal.FailureObserved)
+            throw new InvalidOperationException("Owned Auth host cleanup previously failed; completed recovery does not erase the failure.");
         if (!storagePolicyComplete)
             throw new InvalidOperationException("Owned storage policy failed; physical cleanup receipts remain independent.");
     }
 
-    private async Task RemoveContainerAsync(CancellationToken cancellationToken)
+    private Task RemoveContainerAsync(CancellationToken cancellationToken)
+        => database is null ? Task.CompletedTask : OwnedHostDisposal.AfterShutdownAsync(
+            [(Auth is not null, authDisposal), (WrongAudienceAuth is not null, wrongAudienceAuthDisposal)],
+            () => RemoveContainerAfterHostShutdownAsync(cancellationToken));
+
+    private async Task RemoveContainerAfterHostShutdownAsync(CancellationToken cancellationToken)
     {
         if (database is null) return;
         if (Iam is not null && !Iam.IsQuiescent)
@@ -337,7 +346,11 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
             declaredVolumes = lastObservedStorage?.GetProperty("volumes"), imageId = lastObservedStorage?.GetProperty("imageId"),
             kernelMount = lastKernelMount, storagePolicyComplete,
             lastStoragePolicyComplete, storagePolicyFault = storagePolicyComplete ? null : "owned-storage-policy-unverified",
-            helperCleanupFailed, cleanupComplete = true, remainingOwnership = false });
+            helperCleanupFailed, authDisposalComplete = Auth is null || authDisposal.Complete,
+            wrongAudienceAuthDisposalComplete = WrongAudienceAuth is null || wrongAudienceAuthDisposal.Complete,
+            authDisposalPreviouslyFailed = authDisposal.FailureObserved,
+            wrongAudienceAuthDisposalPreviouslyFailed = wrongAudienceAuthDisposal.FailureObserved,
+            cleanupComplete = true, remainingOwnership = false });
     }
 
     private async Task RecordContainerStateAsync(string state, CancellationToken cancellationToken)

@@ -150,7 +150,7 @@ public sealed class OwnedIamProcess
                 graceful = process.ExitCode == 0;
             }
             catch (Exception) { /* Exact-handle reconciliation always proceeds independently. */ }
-            try { if (!process!.HasExited) process.Kill(entireProcessTree: true); }
+            try { if (!process!.HasExited) process.Kill(); }
             catch (Exception) { Fail("terminate"); }
             try { if (!process!.WaitForExit(5000)) Fail("reap"); }
             catch (Exception) { Fail("reap"); }

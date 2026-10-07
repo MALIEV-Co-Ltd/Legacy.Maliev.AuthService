@@ -5,6 +5,33 @@ namespace Legacy.Maliev.AuthService.GenuineIamHttp.Tests;
 internal sealed class OwnedHelperSetupException()
     : InvalidOperationException("Owned helper launch or reader setup failed.") { }
 
+internal sealed class OwnedHostDisposal
+{
+    internal Task? ActualDisposal { get; private set; }
+    internal bool Complete => ActualDisposal?.Status == TaskStatus.RanToCompletion;
+    internal bool FailureObserved { get; private set; }
+
+    internal async Task WaitAsync(Func<Task> startDisposal, CancellationToken token)
+    {
+        if (ActualDisposal is null)
+        {
+            try { ActualDisposal = startDisposal(); }
+            catch (Exception failure) { ActualDisposal = Task.FromException(failure); }
+        }
+        // Cache the actual factory task, never its cancelled/timed-out wait wrapper.
+        try { await ActualDisposal.WaitAsync(token); }
+        catch (Exception) { FailureObserved = true; throw; }
+    }
+
+    internal static async Task AfterShutdownAsync(
+        IEnumerable<(bool Owned, OwnedHostDisposal Lease)> hosts, Func<Task> backendMutation)
+    {
+        if (hosts.Any(host => host.Owned && !host.Lease.Complete))
+            throw new InvalidOperationException("Owned Auth host disposal is incomplete; preserve its PostgreSQL backend.");
+        await backendMutation();
+    }
+}
+
 // The caller registers this lease before ExecuteAsync can launch its exact process.
 internal sealed class OwnedProcessLease(ProcessStartInfo start, int reapMilliseconds)
 {
@@ -217,6 +244,67 @@ internal static class OwnedCleanup
 
 public sealed class OwnedCleanupTests
 {
+    [Fact]
+    public async Task OwnedHostDisposal_TimedOutWaitRetainsActualShutdownAndFencesBackendUntilRecovery()
+    {
+        var actual = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var host = new OwnedHostDisposal();
+        var starts = 0;
+        var mutations = 0;
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMilliseconds(25));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => host.WaitAsync(() =>
+        { starts++; return actual.Task; }, deadline.Token));
+        Assert.Same(actual.Task, host.ActualDisposal);
+        Assert.False(host.Complete);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => OwnedHostDisposal.AfterShutdownAsync(
+            [(true, host)], () => { mutations++; return Task.CompletedTask; }));
+        Assert.Equal(0, mutations);
+        actual.SetResult();
+        await host.WaitAsync(() => throw new InvalidOperationException("Disposal must not restart."), CancellationToken.None);
+        await OwnedHostDisposal.AfterShutdownAsync([(true, host)], () => { mutations++; return Task.CompletedTask; });
+        Assert.Equal(1, starts);
+        Assert.Equal(1, mutations);
+        Assert.True(host.FailureObserved); // Recovery does not erase the original failed cleanup wait.
+    }
+
+    [Fact]
+    public async Task OwnedHostDisposal_BothActualAuthShutdownsMustCompleteBeforeBackendMutation()
+    {
+        var auth = new OwnedHostDisposal();
+        var wrongAudience = new OwnedHostDisposal();
+        var actual = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await auth.WaitAsync(() => Task.CompletedTask, CancellationToken.None);
+        var wait = wrongAudience.WaitAsync(() => actual.Task, CancellationToken.None);
+        var mutations = 0;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => OwnedHostDisposal.AfterShutdownAsync(
+            [(true, auth), (true, wrongAudience)], () => { mutations++; return Task.CompletedTask; }));
+        Assert.Equal(0, mutations);
+        actual.SetResult();
+        await wait;
+        await OwnedHostDisposal.AfterShutdownAsync([(true, auth), (true, wrongAudience)],
+            () => { mutations++; return Task.CompletedTask; });
+        Assert.Equal(1, mutations);
+    }
+
+    [Fact]
+    public async Task OwnedHostDisposal_SynchronousShutdownFailureIsCachedAndNeverProvesBackendSafety()
+    {
+        var host = new OwnedHostDisposal();
+        var starts = 0;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => host.WaitAsync(() =>
+        { starts++; throw new InvalidOperationException("Injected synchronous shutdown failure."); }, CancellationToken.None));
+        Assert.NotNull(host.ActualDisposal);
+        Assert.True(host.ActualDisposal!.IsFaulted);
+        Assert.False(host.Complete);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => host.WaitAsync(() =>
+        { starts++; return Task.CompletedTask; }, CancellationToken.None));
+        var mutation = false;
+        await Assert.ThrowsAsync<InvalidOperationException>(() => OwnedHostDisposal.AfterShutdownAsync(
+            [(true, host)], () => { mutation = true; return Task.CompletedTask; }));
+        Assert.False(mutation);
+        Assert.Equal(1, starts);
+    }
+
     [Fact]
     public async Task OwnedHelper_BirthMetadataFaultStillReapsAndFailsOriginalObservation()
     {

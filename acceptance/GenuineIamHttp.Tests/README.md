@@ -72,14 +72,19 @@ Three native process controls exercise birth metadata, reader setup/reap and
 kill failures through the same production lifecycle. Every acquired stream,
 deadline and process handle closes explicitly after its operations settle;
 final receipts record actual disposition. IAM stdin writes and flushes remain
-owned until settled, and PostgreSQL removal requires IAM quiescence.
+owned until settled, and PostgreSQL removal requires IAM quiescence and successful
+completion of both actual Auth factory disposal tasks. A cancelled cleanup wait
+retains the actual disposal task; recovery permits physical cleanup only after
+shutdown completes and preserves the original qualification failure. IAM fallback
+termination targets the exact retained process handle; this prebuilt host launches
+no child processes.
 Only an exact daemon report for the owned ID proves
 container absence; daemon/CLI errors do not. Retained
 resource receipts contain container IDs/state only, never connection strings,
 credentials, JWTs or customer data. A finite runner/test timeout is also required.
 
 The standard Ubuntu hosted workflow builds each graph with warnings as errors,
-runs the eleven HTTP focus cases and 28 dedicated-suite cases, and verifies
+runs the eleven HTTP focus cases and 31 dedicated-suite cases, and verifies
 scoped formatting. The original normal Auth coverage/security gates remain.
 Expected counts describe discovery only; hosted results are required before
 acceptance. Keys/credentials/connection strings/JWTs never enter process receipts.
