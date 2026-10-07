@@ -16,6 +16,10 @@ public sealed class JwtOptions
     [Required]
     public required string Audience { get; set; }
 
+    /// <summary>Optional explicit target audience for IAM service profiles; no legacy-audience fallback is used.</summary>
+    [StringLength(256)]
+    public string? IamAudience { get; set; }
+
     /// <summary>Gets or sets the PEM private key.</summary>
     [Required]
     public required string PrivateKeyPem { get; set; }

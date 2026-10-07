@@ -28,6 +28,17 @@ public sealed class AuthenticationController(
         var result = await serviceAuthenticationService.LoginAsync(request);
         return result.Succeeded ? Ok(result.Token) : Unauthorized(AuthenticationProblem());
     }
+    /// <summary>Authenticates an explicitly enrolled IAM service profile without creating a session.</summary>
+    [HttpPost("service/iam-login")]
+    [EnableRateLimiting("service-login")]
+    [ProducesResponseType<ServiceTokenResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<ServiceTokenResponse>> IamServiceLogin(ServiceLoginRequest request)
+    {
+        var result = await serviceAuthenticationService.LoginIamAsync(request);
+        return result.Succeeded ? Ok(result.Token) : Unauthorized(AuthenticationProblem());
+    }
+
     /// <summary>Authenticates against one unchanged legacy identity database.</summary>
     [HttpPost("login")]
     [ServiceFilter(typeof(LoginRateLimitFilter))]
