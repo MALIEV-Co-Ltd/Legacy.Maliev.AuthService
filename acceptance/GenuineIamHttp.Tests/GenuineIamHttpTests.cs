@@ -286,6 +286,7 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
     {
         if (database is null) return;
         var id = database.Id;
+        JsonElement? lastObservedStorage = null;
         var ownership = await InspectAsync(id, cancellationToken);
         if (ownership.ExitCode != 0 && !OwnedCleanup.IsExactContainerAbsence(id, ownership.ExitCode, ownership.Error))
         {
@@ -299,7 +300,7 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
             Assert.Equal("auth-genuine-iam-http", receipt.RootElement.GetProperty("labels").GetProperty("maliev.owner").GetString());
             if (createdAtUtc is not null) Assert.Equal(createdAtUtc, receipt.RootElement.GetProperty("created").GetString());
             if (containerStartedAtUtc is not null) Assert.Equal(containerStartedAtUtc, receipt.RootElement.GetProperty("state").GetProperty("StartedAt").GetString());
-            Assert.DoesNotContain(receipt.RootElement.GetProperty("mounts").EnumerateArray(), mount => mount.GetProperty("Type").GetString() == "volume");
+            lastObservedStorage = receipt.RootElement.Clone();
             var stopped = await DockerAsync(["stop", "--time", "5", id], cancellationToken);
             Assert.Equal(0, stopped.ExitCode);
             var removed = await DockerAsync(["rm", id], cancellationToken);
@@ -307,10 +308,13 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
         }
         var state = await InspectAsync(id, cancellationToken);
         Assert.True(OwnedCleanup.IsExactContainerAbsence(id, state.ExitCode, state.Error));
-        await WriteLedgerAsync(new { run, containerId = id, state = "removed", persistentData = false });
+        await WriteLedgerAsync(new { run, containerId = id, state = "removed", persistentData = false,
+            mounts = lastObservedStorage?.GetProperty("mounts"), tmpfs = lastObservedStorage?.GetProperty("tmpfs"),
+            declaredVolumes = lastObservedStorage?.GetProperty("volumes") });
         // The exact container is already absent; release Testcontainers' managed ownership too.
         await database.DisposeAsync().AsTask().WaitAsync(cancellationToken);
         database = null;
+        if (lastObservedStorage.HasValue) AssertExactDisposableStorage(lastObservedStorage.Value);
     }
 
     private async Task RecordContainerStateAsync(string state, CancellationToken cancellationToken)
@@ -325,7 +329,19 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
         foreach (var port in json.RootElement.GetProperty("ports").EnumerateObject())
             if (port.Value.ValueKind == JsonValueKind.Array)
                 foreach (var binding in port.Value.EnumerateArray()) Assert.Equal("127.0.0.1", binding.GetProperty("HostIp").GetString());
-        await WriteLedgerAsync(new { run, containerId = database.Id, state, startedAtUtc = json.RootElement.GetProperty("state").GetProperty("StartedAt").GetString(), createdAtUtc = json.RootElement.GetProperty("created").GetString(), ownership = json.RootElement.GetProperty("labels").Clone(), mounts = json.RootElement.GetProperty("mounts").Clone(), ports = json.RootElement.GetProperty("ports").Clone(), image = json.RootElement.GetProperty("image").GetString(), persistentData = false, memoryBytes = 512L * 1024 * 1024, cpuCount = 1, leaseMinutes = 15 });
+        await WriteLedgerAsync(new { run, containerId = database.Id, state, startedAtUtc = json.RootElement.GetProperty("state").GetProperty("StartedAt").GetString(), createdAtUtc = json.RootElement.GetProperty("created").GetString(), ownership = json.RootElement.GetProperty("labels").Clone(), mounts = json.RootElement.GetProperty("mounts").Clone(), tmpfs = json.RootElement.GetProperty("tmpfs").Clone(), declaredVolumes = json.RootElement.GetProperty("volumes").Clone(), ports = json.RootElement.GetProperty("ports").Clone(), image = json.RootElement.GetProperty("image").GetString(), persistentData = false, memoryBytes = 512L * 1024 * 1024, cpuCount = 1, leaseMinutes = 15 });
+        AssertExactDisposableStorage(json.RootElement);
+    }
+
+    private static void AssertExactDisposableStorage(JsonElement receipt)
+    {
+        var tmpfs = Assert.Single(receipt.GetProperty("tmpfs").EnumerateObject());
+        Assert.Equal("/var/lib/postgresql", tmpfs.Name);
+        Assert.Equal("rw,size=134217728", tmpfs.Value.GetString());
+        var volumes = receipt.GetProperty("volumes");
+        Assert.True(volumes.ValueKind == JsonValueKind.Null || volumes.ValueKind == JsonValueKind.Object && !volumes.EnumerateObject().Any(),
+            "Disposable PostgreSQL must not retain configured volumes.");
+        Assert.DoesNotContain(receipt.GetProperty("mounts").EnumerateArray(), mount => mount.GetProperty("Type").GetString() is not "tmpfs");
     }
 
     private async Task WriteLedgerAsync<T>(T entry, CancellationToken cancellationToken = default)
@@ -336,7 +352,7 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
     }
 
     private Task<(int ExitCode, string Output, string Error)> InspectAsync(string containerId, CancellationToken cancellationToken)
-        => DockerAsync(["inspect", "--format", "{\"state\":{{json .State}},\"labels\":{{json .Config.Labels}},\"created\":{{json .Created}},\"mounts\":{{json .Mounts}},\"ports\":{{json .NetworkSettings.Ports}},\"image\":{{json .Config.Image}},\"memory\":{{json .HostConfig.Memory}},\"nanoCpus\":{{json .HostConfig.NanoCpus}}}", containerId], cancellationToken);
+        => DockerAsync(["inspect", "--format", "{\"state\":{{json .State}},\"labels\":{{json .Config.Labels}},\"created\":{{json .Created}},\"mounts\":{{json .Mounts}},\"tmpfs\":{{json .HostConfig.Tmpfs}},\"volumes\":{{json .Config.Volumes}},\"ports\":{{json .NetworkSettings.Ports}},\"image\":{{json .Config.Image}},\"memory\":{{json .HostConfig.Memory}},\"nanoCpus\":{{json .HostConfig.NanoCpus}}}", containerId], cancellationToken);
 
     private async Task<(int ExitCode, string Output, string Error)> DockerAsync(string[] arguments, CancellationToken cancellationToken)
     {
