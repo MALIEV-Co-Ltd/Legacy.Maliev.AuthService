@@ -173,7 +173,7 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
     private KernelStorageMount? startedKernelMount;
     private bool storagePolicyComplete;
     private readonly OwnedHelperSafety helperSafety = new();
-    private readonly List<OwnedDockerHelper> quarantinedHelpers = [];
+    private readonly List<OwnedProcessLease> quarantinedHelpers = [];
     private bool helperCleanupFailed;
     public AuthFactory Auth { get; private set; } = null!;
     public AuthFactory WrongAudienceAuth { get; private set; } = null!;
@@ -295,6 +295,8 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
     private async Task RemoveContainerAsync(CancellationToken cancellationToken)
     {
         if (database is null) return;
+        if (Iam is not null && !Iam.IsQuiescent)
+            throw new InvalidOperationException("Owned IAM helper remains active; preserve its PostgreSQL backend.");
         await VerifyQuarantinedHelpersAsync(cancellationToken);
         helperSafety.RequireQuiescence();
         var id = database.Id;
@@ -380,8 +382,24 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
     }
 
     private sealed record KernelStorageMount(string Target, string FileSystem, string Source, bool ReadWrite, string Size);
-    private sealed record OwnedDockerHelper(Process Process, Task<string> Output, Task<string> Error,
-        CancellationTokenSource Deadline, DateTime StartedAtUtc, string Executable);
+    private async Task RecordHelperQuiescenceAsync(OwnedProcessLease helper)
+    {
+        using var receiptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        await WriteLedgerAsync(new { run, purpose = helper.ReadersObserved ? "Exact owned container command disposal" : "Exact owned container command",
+            processId = helper.ProcessId, startedAtUtc = helper.StartedAtUtc, executable = helper.Executable,
+            launchAttempted = helper.StartAttempted, started = helper.Started,
+            outputReaderStarted = helper.Output is not null, errorReaderStarted = helper.Error is not null,
+            exited = helper.Exited, exitCode = helper.ExitCode, terminationFailed = helper.TerminationFailed,
+            readersSettled = helper.ReadersSettled, readersObserved = helper.ReadersObserved,
+            handlesDisposed = helper.Disposed,
+            outputReaderDisposed = helper.OutputReader is null ? (bool?)null : helper.OutputReaderDisposed,
+            errorReaderDisposed = helper.ErrorReader is null ? (bool?)null : helper.ErrorReaderDisposed,
+            deadlineDisposed = helper.Deadline is null ? (bool?)null : helper.DeadlineDisposed,
+            processHandleDisposed = helper.ProcessHandleDisposed,
+            remainingHandleOwnership = !helper.Disposed,
+            remainingOwnership = !helper.Exited || !helper.ReadersSettled || !helper.Disposed,
+            originalCleanupFailure = helperCleanupFailed || helper.CleanupFaultObserved, leaseSeconds = 15 }, receiptDeadline.Token).WaitAsync(receiptDeadline.Token);
+    }
 
     private async Task VerifyQuarantinedHelpersAsync(CancellationToken cancellationToken)
     {
@@ -391,38 +409,14 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
             throw new OwnedHelperCleanupException([new InvalidOperationException("Quarantined helper ownership is unavailable.")]);
         foreach (var helper in quarantinedHelpers.ToArray())
         {
-            var exited = false;
-            var readersSettled = false;
             try
             {
-                helper.Deadline.Cancel();
-                if (!helper.Process.HasExited)
-                {
-                    helper.Process.Kill();
-                    helper.Process.WaitForExit(500);
-                }
-                exited = helper.Process.HasExited;
-                try { await Task.WhenAll(helper.Output, helper.Error).WaitAsync(TimeSpan.FromSeconds(1), cancellationToken); }
-                catch (Exception) when (helper.Output.IsCompleted && helper.Error.IsCompleted)
-                {
-                    // A faulted/cancelled reader is settled; the original cleanup failure remains fatal.
-                }
-                readersSettled = helper.Output.IsCompleted && helper.Error.IsCompleted;
-                using var receiptDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                receiptDeadline.CancelAfter(TimeSpan.FromSeconds(1));
-                await WriteLedgerAsync(new { run, purpose = "Independent owned Docker helper quiescence",
-                    processId = helper.Process.Id, startedAtUtc = helper.StartedAtUtc, executable = helper.Executable,
-                    exited, readersSettled, remainingOwnership = !exited || !readersSettled,
-                    originalCleanupFailure = true, leaseSeconds = 15 }, receiptDeadline.Token).WaitAsync(receiptDeadline.Token);
-                if (!exited || !readersSettled) throw new InvalidOperationException("Owned helper remains active.");
-                helper.Process.Dispose();
-                helper.Deadline.Dispose();
+                // Reconciliation has its own finite deadlines; cancellation cannot skip later stages.
+                await helper.ReconcileAsync(RecordHelperQuiescenceAsync);
+                if (!helper.Disposed) throw new InvalidOperationException("Owned helper remains retained.");
                 quarantinedHelpers.Remove(helper);
             }
-            catch (Exception)
-            {
-                failures.Add(new InvalidOperationException("Independent owned helper quiescence verification failed."));
-            }
+            catch (Exception) { failures.Add(new InvalidOperationException("Independent owned helper quiescence verification failed.")); }
         }
         if (failures.Count != 0 || quarantinedHelpers.Count != 0)
             throw new OwnedHelperCleanupException(failures);
@@ -475,68 +469,21 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
         helperSafety.RequireQuiescence();
         var start = new ProcessStartInfo("docker") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
-        var process = Process.Start(start)!;
-        var startedAtUtc = process.StartTime.ToUniversalTime();
-        var executable = start.FileName;
-        try { executable = process.MainModule?.FileName ?? executable; }
-        catch (Exception) { /* The owned handle and actual PID/start time remain authoritative. */ }
-        var commandDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        commandDeadline.CancelAfter(TimeSpan.FromSeconds(commandSeconds));
-        var output = BoundedProcessOutput.ReadAsync(process.StandardOutput, 64 * 1024, commandDeadline.Token);
-        var error = BoundedProcessOutput.ReadAsync(process.StandardError, 64 * 1024, commandDeadline.Token);
+        var helper = new OwnedProcessLease(start, reapMilliseconds);
+        quarantinedHelpers.Add(helper); // Own the handle before instance Start, metadata or readers can fail.
         try
         {
-            await BoundedProcessOutput.ObserveConcurrentAsync(output, error, process.WaitForExitAsync(commandDeadline.Token));
-            return (process.ExitCode, await output, await error);
+            return await helper.ExecuteAsync(cancellationToken, commandSeconds, RecordHelperQuiescenceAsync);
+        }
+        catch (OwnedHelperCleanupException)
+        {
+            helperCleanupFailed = true;
+            helperSafety.Quarantine();
+            throw;
         }
         finally
         {
-            List<Exception> failures = [];
-            var exited = false;
-            try { commandDeadline.Cancel(); }
-            catch (Exception) { Fail("readers-cancel"); }
-            try
-            {
-                exited = await BoundedProcessOutput.TerminateAsync(() => process.HasExited, () => process.Kill(), () => process.WaitForExit(reapMilliseconds),
-                    async (complete, failed) =>
-                    {
-                        using var receiptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-                        await WriteLedgerAsync(new { run, purpose = "Exact owned container command", processId = process.Id, startedAtUtc, executable, exited = complete, terminationFailed = failed, exitCode = complete ? (int?)process.ExitCode : null, remainingOwnership = !complete, leaseSeconds = 15 }, receiptDeadline.Token)
-                            .WaitAsync(receiptDeadline.Token);
-                    });
-            }
-            catch (Exception) { Fail("terminate-or-receipt"); }
-            try { exited = process.HasExited; }
-            catch (Exception) { Fail("process-absence"); }
-            try { await Task.WhenAll(output, error).WaitAsync(TimeSpan.FromSeconds(1)); }
-            catch (OperationCanceledException) when (output.IsCompleted && error.IsCompleted) { }
-            catch (Exception) { Fail("readers-settle"); }
-            var readersSettled = output.IsCompleted && error.IsCompleted;
-            try
-            {
-                using var receiptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(1));
-                await WriteLedgerAsync(new { run, purpose = "Exact owned container command disposal", processId = process.Id,
-                    startedAtUtc, executable, exited, readersSettled, remainingOwnership = !exited || !readersSettled, leaseSeconds = 15 }, receiptDeadline.Token)
-                    .WaitAsync(receiptDeadline.Token);
-            }
-            catch (Exception) { Fail("disposal-receipt"); }
-            if (!exited) Fail("process-unreaped");
-            if (!readersSettled) Fail("readers-unsettled");
-            if (failures.Count == 0)
-            {
-                try { process.Dispose(); }
-                catch (Exception) { Fail("process-handle"); }
-                try { commandDeadline.Dispose(); }
-                catch (Exception) { Fail("deadline-handle"); }
-            }
-            if (failures.Count != 0)
-            {
-                helperSafety.Quarantine();
-                helperCleanupFailed = true;
-                quarantinedHelpers.Add(new OwnedDockerHelper(process, output, error, commandDeadline, startedAtUtc, executable));
-                throw new OwnedHelperCleanupException(failures);
-            }
-            void Fail(string step) => failures.Add(new InvalidOperationException("Owned Docker helper cleanup incomplete: " + step));
+            if (helper.CleanupComplete) quarantinedHelpers.Remove(helper);
         }
     }
 
