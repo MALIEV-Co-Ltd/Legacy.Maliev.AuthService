@@ -10,11 +10,14 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
 using Npgsql;
 using Testcontainers.PostgreSql;
 using AuthProgram = AuthApi::Program;
@@ -161,6 +164,8 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
     private PostgreSqlContainer? database;
     private NpgsqlConnection? ownedPool;
     private NpgsqlConnection? authPool;
+    private RSA? authValidationRsa;
+    private RSA? wrongAudienceAuthValidationRsa;
     private string? refreshConnection;
     private string? createdAtUtc;
     private string? containerStartedAtUtc;
@@ -202,7 +207,9 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
             refreshConnection = new NpgsqlConnectionStringBuilder(database.GetConnectionString()) { Database = "auth_refresh" }.ConnectionString;
             authPool = new NpgsqlConnection(refreshConnection);
             Auth = new AuthFactory(signing, IamAudience, refreshConnection);
+            authValidationRsa = CaptureValidationRsa(Auth);
             WrongAudienceAuth = new AuthFactory(signing, "https://wrong.join.invalid", refreshConnection);
+            wrongAudienceAuthValidationRsa = CaptureValidationRsa(WrongAudienceAuth);
             await using (var scope = Auth.Services.CreateAsyncScope())
                 await scope.ServiceProvider.GetRequiredService<AuthInfrastructure::Legacy.Maliev.AuthService.Infrastructure.RefreshSessionDbContext>()
                     .Database.EnsureCreatedAsync(deadline.Token);
@@ -218,6 +225,11 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
             throw;
         }
     }
+
+    private static RSA CaptureValidationRsa(AuthFactory factory)
+        => (factory.Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
+            .Get(JwtBearerDefaults.AuthenticationScheme).TokenValidationParameters.IssuerSigningKey as RsaSecurityKey)?.Rsa
+            ?? throw new InvalidOperationException("The actual Auth JWT validation RSA is required.");
 
     public async Task<string> LoginAsync(AuthFactory factory, string path, CancellationToken cancellationToken)
     {
@@ -260,6 +272,8 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
             [("IamHost", token => Iam is null ? Task.CompletedTask : Iam.DisposeAsync(token)),
              ("AuthHost", token => Auth is null ? Task.CompletedTask : Auth.DisposeAsync().AsTask().WaitAsync(token)),
              ("WrongAudienceAuthHost", token => WrongAudienceAuth is null ? Task.CompletedTask : WrongAudienceAuth.DisposeAsync().AsTask().WaitAsync(token)),
+             ("AuthValidationRsa", _ => { authValidationRsa?.Dispose(); authValidationRsa = null; return Task.CompletedTask; }),
+             ("WrongAudienceAuthValidationRsa", _ => { wrongAudienceAuthValidationRsa?.Dispose(); wrongAudienceAuthValidationRsa = null; return Task.CompletedTask; }),
              ("FixtureRsa", _ => { signing.Dispose(); return Task.CompletedTask; }),
              ("OwnedPool", _ => { if (ownedPool is not null) { try { NpgsqlConnection.ClearPool(ownedPool); } finally { ownedPool.Dispose(); ownedPool = null; } } return Task.CompletedTask; }),
              ("AuthPool", _ => { if (authPool is not null) { try { NpgsqlConnection.ClearPool(authPool); } finally { authPool.Dispose(); authPool = null; } } return Task.CompletedTask; }),
@@ -335,20 +349,44 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
         catch (Exception) { /* The owned handle and actual PID/start time remain authoritative. */ }
         using var commandDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         commandDeadline.CancelAfter(TimeSpan.FromSeconds(15));
+        var output = BoundedProcessOutput.ReadAsync(process.StandardOutput, 64 * 1024, commandDeadline.Token);
+        var error = BoundedProcessOutput.ReadAsync(process.StandardError, 64 * 1024, commandDeadline.Token);
         try
         {
-            var output = BoundedProcessOutput.ReadAsync(process.StandardOutput, 64 * 1024, commandDeadline.Token);
-            var error = BoundedProcessOutput.ReadAsync(process.StandardError, 64 * 1024, commandDeadline.Token);
             await BoundedProcessOutput.ObserveConcurrentAsync(output, error, process.WaitForExitAsync(commandDeadline.Token));
             return (process.ExitCode, await output, await error);
         }
         finally
         {
-            commandDeadline.Cancel();
-            using var receiptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-            var exited = await BoundedProcessOutput.TerminateAsync(() => process.HasExited, () => process.Kill(), () => process.WaitForExit(5000),
-                (complete, failed) => WriteLedgerAsync(new { run, purpose = "Exact owned container command", processId = process.Id, startedAtUtc, executable, exited = complete, terminationFailed = failed, exitCode = complete ? (int?)process.ExitCode : null, remainingOwnership = !complete, leaseSeconds = 15 }, receiptDeadline.Token));
-            if (!exited) throw new InvalidOperationException("Owned Docker helper did not exit within cleanup deadline.");
+            List<Exception> failures = [];
+            var exited = false;
+            try { commandDeadline.Cancel(); }
+            catch (Exception) { Fail("readers-cancel"); }
+            try
+            {
+                using var receiptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                exited = await BoundedProcessOutput.TerminateAsync(() => process.HasExited, () => process.Kill(), () => process.WaitForExit(5000),
+                    (complete, failed) => WriteLedgerAsync(new { run, purpose = "Exact owned container command", processId = process.Id, startedAtUtc, executable, exited = complete, terminationFailed = failed, exitCode = complete ? (int?)process.ExitCode : null, remainingOwnership = !complete, leaseSeconds = 15 }, receiptDeadline.Token));
+            }
+            catch (Exception) { Fail("terminate-or-receipt"); }
+            try { exited = process.HasExited; }
+            catch (Exception) { Fail("process-absence"); }
+            try { await Task.WhenAll(output, error).WaitAsync(TimeSpan.FromSeconds(1)); }
+            catch (OperationCanceledException) when (output.IsCompleted && error.IsCompleted) { }
+            catch (Exception) { Fail("readers-settle"); }
+            var readersSettled = output.IsCompleted && error.IsCompleted;
+            try
+            {
+                using var receiptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                await WriteLedgerAsync(new { run, purpose = "Exact owned container command disposal", processId = process.Id,
+                    startedAtUtc, executable, exited, readersSettled, remainingOwnership = !exited || !readersSettled, leaseSeconds = 15 }, receiptDeadline.Token)
+                    .WaitAsync(receiptDeadline.Token);
+            }
+            catch (Exception) { Fail("disposal-receipt"); }
+            if (!exited) Fail("process-unreaped");
+            if (!readersSettled) Fail("readers-unsettled");
+            if (failures.Count != 0) throw new AggregateException("Owned Docker helper cleanup failed; inspect fixed ownership receipts.", failures);
+            void Fail(string step) => failures.Add(new InvalidOperationException("Owned Docker helper cleanup incomplete: " + step));
         }
     }
 
