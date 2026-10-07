@@ -447,7 +447,7 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
     private sealed class Factory(Stores stores) : WebApplicationFactory<Program>
     {
         private readonly RSA signing = RSA.Create(2048);
-        private readonly OwnedFixtureDataSources pools = new();
+        private readonly OwnedFixtureConnectionPools pools = new();
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");

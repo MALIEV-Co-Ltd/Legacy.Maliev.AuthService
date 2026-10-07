@@ -2182,7 +2182,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
     {
         public const string ServiceSecret = "issuance-test-only-secret-0123456789";
         private readonly RSA signing = RSA.Create(2048);
-        private readonly OwnedFixtureDataSources pools = new();
+        private readonly OwnedFixtureConnectionPools pools = new();
         public Dictionary<int, EmployeeProfileBinding> Profiles { get; } = [];
         public Dictionary<int, CustomerProfileBinding> CustomerProfiles { get; } = [];
         public HttpStatusCode? ProfileStatus { get; set; }

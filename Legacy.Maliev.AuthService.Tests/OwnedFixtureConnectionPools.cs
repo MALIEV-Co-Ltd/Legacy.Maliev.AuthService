@@ -1,14 +1,14 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Npgsql;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
-// Own the actual EF data sources; ClearPool only targets Npgsql's connection-string registry.
-internal sealed class OwnedFixtureDataSources : IAsyncDisposable
+// Capture configured pool identities even when runtime code opens a separate context.
+internal sealed class OwnedFixtureConnectionPools : IAsyncDisposable
 {
-    private readonly Dictionary<string, NpgsqlDataSource> sources = [];
+    private readonly Dictionary<string, NpgsqlConnection> pools = [];
     private readonly object gate = new();
     public void Configure(DbContextOptionsBuilder options)
     {
@@ -16,18 +16,19 @@ internal sealed class OwnedFixtureDataSources : IAsyncDisposable
         var connection = options.Options.Extensions.OfType<RelationalOptionsExtension>().Single().ConnectionString
             ?? throw new InvalidOperationException("Fixture relational connection configuration is missing");
         lock (gate)
-        {
-            if (!sources.TryGetValue(connection, out var source))
-                sources.Add(connection, source = new NpgsqlDataSourceBuilder(connection).Build());
-            options.UseNpgsql(source);
-        }
+            if (!pools.ContainsKey(connection)) pools.Add(connection, new NpgsqlConnection(connection));
+        // Keep the original options and data source behavior; these handles are never opened.
     }
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
         var failures = new List<Exception>();
-        foreach (var source in sources.Values)
-            try { await source.DisposeAsync(); } catch (Exception exception) { failures.Add(exception); }
-        if (failures.Count != 0) throw new AggregateException("Owned fixture data source cleanup failed", failures);
+        foreach (var pool in pools.Values)
+        {
+            try { NpgsqlConnection.ClearPool(pool); } catch (Exception exception) { failures.Add(exception); }
+            try { pool.Dispose(); } catch (Exception exception) { failures.Add(exception); }
+        }
+        if (failures.Count != 0) throw new AggregateException("Owned fixture pool cleanup failed", failures);
+        return ValueTask.CompletedTask;
     }
 }
 

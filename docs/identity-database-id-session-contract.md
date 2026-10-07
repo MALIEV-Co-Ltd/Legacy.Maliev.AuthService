@@ -11,3 +11,7 @@ The case deadline is 30 seconds for HTTP and EF operations. Existing owned fixtu
 Expected candidate inventory is 919 cases, including all 913 accepted predecessor IDs, 97 actor cases, unchanged 162 IAM cases, and six dedicated identity-ID cases. These are forecasts until native retained artifacts pass. Build, formatting, raw coverage and the normal protected merge/fresh-main gates remain required.
 
 This slice provides no schema migration, data rewrite, live IAM mutation, new grant, provider change, compiled consumer join, Identity framework-table/provider closure, or LINE rollout acceptance.
+# Fixture resource ownership
+
+The HTTP fixtures retain the exact PostgreSQL pool identities from the production options callbacks, including pools opened by separate credential-validation contexts. Teardown stops the HTTP host first, then clears only those owned pools through unopened connection handles in `finally`; it does not resolve services or open database connections during cleanup. The original connection, pooling, command-timeout, retry, issuer, and permission configuration remains intact.
+
