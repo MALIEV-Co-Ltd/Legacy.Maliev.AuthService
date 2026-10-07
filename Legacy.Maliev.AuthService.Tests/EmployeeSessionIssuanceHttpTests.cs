@@ -2181,7 +2181,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
     {
         public const string ServiceSecret = "issuance-test-only-secret-0123456789";
         private readonly RSA signing = RSA.Create(2048);
-        private readonly OwnedFixtureConnectionPools pools = new();
+        private readonly OwnedFixtureDataSources pools = new();
         public Dictionary<int, EmployeeProfileBinding> Profiles { get; } = [];
         public Dictionary<int, CustomerProfileBinding> CustomerProfiles { get; } = [];
         public HttpStatusCode? ProfileStatus { get; set; }
@@ -2229,9 +2229,9 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
             });
             builder.ConfigureTestServices(services =>
             {
-                services.AddDbContext<CustomerIdentityDbContext>(options => options.AddInterceptors(pools));
-                services.AddDbContext<EmployeeIdentityDbContext>(options => options.AddInterceptors(pools));
-                services.AddDbContext<RefreshSessionDbContext>(options => options.AddInterceptors(pools));
+                services.AddDbContext<CustomerIdentityDbContext>(options => pools.Configure(options));
+                services.AddDbContext<EmployeeIdentityDbContext>(options => pools.Configure(options));
+                services.AddDbContext<RefreshSessionDbContext>(options => pools.Configure(options));
                 services.AddHttpClient(LegacyServiceAccessTokenProvider.HttpClientName)
                     .ConfigurePrimaryHttpMessageHandler(() => Server.CreateHandler());
                 services.AddHttpClient(EmployeeProfileBindingClient.HttpClientName)
@@ -2314,7 +2314,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
             finally
             {
                 try { signing.Dispose(); }
-                finally { pools.Clear(); }
+                finally { await pools.DisposeAsync(); }
             }
         }
     }

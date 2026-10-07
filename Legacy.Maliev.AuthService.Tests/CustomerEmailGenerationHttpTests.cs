@@ -446,7 +446,7 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
     private sealed class Factory(Stores stores) : WebApplicationFactory<Program>
     {
         private readonly RSA signing = RSA.Create(2048);
-        private readonly OwnedFixtureConnectionPools pools = new();
+        private readonly OwnedFixtureDataSources pools = new();
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
@@ -463,9 +463,9 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
             }));
             builder.ConfigureTestServices(services =>
             {
-                services.AddDbContext<CustomerIdentityDbContext>(options => options.AddInterceptors(pools));
-                services.AddDbContext<EmployeeIdentityDbContext>(options => options.AddInterceptors(pools));
-                services.AddDbContext<RefreshSessionDbContext>(options => options.AddInterceptors(pools));
+                services.AddDbContext<CustomerIdentityDbContext>(options => pools.Configure(options));
+                services.AddDbContext<EmployeeIdentityDbContext>(options => pools.Configure(options));
+                services.AddDbContext<RefreshSessionDbContext>(options => pools.Configure(options));
                 services.Replace(ServiceDescriptor.Singleton<TimeProvider>(stores.Clock));
             });
         }
@@ -487,7 +487,7 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
             finally
             {
                 try { signing.Dispose(); }
-                finally { pools.Clear(); }
+                finally { await pools.DisposeAsync(); }
             }
         }
     }
