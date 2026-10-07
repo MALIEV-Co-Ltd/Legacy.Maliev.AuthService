@@ -66,10 +66,16 @@ public sealed class IamServiceTokenProfileHttpTests
         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         using var response = await client.PostAsJsonAsync("/auth/v1/service/iam-login", new
         {
-            clientId = "legacy-quotation", clientSecret = Factory.Secret,
-            serviceName = "AccountingService", service_name = "AccountingService",
-            sub = "system:service:accounting", role = "admin", purpose = "other",
-            permissions = new[] { "*", "legacy.invoices.create" }, audience = "other", expiresIn = 86400,
+            clientId = "legacy-quotation",
+            clientSecret = Factory.Secret,
+            serviceName = "AccountingService",
+            service_name = "AccountingService",
+            sub = "system:service:accounting",
+            role = "admin",
+            purpose = "other",
+            permissions = new[] { "*", "legacy.invoices.create" },
+            audience = "other",
+            expiresIn = 86400,
         }, deadline.Token);
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var token = (await response.Content.ReadFromJsonAsync<ServiceTokenResponse>(deadline.Token))!;
@@ -206,12 +212,19 @@ public sealed class IamServiceTokenProfileHttpTests
         public ClaimsPrincipal Validate(string token, bool iamProfile = false) => new JwtSecurityTokenHandler { MapInboundClaims = false }.ValidateToken(token,
             new TokenValidationParameters
             {
-                ValidIssuer = "https://iam-profile.test", ValidAudience = iamProfile ? iamAudience : "iam-profile-test",
+                ValidIssuer = "https://iam-profile.test",
+                ValidAudience = iamProfile ? iamAudience : "iam-profile-test",
                 IssuerSigningKey = new RsaSecurityKey(signing) { KeyId = "iam-profile-test" },
-                ValidateIssuerSigningKey = true, ValidateIssuer = true, ValidateAudience = true,
-                ValidateLifetime = true, RequireSignedTokens = true, RequireExpirationTime = true,
-                ValidAlgorithms = [SecurityAlgorithms.RsaSha256], ClockSkew = TimeSpan.Zero,
-                NameClaimType = "sub", RoleClaimType = "role",
+                ValidateIssuerSigningKey = true,
+                ValidateIssuer = true,
+                ValidateAudience = true,
+                ValidateLifetime = true,
+                RequireSignedTokens = true,
+                RequireExpirationTime = true,
+                ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
+                ClockSkew = TimeSpan.Zero,
+                NameClaimType = "sub",
+                RoleClaimType = "role",
             }, out _);
         public override async ValueTask DisposeAsync()
         {
