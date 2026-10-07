@@ -38,6 +38,13 @@ jobs:
           ref: 4eedecd81d1d8dcb4f38d8f76e51e7e9cb2110be
           path: .dependencies/Legacy.Maliev.CustomerService
           persist-credentials: false
+      - name: Check out exact read-only IAM admission source for component tests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Maliev.IAMService
+          ref: 4fe6642e5674013de9a3672505aec898fdcae0ed
+          path: .dependencies/Maliev.IAMService
+          persist-credentials: false
       - name: Validate .NET solution
         # The Customer API reference is test-only; no production project acquires it.
         uses: MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@e3a6093324a24968876782153286f52db8b29fd8
@@ -60,6 +67,13 @@ jobs:
             -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~EmployeeSessionIssuanceHttpTests" \
             --logger "trx;LogFileName=actor-roles.trx" --results-directory artifacts/actor-roles
+      - name: Verify separate server-owned IAM service profile through normal HTTP and genuine guard
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~IamServiceProfile_" \
+            --logger "trx;LogFileName=iam-service-profile.trx" --results-directory artifacts/iam-service-profile
       - name: Verify identity business ID and session claim preservation through normal HTTP
         shell: bash
         run: |
@@ -245,6 +259,7 @@ jobs:
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-password-policy -OutputDirectory artifacts/coverage-evidence/administrative-password-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-identity-policy -OutputDirectory artifacts/coverage-evidence/administrative-identity-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/identity-database-id-contract -OutputDirectory artifacts/coverage-evidence/identity-database-id-contract
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/iam-service-profile -OutputDirectory artifacts/coverage-evidence/iam-service-profile
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/employee-edit-grants -OutputDirectory artifacts/coverage-evidence/employee-edit-grants
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/invoice-bound-capability -OutputDirectory artifacts/coverage-evidence/invoice-bound-capability
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/readonly-lockout -OutputDirectory artifacts/coverage-evidence/readonly-lockout

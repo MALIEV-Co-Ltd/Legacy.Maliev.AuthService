@@ -1,3 +1,4 @@
+using Legacy.Maliev.AuthService.Application;
 using Microsoft.Extensions.Options;
 using System.Text.RegularExpressions;
 
@@ -35,6 +36,9 @@ public sealed class ServiceClientOptionsValidator : IValidateOptions<ServiceClie
             {
                 failures.Add($"ServiceClients client '{clientId}' must provide a 64-character hexadecimal SecretSha256.");
             }
+
+            if (credential.IamServiceName is not null && !IamServiceTokenProfile.IsCanonicalServiceName(credential.IamServiceName))
+                failures.Add($"ServiceClients client '{clientId}' has an invalid server-owned IAM service name.");
 
             if (credential.Permissions is null || credential.Permissions.Any(permission =>
                     string.IsNullOrWhiteSpace(permission) || permission.Contains('*', StringComparison.Ordinal)))

@@ -31,4 +31,9 @@
   <ItemGroup Condition="'$(GITHUB_ACTIONS)' == 'true' And '$(UseLocalMalievDependencies)' != 'true'">
     <PackageReference Include="Legacy.Maliev.ServiceDefaults" Version="$(SharedLibraryVersion)" />
   </ItemGroup>
+  <!-- Compile the genuine pinned IAM live guard; no copied or fixture admission policy. -->
+  <ItemGroup>
+    <Compile Include="$(MalievWorkspaceRoot)/Maliev.IAMService/Maliev.IAMService.Api/Authorization/LivePermissionCheckGuard.cs" Link="GenuineIam/LivePermissionCheckGuard.cs" />
+    <Compile Include="$(MalievWorkspaceRoot)/Maliev.IAMService/Maliev.IAMService.Api/Authorization/LivePermissionCheckOptions.cs" Link="GenuineIam/LivePermissionCheckOptions.cs" />
+  </ItemGroup>
 </Project>

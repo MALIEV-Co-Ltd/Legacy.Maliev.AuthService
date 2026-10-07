@@ -40,6 +40,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IEmployeeIdentityAdminService, EmployeeIdentityAdminService>();
         services.AddSingleton<IAccessTokenIssuer, RsaAccessTokenIssuer>();
         services.AddSingleton<IServiceAccessTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
+        services.AddSingleton<IIamServiceAccessTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
         services.AddSingleton<IInvoiceDelegationTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
         services.AddSingleton<IQuotationInvoiceCapabilityTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());
         services.AddSingleton<IQuotationInvoiceAttachmentTokenIssuer>(provider => (RsaAccessTokenIssuer)provider.GetRequiredService<IAccessTokenIssuer>());

@@ -9,7 +9,7 @@ using System.Security.Cryptography;
 namespace Legacy.Maliev.AuthService.Infrastructure;
 
 /// <summary>Issues RS256 access tokens whose private key is supplied only at runtime.</summary>
-public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTokenIssuer, IInvoiceDelegationTokenIssuer, IQuotationInvoiceCapabilityTokenIssuer, IQuotationInvoiceAttachmentTokenIssuer, IDisposable
+public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTokenIssuer, IIamServiceAccessTokenIssuer, IInvoiceDelegationTokenIssuer, IQuotationInvoiceCapabilityTokenIssuer, IQuotationInvoiceAttachmentTokenIssuer, IDisposable
 {
     private readonly JwtOptions options;
     private readonly RSA rsa;
@@ -137,6 +137,33 @@ public sealed class RsaAccessTokenIssuer : IAccessTokenIssuer, IServiceAccessTok
         };
         claims.AddRange(permissions.Select(permission => new Claim("permissions", permission)));
         return Issue(claims, now);
+    }
+
+    /// <inheritdoc />
+    public bool IsIamProfileConfigured => options.IamAudience is { Length: > 0 and <= 256 } audience
+        && audience == audience.Trim() && !audience.Any(char.IsWhiteSpace) && !audience.Contains('*', StringComparison.Ordinal);
+
+    /// <inheritdoc />
+    public IssuedAccessToken IssueIamService(string clientId, IamServiceTokenProfile profile, DateTimeOffset now)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        if (!IsIamProfileConfigured) throw new InvalidOperationException("The server-owned IAM audience is not configured.");
+        if (!IamServiceTokenProfile.IsCanonicalServiceName(profile.ServiceName))
+            throw new ArgumentException("A canonical server-owned IAM service profile is required.", nameof(profile));
+        return Issue(new List<Claim>
+        {
+            new(JwtRegisteredClaimNames.Sub, profile.Subject),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("D")),
+            new(JwtRegisteredClaimNames.Iat, now.ToUnixTimeSeconds().ToString(), ClaimValueTypes.Integer64),
+            new(JwtRegisteredClaimNames.Name, clientId),
+            new("azp", $"service:{clientId}"),
+            new("identity_kind", "service"),
+            new("user_type", "service"),
+            new("service_name", profile.ServiceName),
+            new("role", IamServiceTokenProfile.Role),
+            new("purpose", IamServiceTokenProfile.Purpose),
+            new("permissions", IamServiceTokenProfile.CheckPermission),
+        }, now, options.IamAudience);
     }
 
     /// <inheritdoc />
