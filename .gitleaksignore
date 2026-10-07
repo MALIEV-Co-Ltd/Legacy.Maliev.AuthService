@@ -1,0 +1,3 @@
+# Exact immutable historical prose false positive describing an unchanged HTTP response.
+# Retain full-ref scanning; this permits no credential value, path pattern or future commit.
+976533663093b668d47f29c134eec59a46f33bda:docs/web-identity-user-validation.md:generic-api-key:9
