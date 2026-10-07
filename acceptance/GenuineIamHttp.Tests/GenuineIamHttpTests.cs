@@ -81,8 +81,8 @@ public sealed class GenuineIamHttpTests(GenuineIamHttpFixture fixture)
             var jwt = new JwtSecurityTokenHandler().ReadJwtToken(iamTransport.Bearer);
             Assert.Equal("system:service:quotation", jwt.Subject);
             Assert.Equal(GenuineIamHttpFixture.IamAudience, Assert.Single(jwt.Audiences));
-            Assert.Equal("iam-registration", Assert.Single(jwt.Claims.Where(c => c.Type == "purpose")).Value);
-            Assert.Equal("iam.auth.check-permission", Assert.Single(jwt.Claims.Where(c => c.Type == "permissions")).Value);
+            Assert.Equal("iam-registration", Assert.Single(jwt.Claims, c => c.Type == "purpose").Value);
+            Assert.Equal("iam.auth.check-permission", Assert.Single(jwt.Claims, c => c.Type == "permissions").Value);
             Assert.NotEqual("untrusted-caller-bearer", iamTransport.Bearer);
         }
         else Assert.Empty(authTransport.Paths);
@@ -364,9 +364,13 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
             catch (Exception) { Fail("readers-cancel"); }
             try
             {
-                using var receiptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(1));
                 exited = await BoundedProcessOutput.TerminateAsync(() => process.HasExited, () => process.Kill(), () => process.WaitForExit(5000),
-                    (complete, failed) => WriteLedgerAsync(new { run, purpose = "Exact owned container command", processId = process.Id, startedAtUtc, executable, exited = complete, terminationFailed = failed, exitCode = complete ? (int?)process.ExitCode : null, remainingOwnership = !complete, leaseSeconds = 15 }, receiptDeadline.Token));
+                    async (complete, failed) =>
+                    {
+                        using var receiptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+                        await WriteLedgerAsync(new { run, purpose = "Exact owned container command", processId = process.Id, startedAtUtc, executable, exited = complete, terminationFailed = failed, exitCode = complete ? (int?)process.ExitCode : null, remainingOwnership = !complete, leaseSeconds = 15 }, receiptDeadline.Token)
+                            .WaitAsync(receiptDeadline.Token);
+                    });
             }
             catch (Exception) { Fail("terminate-or-receipt"); }
             try { exited = process.HasExited; }
