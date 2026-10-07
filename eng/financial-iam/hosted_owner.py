@@ -290,8 +290,20 @@ def main():
     parser.add_argument("--checkouts", required=True)
     parser.add_argument("--receipt", required=True)
     parser.add_argument("--coordinator-unit", required=True)
-    parser.add_argument("--lane", choices=("auth", "accounting"), required=True)
+    parser.add_argument("--lane", choices=("auth", "accounting", "procurement", "order"), required=True)
+    parser.add_argument("--stage", choices=("full", "build"), default="full")
+    for option in ("commerce-transport", "commerce-driver", "admission-verifier"):
+        parser.add_argument("--" + option)
     args = parser.parse_args()
+    if args.stage == "full" and (args.lane not in ("auth", "accounting") or any((args.commerce_transport, args.commerce_driver, args.admission_verifier))):
+        raise ValueError("Full route must preserve existing Auth/Accounting inputs")
+    if args.stage == "build":
+        if args.lane not in ("accounting", "procurement", "order"):
+            raise ValueError("BUILD route requires a fixed Commerce profile")
+        for name in ("commerce_transport", "commerce_driver", "admission_verifier"):
+            value = getattr(args, name)
+            if not value or not pathlib.Path(value).is_absolute():
+                raise ValueError("BUILD route requires explicit absolute producer paths")
     run = args.coordinator_unit.removesuffix("-control.service")
     if not re.fullmatch(r"auth-financial-[0-9]+-[0-9]+-[a-f0-9]{12}", run) or os.geteuid() != 0:
         raise RuntimeError("Pre-registered hosted coordinator required")
@@ -480,10 +492,18 @@ def main():
             "GITHUB_SHA": os.environ.get("GITHUB_SHA", ""), "DOTNET_CLI_HOME": str(root / "dotnet-home"),
             "DOTNET_CLI_DO_NOT_USE_MSBUILD_SERVER": "1", "MSBUILDDISABLENODEREUSE": "1",
             "BuildInParallel": "false", "UseSharedCompilation": "false", "DOTNET_PROCESSOR_COUNT": "1"}
+        if args.stage == "build":
+            environment["DOTNET_CLI_UI_LANGUAGE"] = "en"
         environment["MALIEV_ACCOUNTING_NATIVE_CONTEXT"] = str(receipts / "native-context.json")
         sdk_command = ["/usr/bin/pwsh", "-NoProfile", "-File", str(source / "Invoke-FinancialIamQualification.ps1"),
                        "-SourceCheckouts", str(pathlib.Path(args.checkouts).resolve(strict=True)),
                        "-Destination", str(root / "materialized"), "-Receipts", str(receipts), "-Lane", args.lane]
+        if args.stage == "build":
+            sdk_command = ["/usr/bin/python3", "-B", str(source / "commerce_build_route.py"),
+                "--lane", args.lane, "--transport", args.commerce_transport,
+                "--driver", args.commerce_driver, "--admission-verifier", args.admission_verifier,
+                "--context", str(receipts / "native-context.json"), "--checkouts", str(pathlib.Path(args.checkouts).resolve(strict=True)),
+                "--destination", str(root / "commerce-materialized"), "--receipts", str(receipts)]
         owned.register(sdk, service("Exact isolated native qualification", sdk_command, parent=parent,
             memory="3G", runtime=2100, environment=environment, log=receipts / "sdk.log"))
         owned.start(sdk)

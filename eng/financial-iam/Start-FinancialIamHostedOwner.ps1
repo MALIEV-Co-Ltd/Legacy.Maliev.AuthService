@@ -1,8 +1,19 @@
 [CmdletBinding()]
 param([Parameter(Mandatory)][string]$SourceCheckouts,
       [Parameter(Mandatory)][string]$EvidenceRoot,
-      [Parameter(Mandatory)][ValidateSet('auth','accounting')][string]$Lane)
+      [Parameter(Mandatory)][ValidateSet('auth','accounting','procurement','order')][string]$Lane,
+      [ValidateSet('full','build')][string]$Stage = 'full',
+      [string]$CommerceTransport, [string]$CommerceDriver, [string]$AdmissionVerifier)
 $ErrorActionPreference = 'Stop'
+if ($Stage -eq 'full' -and ($Lane -notin @('auth','accounting') -or $CommerceTransport -or $CommerceDriver -or $AdmissionVerifier)) {
+    throw 'Existing full routes accept only Auth/Accounting without BUILD inputs.'
+}
+if ($Stage -eq 'build') {
+    if ($Lane -notin @('accounting','procurement','order')) { throw 'Fixed Commerce BUILD profile required.' }
+    foreach ($path in @($CommerceTransport,$CommerceDriver,$AdmissionVerifier)) {
+        if (-not $path -or -not [IO.Path]::IsPathFullyQualified($path)) { throw 'Explicit absolute BUILD producer path required.' }
+    }
+}
 if (-not $IsLinux -or $env:GITHUB_REPOSITORY -cne 'MALIEV-Co-Ltd/Legacy.Maliev.AuthService' -or
     $env:GITHUB_EVENT_NAME -cne 'workflow_dispatch' -or $env:GITHUB_RUN_ID -notmatch '^\d+$' -or
     $env:GITHUB_RUN_ATTEMPT -notmatch '^\d+$') { throw 'Exact manually dispatched isolated hosted lane required.' }
@@ -19,7 +30,7 @@ if (Test-Path -LiteralPath $evidence) { throw 'Fresh evidence root required.' }
 [IO.Directory]::CreateDirectory($evidence) | Out-Null
 $receipt = Join-Path $evidence 'resources'
 $coordinatorReceipt=Join-Path $evidence 'coordinator-owner.json'
-$launch = [ordered]@{schemaVersion=1;run=$run;lane=$Lane;controlUnit=$control;recoveryUnit=$recovery;executionCommit=$env:GITHUB_SHA;candidateCommit=$null;memoryAvailableKiB=$available;dispatchAttempted=$false;nativeAccepted=$false}
+$launch = [ordered]@{schemaVersion=1;run=$run;lane=$Lane;stage=$Stage;controlUnit=$control;recoveryUnit=$recovery;executionCommit=$env:GITHUB_SHA;candidateCommit=$null;memoryAvailableKiB=$available;dispatchAttempted=$false;nativeAccepted=$false}
 [IO.File]::WriteAllText((Join-Path $evidence 'launcher.json'), ($launch | ConvertTo-Json -Depth 10))
 function Get-Unit([string]$Name) {
     $lines = & sudo -n systemctl show $Name --property=Id,InvocationID,MainPID,ControlGroup,ActiveState,SubState,Result,ExecMainStatus,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic
@@ -91,7 +102,9 @@ $failures=[Collections.Generic.List[string]]::new()
 try {
     $launch.dispatchAttempted=$true
     [IO.File]::WriteAllText((Join-Path $evidence 'launcher.json'),($launch|ConvertTo-Json))
-    Start-Unit $control (Join-Path $PSScriptRoot 'hosted_owner.py') @('--source',$PSScriptRoot,'--checkouts',[IO.Path]::GetFullPath($SourceCheckouts),'--receipt',$receipt,'--coordinator-unit',$control,'--lane',$Lane) 2700
+    $ownerArguments=@('--source',$PSScriptRoot,'--checkouts',[IO.Path]::GetFullPath($SourceCheckouts),'--receipt',$receipt,'--coordinator-unit',$control,'--lane',$Lane,'--stage',$Stage)
+    if($Stage -eq 'build'){$ownerArguments+=@('--commerce-transport',$CommerceTransport,'--commerce-driver',$CommerceDriver,'--admission-verifier',$AdmissionVerifier)}
+    Start-Unit $control (Join-Path $PSScriptRoot 'hosted_owner.py') $ownerArguments 2700
     Wait-Unit $control 2730
 } catch {
     $failures.Add($_.Exception.GetType().Name)
@@ -119,6 +132,14 @@ if(Test-Path -LiteralPath (Join-Path $receipt 'expiry.json')){throw 'Independent
 $cleanup=Get-Content -Raw -LiteralPath (Join-Path $receipt 'external-cleanup.json')|ConvertFrom-Json
 if($cleanup.remainingResources -ne 0 -or -not $cleanup.sdkQuiescent -or -not $cleanup.containersAbsent){throw 'Combined source-bound cleanup acceptance incomplete.'}
 if(@($cleanup.originalQualificationFailuresRetained).Count){throw 'Recovered cleanup cannot erase original qualification or receipt-write failures.'}
+if($Stage -eq 'build'){
+    $build=Get-Content -Raw -LiteralPath (Join-Path $receipt 'commerce-build.json')|ConvertFrom-Json
+    if(-not $build.buildStageExited -or $build.nativeAccepted -ne $false -or $build.lane -cne $Lane -or $build.warnings -ne 0 -or $build.errors -ne 0){throw 'Exact BUILD-only compiler receipt required.'}
+    $launch.buildStageAccepted=$true
+    $launch.nativeAccepted=$false
+    [IO.File]::WriteAllText((Join-Path $evidence 'launcher.json'),($launch|ConvertTo-Json -Depth 10))
+    return
+}
 if($Lane -eq 'auth'){
     $native=Get-Content -Raw -LiteralPath (Join-Path $receipt 'native-discovery.json')|ConvertFrom-Json
     $build=Get-Content -Raw -LiteralPath (Join-Path $receipt 'build.json')|ConvertFrom-Json

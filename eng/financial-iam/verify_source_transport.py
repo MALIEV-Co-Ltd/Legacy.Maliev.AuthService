@@ -8,9 +8,10 @@ from pathlib import Path
 import sys
 import unittest
 
-SEAL_SHA256 = '58dff7cdc2b086e0d6c8f7936d29ec638675dad980e4df57e51ed92d0e5996c7'
+SEAL_SHA256 = '314e7b061a25680611f7cddf72ed8a5784e23c13a4739b9f39d306363101f1d7'
 PYTHON = ('private_docker_proxy.py', 'hosted_owner.py', 'recover_owner.py',
-          'expiry_guard.py', 'verify_results.py', 'test_controls.py')
+          'expiry_guard.py', 'verify_results.py', 'test_controls.py',
+          'commerce_build_route.py', 'test_commerce_build_route.py')
 
 
 def sha(data):
@@ -36,7 +37,7 @@ def verify(root):
     if sha(raw) != SEAL_SHA256:
         raise ValueError('Immutable source transport seal changed')
     seal = json.loads(raw)
-    if seal['schemaVersion'] != 1 or len(seal['files']) != 22 or seal['candidateNativeAccepted'] is not False:
+    if seal['schemaVersion'] != 1 or len(seal['files']) != 24 or seal['candidateNativeAccepted'] is not False:
         raise ValueError('Reviewed transport inventory differs')
     seen = set()
     for row in seal['files']:
@@ -58,8 +59,8 @@ def verify(root):
         compile(bounded_file(directory / name, 131072).decode('utf-8'), str(directory / name), 'exec')
     compile(bounded_file(Path(__file__), 131072).decode('utf-8'), __file__, 'exec')
     compile(bounded_file(directory / 'test_source_transport.py', 131072).decode('utf-8'), str(directory / 'test_source_transport.py'), 'exec')
-    return {'sealedFiles': 22, 'decodedRawInputs': len(seal['decodedRawInputs']),
-            'pythonSourcesCompiled': 8, 'candidateNativeAccepted': False,
+    return {'sealedFiles': 24, 'decodedRawInputs': len(seal['decodedRawInputs']),
+            'pythonSourcesCompiled': 10, 'candidateNativeAccepted': False,
             'sdkStarted': False, 'nativeResourcesCreated': 0}
 
 
@@ -89,6 +90,11 @@ def main():
         if checked.testsRun != 5 or checked.failures or checked.errors or checked.skipped:
             raise ValueError('Exact transport regression suite did not pass')
         result['transportControlsPassed'] = 5
+        suite = unittest.defaultTestLoader.loadTestsFromName('test_commerce_build_route')
+        checked = unittest.TextTestRunner(verbosity=2).run(suite)
+        if checked.testsRun != 16 or checked.failures or checked.errors or checked.skipped:
+            raise ValueError('Exact BUILD route rejection suite did not pass')
+        result['commerceBuildRouteControlsPassed'] = 16
     # Verify once more after tests. The tests cannot silently mutate a producer
     # input/source and still create successful transport evidence.
     verify(root)

@@ -16,8 +16,8 @@
     },
     {
       "path": "eng/financial-iam/hosted_owner.py",
-      "sha256": "015ddf55ef535ce089ebde893574faa696cfd6ffdc91954284561da3f3c66f8f",
-      "bytes": 33805
+      "sha256": "9b01bec190d50626f9b4a67f03267eb87e10a4612f6776caf19a38c0f0ec172f",
+      "bytes": 35365
     },
     {
       "path": "eng/financial-iam/Invoke-FinancialIamQualification.ps1",
@@ -46,8 +46,8 @@
     },
     {
       "path": "eng/financial-iam/Start-FinancialIamHostedOwner.ps1",
-      "sha256": "5d5ab76130b2b0d33a771e7545f45c26328eacc5b34d6dab3e4e34c8b4439863",
-      "bytes": 9795
+      "sha256": "9c896dfb852abae39259c1190458b1a74b1c0d64fdb878a293f324d1c02820ec",
+      "bytes": 11291
     },
     {
       "path": "eng/financial-iam/test_controls.py",
@@ -113,6 +113,16 @@
       "path": "eng/financial-iam/inputs/quotation-catalogue.json",
       "sha256": "7a7ff1e9122be3ff8f914390d63b447a50e25f5f03f41e75e7609eed499ed34d",
       "bytes": 2464
+    },
+    {
+      "path": "eng/financial-iam/commerce_build_route.py",
+      "bytes": 9937,
+      "sha256": "038d5e66a88477a0fdf919a71e7f5bc31d97dbc99de1d3c2c07886eae7306bdb"
+    },
+    {
+      "path": "eng/financial-iam/test_commerce_build_route.py",
+      "bytes": 5907,
+      "sha256": "81f117d80c957a4c343fd40fcd6b23b093ca7e41db5216e7331c482e9f2d0f47"
     }
   ],
   "decodedRawInputs": [
@@ -157,5 +167,8 @@
     "pythonSources": 6,
     "psSources": 3
   },
-  "candidateNativeAccepted": false
+  "candidateNativeAccepted": false,
+  "previousTransportSealSha256": "58dff7cdc2b086e0d6c8f7936d29ec638675dad980e4df57e51ed92d0e5996c7",
+  "successorSourcePacket": "commerce-build-outer-route-source-v1-20261008",
+  "successorSourcePacketManifestSha256": "47d3d08594e833a9bd32ae6d3681360b543621b4939a595cf63d7dc00a5c3f26"
 }
