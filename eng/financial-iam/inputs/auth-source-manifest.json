@@ -1,0 +1,346 @@
+{
+  "schemaVersion": 1,
+  "packet": "auth-financial-iam-consumer-recovery-source-v6-owned-normal-iam-startup-guard-20261008",
+  "status": "SOURCE_CANDIDATE_INDEPENDENT_REVIEW_PENDING",
+  "createdDate": "2026-10-08",
+  "writer": {
+    "path": "D:/codex-temp/2026-10-03/legacy-code-auth-20261003/work/auth-financial-iam-recovery-20261008",
+    "branch": "codex/auth-financial-iam-recovery-20261008",
+    "baseCommit": "85a00d4bb54cf95199ee67dfd97d2b168233ff68"
+  },
+  "canonical": {
+    "path": "B:/maliev-legacy/Legacy.Maliev.AuthService",
+    "observedHead": "85a00d4bb54cf95199ee67dfd97d2b168233ff68",
+    "observedClean": true,
+    "modified": false
+  },
+  "parent": {
+    "packet": "../auth-financial-iam-consumer-recovery-source-v5-accounting-http-20261008",
+    "manifestSha256": "b5205646464b9041d97ab3b6ccb3515441ce40b13f2be66a0234ce12f0de26f7",
+    "patchSha256": "5f2c2d30c36dec77bf1cd28f6ab689a48639a3ee8043c24b56e097fcf9cd07b7",
+    "causalPatchSha256": "c86469034023b05132166316a35a9e95919ae4dcec762b8b1dcd37a5e699b752",
+    "frozenModified": false,
+    "independentVerdict": "V5 blockers: uncontrolled normal Auth IAM transport, unsettled actual Program-entrypoint after failed startup, incomplete focus filter"
+  },
+  "files": [
+    {
+      "path": "acceptance/OrdinaryFinancialIamHost/OrdinaryFinancialIamHost.csproj",
+      "sha256": "6dceefc6c46439c9db65ba40fa8a4d3624559312e8f5c0738eda9b0a5baa4d3e",
+      "frozenSha256": "6dceefc6c46439c9db65ba40fa8a4d3624559312e8f5c0738eda9b0a5baa4d3e",
+      "parentSha256": "6dceefc6c46439c9db65ba40fa8a4d3624559312e8f5c0738eda9b0a5baa4d3e",
+      "parentExact": true,
+      "preimageSha256": null,
+      "preimageGitBlob": null
+    },
+    {
+      "path": "acceptance/OrdinaryFinancialIamHost/Program.cs",
+      "sha256": "2aae103661775b626f51f674956d8b149354b2b2bdc672c21a45a88eea630876",
+      "frozenSha256": "2aae103661775b626f51f674956d8b149354b2b2bdc672c21a45a88eea630876",
+      "parentSha256": "2aae103661775b626f51f674956d8b149354b2b2bdc672c21a45a88eea630876",
+      "parentExact": true,
+      "preimageSha256": null,
+      "preimageGitBlob": null
+    },
+    {
+      "path": "acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialFixture.cs",
+      "sha256": "01ffb11b548cffbe33d40cdfe44647527422069aee966e9d4f7257ac0561b73b",
+      "frozenSha256": "01ffb11b548cffbe33d40cdfe44647527422069aee966e9d4f7257ac0561b73b",
+      "parentSha256": "fcda157608529c6edd542de1d944b037d1f7586ffce7294f3bdf85ef74f14c4b",
+      "parentExact": false,
+      "preimageSha256": null,
+      "preimageGitBlob": null
+    },
+    {
+      "path": "acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialIamProcess.cs",
+      "sha256": "d65bfb2b14f5b75d915dd3f3ffcc48c9e1e827510110f176d3ca298c3f6590c0",
+      "frozenSha256": "d65bfb2b14f5b75d915dd3f3ffcc48c9e1e827510110f176d3ca298c3f6590c0",
+      "parentSha256": "d65bfb2b14f5b75d915dd3f3ffcc48c9e1e827510110f176d3ca298c3f6590c0",
+      "parentExact": true,
+      "preimageSha256": null,
+      "preimageGitBlob": null
+    },
+    {
+      "path": "acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialIamTests.cs",
+      "sha256": "1219ee382522759d6826ac9a7eb27de4226e23ecb7ef923b1a1d1a05b36d2285",
+      "frozenSha256": "1219ee382522759d6826ac9a7eb27de4226e23ecb7ef923b1a1d1a05b36d2285",
+      "parentSha256": "f27602c85f1fe049c1c26decc58bc2e3d67a8d44c27748656492763d755c5181",
+      "parentExact": false,
+      "preimageSha256": null,
+      "preimageGitBlob": null
+    },
+    {
+      "path": "acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialIam.Tests.csproj",
+      "sha256": "6a83a7c12303c882a8f8d3e69bf60d76d6e49cd1f4902997dc52af66830fde09",
+      "frozenSha256": "6a83a7c12303c882a8f8d3e69bf60d76d6e49cd1f4902997dc52af66830fde09",
+      "parentSha256": "6a83a7c12303c882a8f8d3e69bf60d76d6e49cd1f4902997dc52af66830fde09",
+      "parentExact": true,
+      "preimageSha256": null,
+      "preimageGitBlob": null
+    },
+    {
+      "path": "acceptance/OrdinaryFinancialIam.Tests/README.md",
+      "sha256": "f94d33eb1a61db02485f49eacbacda9ff76831394ecb60ddc8ce7a2f2e3c74f5",
+      "frozenSha256": "f94d33eb1a61db02485f49eacbacda9ff76831394ecb60ddc8ce7a2f2e3c74f5",
+      "parentSha256": "07d6f9d27fb6c7270bb801fd070f3cd4252ba6a97bb7f9915c332974f8b54ef0",
+      "parentExact": false,
+      "preimageSha256": null,
+      "preimageGitBlob": null
+    },
+    {
+      "path": "docs/financial-iam-consumer-recovery-source-contract.md",
+      "sha256": "41be2476218872f5872db68a3da770e329ab70428fdd7f616296a2883567c370",
+      "frozenSha256": "41be2476218872f5872db68a3da770e329ab70428fdd7f616296a2883567c370",
+      "parentSha256": "41be2476218872f5872db68a3da770e329ab70428fdd7f616296a2883567c370",
+      "parentExact": true,
+      "preimageSha256": null,
+      "preimageGitBlob": null
+    },
+    {
+      "path": ".github/workflows/_build-and-test.yml",
+      "sha256": "8a6018c2bc92e1cd4a687e04af18a06ff6283875d03c13499b2f9231e8b773d2",
+      "frozenSha256": "8a6018c2bc92e1cd4a687e04af18a06ff6283875d03c13499b2f9231e8b773d2",
+      "parentSha256": "8a6018c2bc92e1cd4a687e04af18a06ff6283875d03c13499b2f9231e8b773d2",
+      "parentExact": true,
+      "preimageSha256": "c106e6e4f0e41d86a422d1cceae56a661e8c8bff1f3abaf2cc740731bce3df5b",
+      "preimageGitBlob": "cf0ab281ec77880470a65ed92df0529bcc4a60a6"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Api/Authorization/BoundedQuotationWorkloadExchangeHandler.cs",
+      "sha256": "375ce34d19e4c736b0f8b6730bbffc7ef74c1d7b111f446ced65dbaa261a598e",
+      "frozenSha256": "375ce34d19e4c736b0f8b6730bbffc7ef74c1d7b111f446ced65dbaa261a598e",
+      "parentSha256": "375ce34d19e4c736b0f8b6730bbffc7ef74c1d7b111f446ced65dbaa261a598e",
+      "parentExact": true,
+      "preimageSha256": "e820d63e031882c05578b389b54c7ef15ce6a0830ed03fddd57f68143d3bca56",
+      "preimageGitBlob": "42f04935f98b9923cfbfd63f955666d514f9e917"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Api/Authorization/QuotationInvoiceLiveAuthorityClient.cs",
+      "sha256": "a177b251c485b2054fbac7c65e625d0398f6ca11b409b0cd9865e30a4ee8334d",
+      "frozenSha256": "a177b251c485b2054fbac7c65e625d0398f6ca11b409b0cd9865e30a4ee8334d",
+      "parentSha256": "a177b251c485b2054fbac7c65e625d0398f6ca11b409b0cd9865e30a4ee8334d",
+      "parentExact": true,
+      "preimageSha256": "5493209522586992e6346ffadecb0306450ec6146bee69ded82d945bf004b326",
+      "preimageGitBlob": "a76481d2df15786028d339d24bec722eb1fc3ae5"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Api/Authorization/QuotationInvoiceLiveAuthorityRegistration.cs",
+      "sha256": "56494d4d0a139e3d5627024d281798b06e41199b43f8c13fc27ae0257c2d54e4",
+      "frozenSha256": "56494d4d0a139e3d5627024d281798b06e41199b43f8c13fc27ae0257c2d54e4",
+      "parentSha256": "56494d4d0a139e3d5627024d281798b06e41199b43f8c13fc27ae0257c2d54e4",
+      "parentExact": true,
+      "preimageSha256": "ce244f54fb669e376fadbf609b4f876a7ec79756f4db9981468a1508d58aeb4a",
+      "preimageGitBlob": "ef53962daaec6f455f5a9b90332017b9ea376966"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Application/InvoiceFinancialOwnership.cs",
+      "sha256": "d8a4b7db77fe87a1c231c0796c8324fdf52d41e8d340141748e2c817e520d0c5",
+      "frozenSha256": "d8a4b7db77fe87a1c231c0796c8324fdf52d41e8d340141748e2c817e520d0c5",
+      "parentSha256": "d8a4b7db77fe87a1c231c0796c8324fdf52d41e8d340141748e2c817e520d0c5",
+      "parentExact": true,
+      "preimageSha256": "c37c32f2d68a7319c1f4f5ad0a287b282ab284f614dc9465bfd92f49c3a13da5",
+      "preimageGitBlob": "269410dcd13c27f7a80d6ee6a609e84d69044a9e"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/QuotationInvoiceCapabilityHttpTests.cs",
+      "sha256": "5d923b5c40826aa674c2254efafe6f2bf9ed0d47166332f6bdaf5b80a0cf4376",
+      "frozenSha256": "5d923b5c40826aa674c2254efafe6f2bf9ed0d47166332f6bdaf5b80a0cf4376",
+      "parentSha256": "5d923b5c40826aa674c2254efafe6f2bf9ed0d47166332f6bdaf5b80a0cf4376",
+      "parentExact": true,
+      "preimageSha256": "bd0cb91d656c5a5a4fd923d2343c7728f511dc9f0c28fabb077a0673689526ff",
+      "preimageGitBlob": "a9e3ebb7cf14d4a20b3a4259968b7b6c1c588b27"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/QuotationInvoiceLiveTransportHttpTests.cs",
+      "sha256": "61f9ed36f8c248904807c7662efd9efdba565ebf1ab96b3a3e9b21ce9dd9f95d",
+      "frozenSha256": "61f9ed36f8c248904807c7662efd9efdba565ebf1ab96b3a3e9b21ce9dd9f95d",
+      "parentSha256": "61f9ed36f8c248904807c7662efd9efdba565ebf1ab96b3a3e9b21ce9dd9f95d",
+      "parentExact": true,
+      "preimageSha256": "073a9a4419de46598aa893878daf1a420fc461793e345fd29515898d479f113e",
+      "preimageGitBlob": "88b2f84660e9d012dc58faec96a0884b040ba132"
+    },
+    {
+      "path": "acceptance/OrdinaryFinancialIam.Tests/AccountingFinancialFixture.cs",
+      "sha256": "24869609bd0a1940b8a3c87a4d71ad7d056d821148b63590c995977d28af6d80",
+      "frozenSha256": "24869609bd0a1940b8a3c87a4d71ad7d056d821148b63590c995977d28af6d80",
+      "parentSha256": "c7daf54b49b86f09ae143d77d6e6db79349d656030dd4b9dcb62b89ac43c1713",
+      "parentExact": false,
+      "preimageSha256": null,
+      "preimageGitBlob": null
+    },
+    {
+      "path": "acceptance/OrdinaryFinancialIam.Tests/AccountingFinancialHttpTests.cs",
+      "sha256": "6c9c43d19cc2235443e039892475f708257212b1f9c3686b73ec8ea08edeb76f",
+      "frozenSha256": "6c9c43d19cc2235443e039892475f708257212b1f9c3686b73ec8ea08edeb76f",
+      "parentSha256": "6c9c43d19cc2235443e039892475f708257212b1f9c3686b73ec8ea08edeb76f",
+      "parentExact": true,
+      "preimageSha256": null,
+      "preimageGitBlob": null
+    }
+  ],
+  "patches": [
+    {
+      "path": "complete.patch",
+      "sha256": "4f46a141a47f7c85fbefbcdf93872f2b80d28a5cbe4e2e1dd16a34e54673e1ce"
+    },
+    {
+      "path": "causal-v5-to-v6.patch",
+      "sha256": "0ff2d119261e945cf8491328d3be57ebc85056cfd681e29575fdfa05af5b400f"
+    }
+  ],
+  "preservation": {
+    "sevenTrackedV3FilesExact": true,
+    "newFiles": 0,
+    "retainedInventory": {
+      "path": "retained-base-files.json",
+      "sha256": "75eb46e30dd4cd4f11936ef6c6a72df4f4038931d79e7d4bf6abcd826eb1d4da",
+      "count": 237,
+      "rehashedWriterMismatches": 0
+    },
+    "preimages": "Seven exact canonical raw preimages and four exact changed V5 predecessor raw preimages. Frozen V4/V5 unchanged.",
+    "existingAcceptedGenuineLaneChanged": false,
+    "parentV5SourceFiles": 17,
+    "parentV5UnchangedFiles": 13,
+    "parentV5ChangedFiles": 4
+  },
+  "producerBindings": {
+    "iam": {
+      "repository": "B:/maliev/Maliev.IAMService",
+      "commit": "4fe6642e5674013de9a3672505aec898fdcae0ed",
+      "normalApis": [
+        "POST /iam/v1/permissions/register",
+        "POST /iam/v1/principals",
+        "POST /iam/v1/roles",
+        "POST /iam/v1/principals/{principalId}/roles",
+        "DELETE /iam/v1/principals/{principalId}/roles/{bindingId}"
+      ],
+      "subjectResolution": "Unchanged opaque subject resolves through real IAM fallback email; positive principal generated by normal API, not GUID subject rewrite"
+    },
+    "originalAspireCommit": "01d506203763b914e237268a8746f1406423df86",
+    "messagingCommit": "559a00db0c7920a5247fdff60d4476ad23a9a501",
+    "defaultsCommit": "7b3099bf67d0f17e56cfdb3dcf36541304abaac2",
+    "compatibilityContractsCommit": "78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7",
+    "accountingCatalogue": {
+      "packetManifest": "D:/codex-temp/2026-10-03/legacy-code-commerce-20261003/outputs/accounting-iam-profile-consumer-source-v1-20261008.json",
+      "manifestSha256": "2d619689fead1344a38c84f9c97097efb0206d146b77326e9d7aeb901d57a90a",
+      "path": "provisioning/iam/accounting-financial-ownership.json",
+      "sha256": "7ef027009178f40ec7d21645d4fb15dea39e779c4a5929edb8cde10a46074ef7",
+      "serviceName": "legacy",
+      "permission": "legacy.accounting-financial-ownership.read",
+      "registrationOnly": true
+    },
+    "quotationCatalogue": {
+      "packet": "D:/codex-temp/2026-10-03/legacy-code-quotation-20261003/outputs/quotation-iam-catalogue-registration-source-v2-20261008",
+      "receiptSha256": "b9cc1463d43a818d672a06230c6d77ee975a5369ceb5ddade1b8848673a0a84e",
+      "path": "source/provisioning/iam/quotation-permissions.json",
+      "sha256": "7a7ff1e9122be3ff8f914390d63b447a50e25f5f03f41e75e7609eed499ed34d",
+      "permissions": 18,
+      "admission": "Fixed code hash and bounded retained bytes; actual normal IAM HTTP registration. Required only for original 13-row ordinary collection; not Accounting-only collection.",
+      "nativeAcceptance": false
+    },
+    "accountingCombined": {
+      "manifestPath": "D:/codex-temp/2026-10-03/legacy-code-commerce-20261003/outputs/accounting-financial-combined-source-v1-20261008.json",
+      "manifestSha256": "cc314f03b3cee337ddd2ea40609a7c40d664a8e8177eae82b6a87b353590d0a2",
+      "patchSha256": "fd8abaca9cc21be74546a7880f8421a2f22cbf1873ee3c44fb5ef3047fb5fc50",
+      "baseCommit": "668f2cb63c64b911db776329b983dd91944b3b8c",
+      "sourceRoot": "D:/codex-temp/2026-10-03/task/accounting-financial-combined-20261008",
+      "files": 49,
+      "authorRehashedMismatches": 0,
+      "projectBinding": "AccountingSourceRoot MSBuild property is frozen in test assembly metadata and reused for actual Accounting content root; exact manifest and49 raw hashes checked before Accounting host allocation.",
+      "bootstrapContract": {
+        "path": "D:/codex-temp/2026-10-03/legacy-code-commerce-20261003/outputs/accounting-financial-bootstrap-contract-20261008.json",
+        "sha256": "54b3bc7b345798d4fc4a4653170c7115bdc202d1b63ec9b47b745c2d0ad278e9",
+        "boundFiles": 13
+      }
+    }
+  },
+  "authority": {
+    "standingMigrationAndDisposableTestAuthority": true,
+    "liveGrants": false,
+    "automaticEnrollment": false,
+    "positiveIamSqlSeed": false,
+    "employeeOpaqueSubjectRewritten": false,
+    "externalBroker": "controlled only",
+    "operator": "Disposable real Auth normal service-token issuance with exact declared enrollment API permissions; not operator CLI/bootstrap or live authority proof"
+  },
+  "validation": {
+    "executed": [
+      "git diff --check:exit0",
+      "git apply --check --reverse complete.patch:exit0",
+      "git apply --check --reverse causal-v5-to-v6.patch:exit0",
+      "17 frozen source hashes verified against writer",
+      "7canonical/4changedV5preimage hashes verified",
+      "237retained0drift"
+    ],
+    "builds": 0,
+    "nativeTests": 0,
+    "newOrdinaryCaseForecast": 13,
+    "retainedV3ControlledCaseForecast": 11,
+    "totalNewCandidateCaseForecast": 30,
+    "linkedExistingControls": "Retained source; not newly executed or counted as new passes",
+    "acceptedBaseResults": "935/31/11 accepted on canonical main85 are prior evidence only, not this candidate",
+    "memoryAdmission": "4096 MiB floor; below floor, no SDK/native launch",
+    "newAccountingHttpCaseForecast": 6,
+    "focusedForecast": 48,
+    "focusedRetainedForecast": 18,
+    "newProjectFullForecast": 39,
+    "normalFullForecast": 946,
+    "existingGenuineFullForecast": 31
+  },
+  "notQualified": [
+    "C# compilation and actual cross-project dependency graph compatibility",
+    "Finite native SDK/host OS caps and exact external recovery runner",
+    "Complete /prepare HTTP, authoritative upstream source provider and Quotation orchestration",
+    "Operator CLI and optional AppHost whole-business composition",
+    "TLS/certificate and external broker delivery",
+    "Redis provider behavior",
+    "Hosted suite/workflow adoption: explicit new project not added to solution or gate",
+    "External bounded SDK-owner recovery of uncertain WAF Program-entrypoint startup quarantine; no local/native execution"
+  ],
+  "resourceLedger": {
+    "processes": [],
+    "containers": [],
+    "listeners": [],
+    "helpers": [],
+    "remaining": 0
+  },
+  "publication": {
+    "commits": 0,
+    "pushes": 0,
+    "deployments": 0,
+    "liveApiCalls": 0
+  },
+  "accountingJoin": {
+    "actualHost": "Accounting Program Production; real Jwt/normal DI/IIamServiceClient; no mock permissions or controller",
+    "bootstrap": "Real Auth employee login/session and normal Intranet service token; actual HTTP POST /auth/v1/exchange/invoice-create; actual Accounting verifier yields verified origin; real scoped AdmissionStore plus CreationStore transaction retains immutable financial receipt with actual invoice/items; normal Auth IAM's real401 follows unchanged ordinary audience then existing exact claim fallback, explicitly not positive IAM bootstrap authority",
+    "bootstrapExcluded": "Complete /prepare HTTP and upstream authoritative IInvoiceCreationSource provider orchestration not exercised",
+    "readRoute": "GET /internal/invoice-creation/operations/{operationId:guid}/financial-ownership",
+    "ordinaryCallers": [
+      "service:legacy-auth",
+      "service:legacy-quotation"
+    ],
+    "permission": "legacy.accounting-financial-ownership.read",
+    "resource": "global",
+    "actualOutgoingCaller": "Auth credential-first /service/iam-login yields AccountingService token; live key accounting-specific; bypassCache=true",
+    "rows": 6,
+    "coverage": [
+      "two caller success followed by actual API revoke and denied read",
+      "unrelated normal Auth-issued service, normally enrolled and bound, still controller-denied",
+      "wrong live key denies then actual recovery",
+      "genuine Auth-issued wrong QuotationService profile token controlled transport corruption denies then actual recovery",
+      "wrong inbound IAM audience rejected before IAM request"
+    ],
+    "financialMutationOracle": "Hash actual admission/invoice/ordered items before/after all reads and denials",
+    "externalSubstitutions": [
+      "External IAM broker publisher controlled",
+      "Canonical HTTPS IAM URL forwarded to exact owned loopback HTTP: no TLS/certificate qualification",
+      "Redis disabled through supported cache settings: no Redis qualification",
+      "Unrelated service registry is adversarial test-only configuration, not production enrollment"
+    ],
+    "cleanup": "Actual Accounting host registered before Task startup; retained startup settled before cached disposer; accounting quiescence fences keys/pools/container; independent retry-retained pools; actual failures stay sticky; faulted/interrupted actual startup remains sticky quarantine even after Services/disposer settlement; external SDK quiescence required"
+  },
+  "corrections": {
+    "normalAuthIam": "OwnedRouteFilter intercepts actual named IAMService. Ordinary legacy bearer is sent only to actual owned IAM loopback and records genuine401 audience denial; unchanged nonlive exact signed-claim fallback grants delegation issue. This is negative owned-transport proof, not positive IAM grant. Unregistered Auth HTTP primary handlers reject before send; bootstrap asserts one observed401/zero unowned attempts.",
+    "startupQuarantine": "All three new Auth/EnrollmentAuth/Accounting factory wrappers retain sticky uncertain startup on failed/interrupted Services wait. Task completion and cached WAF Dispose completion cannot prove actual Program-entrypoint exit. Best-effort actual disposal independent; dependent keys/pools/backend remain quarantined until external exact SDK-unit quiescence. Backend removal rechecks this guard. Successful normal startup/disposal path unchanged.",
+    "discovery": "README filter combines OrdinaryFinancial_ and OrdinaryAccounting_; 19 ordinary/new Accounting focus; full39 (19+20 retained), separate normal method29 (11new+18retained), jointfocus48, candidate30 across two projects. Normalfull946, existinggenuine31 unchanged."
+  }
+}

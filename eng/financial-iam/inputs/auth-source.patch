@@ -1,0 +1,2589 @@
+diff --git a/.github/workflows/_build-and-test.yml b/.github/workflows/_build-and-test.yml
+index cf0ab28..39fe0f7 100644
+--- a/.github/workflows/_build-and-test.yml
++++ b/.github/workflows/_build-and-test.yml
+@@ -22,7 +22,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/Legacy.Maliev.AuthService.Api/Authorization/BoundedQuotationWorkloadExchangeHandler.cs b/Legacy.Maliev.AuthService.Api/Authorization/BoundedQuotationWorkloadExchangeHandler.cs
+index 42f0493..37349b1 100644
+--- a/Legacy.Maliev.AuthService.Api/Authorization/BoundedQuotationWorkloadExchangeHandler.cs
++++ b/Legacy.Maliev.AuthService.Api/Authorization/BoundedQuotationWorkloadExchangeHandler.cs
+@@ -11,7 +11,8 @@ public sealed class BoundedQuotationWorkloadExchangeHandler(IConfiguration confi
+     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+     {
+         if (!QuotationAuthorityTransportBoundary.TryOrigin(configuration["Services:Auth:BaseUrl"], environment, out var origin)
+-            || request.Method != HttpMethod.Post || request.RequestUri != new Uri(origin, "/auth/v1/service/login"))
++            || request.Method != HttpMethod.Post || (request.RequestUri != new Uri(origin, "/auth/v1/service/login")
++                && request.RequestUri != new Uri(origin, "/auth/v1/service/iam-login")))
+             throw Unavailable();
+         using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(10), timeProvider);
+         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
+diff --git a/Legacy.Maliev.AuthService.Api/Authorization/QuotationInvoiceLiveAuthorityClient.cs b/Legacy.Maliev.AuthService.Api/Authorization/QuotationInvoiceLiveAuthorityClient.cs
+index a76481d..5cb8fa3 100644
+--- a/Legacy.Maliev.AuthService.Api/Authorization/QuotationInvoiceLiveAuthorityClient.cs
++++ b/Legacy.Maliev.AuthService.Api/Authorization/QuotationInvoiceLiveAuthorityClient.cs
+@@ -17,7 +17,7 @@ namespace Legacy.Maliev.AuthService.Api.Authorization;
+ /// <summary>Obtains an uncached employee decision using independently validated own workload identity.</summary>
+ public sealed class QuotationInvoiceLiveAuthorityClient(
+     IConfiguration configuration, IHostEnvironment environment, IHttpClientFactory clientFactory,
+-    ILegacyServiceAccessTokenProvider tokenProvider, IOptions<JwtOptions> jwtOptions, IOptionsMonitor<JwtBearerOptions> bearerOptions, TimeProvider timeProvider) : IQuotationInvoiceLiveAuthorityClient
++    ILegacyIamServiceAccessTokenProvider tokenProvider, IOptions<JwtOptions> jwtOptions, IOptionsMonitor<JwtBearerOptions> bearerOptions, TimeProvider timeProvider) : IQuotationInvoiceLiveAuthorityClient
+ {
+     /// <summary>Named capability-specific transport; not the general permission-policy client.</summary>
+     public const string HttpClientName = "QuotationInvoiceLiveAuthority";
+@@ -38,7 +38,7 @@ public sealed class QuotationInvoiceLiveAuthorityClient(
+         {
+             var token = await tokenProvider.GetAccessTokenAsync(cancellationToken);
+             if (string.IsNullOrWhiteSpace(token)) return QuotationInvoiceLiveAuthorityResult.Unavailable;
+-            if (!ValidateOwnToken(token))
++            if (!ValidateToken(token, null, iamProfile: true))
+             {
+                 tokenProvider.Invalidate(token);
+                 return QuotationInvoiceLiveAuthorityResult.Unavailable;
+@@ -72,6 +72,9 @@ public sealed class QuotationInvoiceLiveAuthorityClient(
+     }
+ 
+     internal bool ValidateOwnToken(string token, string? requiredPermission = null)
++        => ValidateToken(token, requiredPermission, iamProfile: false);
++
++    private bool ValidateToken(string token, string? requiredPermission, bool iamProfile)
+     {
+         try
+         {
+@@ -89,12 +92,27 @@ public sealed class QuotationInvoiceLiveAuthorityClient(
+             foreach (var name in new[] { "iss", "aud", "sub", "identity_kind", "iat", "exp", "name" })
+                 if (properties.Count(x => x.Name == name) != 1) return false;
+             if (properties.Count(x => x.Name == "nbf") > 1) return false;
+-            if (properties.Any(x => x.Name is "sid" or "session_id" or "family_id" or "employee_id" or "employeeId" or "EmployeeID" or "security_stamp" or "role" or "roles" or "executor")) return false;
++            if (properties.Any(x => x.Name is "sid" or "session_id" or "family_id" or "employee_id" or "employeeId" or "EmployeeID" or "security_stamp" or "roles" or "executor")
++                || !iamProfile && properties.Any(x => x.Name == "role")) return false;
+             var root = payload.RootElement;
+             var options = jwtOptions.Value;
++            var audience = iamProfile ? options.IamAudience : options.Audience;
++            if (iamProfile)
++            {
++                if (string.IsNullOrWhiteSpace(audience) || audience == options.Audience
++                    || configuration["ServiceClients:Clients:legacy-auth:IamServiceName"] != "AuthService") return false;
++                foreach (var (name, value) in new[]
++                {
++                    ("azp", "service:legacy-auth"), ("user_type", "service"), ("service_name", "AuthService"),
++                    ("role", IamServiceTokenProfile.Role), ("purpose", IamServiceTokenProfile.Purpose),
++                    ("permissions", IamServiceTokenProfile.CheckPermission),
++                })
++                    if (properties.Count(x => x.Name == name) != 1 || root.GetProperty(name).ValueKind != JsonValueKind.String
++                        || root.GetProperty(name).GetString() != value) return false;
++            }
+             if (root.GetProperty("iss").ValueKind != JsonValueKind.String || root.GetProperty("iss").GetString() != options.Issuer
+-                || root.GetProperty("aud").ValueKind != JsonValueKind.String || root.GetProperty("aud").GetString() != options.Audience
+-                || root.GetProperty("sub").ValueKind != JsonValueKind.String || root.GetProperty("sub").GetString() != "service:legacy-auth"
++                || root.GetProperty("aud").ValueKind != JsonValueKind.String || root.GetProperty("aud").GetString() != audience
++                || root.GetProperty("sub").ValueKind != JsonValueKind.String || root.GetProperty("sub").GetString() != (iamProfile ? new IamServiceTokenProfile("AuthService").Subject : "service:legacy-auth")
+                 || root.GetProperty("identity_kind").ValueKind != JsonValueKind.String || root.GetProperty("identity_kind").GetString() != "service"
+                 || root.GetProperty("name").ValueKind != JsonValueKind.String || root.GetProperty("name").GetString() != "legacy-auth"
+                 || root.GetProperty("iat").ValueKind != JsonValueKind.Number || !root.GetProperty("iat").TryGetInt64(out var issued)
+@@ -103,6 +121,8 @@ public sealed class QuotationInvoiceLiveAuthorityClient(
+             if (issued < 0 || issued > now || expires <= now || expires <= issued || expires - issued > 1800) return false;
+             if (root.TryGetProperty("nbf", out var notBefore) && (notBefore.ValueKind != JsonValueKind.Number || !notBefore.TryGetInt64(out var nbf) || nbf > now)) return false;
+             var parameters = bearerOptions.Get(JwtBearerDefaults.AuthenticationScheme).TokenValidationParameters.Clone();
++            parameters.ValidAudience = audience;
++            parameters.ValidAudiences = null;
+             parameters.ValidateLifetime = false; // Exact TimeProvider lifetime checks above, without wall-clock skew.
+             var principal = new JwtSecurityTokenHandler { MapInboundClaims = false }.ValidateToken(token, parameters, out _);
+             return requiredPermission is null || principal.FindAll("permissions").Count(claim => claim.Value == requiredPermission) == 1;
+diff --git a/Legacy.Maliev.AuthService.Api/Authorization/QuotationInvoiceLiveAuthorityRegistration.cs b/Legacy.Maliev.AuthService.Api/Authorization/QuotationInvoiceLiveAuthorityRegistration.cs
+index ef53962..97e77cb 100644
+--- a/Legacy.Maliev.AuthService.Api/Authorization/QuotationInvoiceLiveAuthorityRegistration.cs
++++ b/Legacy.Maliev.AuthService.Api/Authorization/QuotationInvoiceLiveAuthorityRegistration.cs
+@@ -1,5 +1,6 @@
+ using Legacy.Maliev.AuthService.Application;
+ using Microsoft.Extensions.DependencyInjection;
++using Microsoft.Extensions.DependencyInjection.Extensions;
+ using Microsoft.Extensions.Hosting;
+ using Maliev.Aspire.ServiceDefaults.LegacyAuth;
+ 
+@@ -15,6 +16,7 @@ public static class QuotationInvoiceLiveAuthorityRegistration
+         var services = builder.Services;
+         services.AddScoped<QuotationInvoiceLiveAuthorityClient>();
+         services.AddScoped<IQuotationInvoiceLiveAuthorityClient>(provider => provider.GetRequiredService<QuotationInvoiceLiveAuthorityClient>());
++        services.TryAddSingleton<ILegacyIamServiceAccessTokenProvider, LegacyIamServiceAccessTokenProvider>();
+         services.AddScoped<IInvoiceFinancialOwnershipClient, InvoiceFinancialOwnershipClient>();
+         services.AddScoped<IEmployeeProfileBindingClient, EmployeeProfileBindingClient>();
+         services.AddScoped<ICustomerProfileBindingClient, CustomerProfileBindingClient>();
+diff --git a/Legacy.Maliev.AuthService.Application/InvoiceFinancialOwnership.cs b/Legacy.Maliev.AuthService.Application/InvoiceFinancialOwnership.cs
+index 269410d..69fd09e 100644
+--- a/Legacy.Maliev.AuthService.Application/InvoiceFinancialOwnership.cs
++++ b/Legacy.Maliev.AuthService.Application/InvoiceFinancialOwnership.cs
+@@ -8,7 +8,7 @@ public static class InvoiceFinancialOwnershipContract
+     /// <summary>The sole readback contract version.</summary>
+     public const int Version = 1;
+     /// <summary>The dedicated Accounting readback permission.</summary>
+-    public const string ReadPermission = "legacy.accounting.invoice-financial-ownership.read";
++    public const string ReadPermission = "legacy.accounting-financial-ownership.read";
+     /// <summary>The immutable financial binding frame version carried in the capability.</summary>
+     public const string BindingVersion = "invoice-creation-financial-v1";
+ 
+diff --git a/Legacy.Maliev.AuthService.Tests/QuotationInvoiceCapabilityHttpTests.cs b/Legacy.Maliev.AuthService.Tests/QuotationInvoiceCapabilityHttpTests.cs
+index a9e3ebb..9630b9c 100644
+--- a/Legacy.Maliev.AuthService.Tests/QuotationInvoiceCapabilityHttpTests.cs
++++ b/Legacy.Maliev.AuthService.Tests/QuotationInvoiceCapabilityHttpTests.cs
+@@ -638,7 +638,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
+         var authority = scope.ServiceProvider.GetRequiredService<IQuotationInvoiceLiveAuthorityClient>();
+         Assert.Equal(QuotationInvoiceLiveAuthorityResult.Allowed, await authority.CheckAsync("capability-employee", 84));
+         Assert.Equal(QuotationInvoiceLiveAuthorityResult.Allowed, await authority.CheckAsync("capability-employee", 84));
+-        Assert.Equal(1, app.ExchangeRequests);
++        Assert.Equal(2, app.ExchangeRequests);
+         Assert.Equal(2, app.IamRequests);
+         Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
+     }
+@@ -662,7 +662,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
+         using var response = await SendAsync(client, await CallerAsync(client), employee);
+         var issued = await AssertCapabilityAsync(response, app, maximumSeconds);
+         Assert.Equal(1, app.IamRequests);
+-        Assert.Equal(1, app.ExchangeRequests);
++        Assert.Equal(2, app.ExchangeRequests);
+         Assert.Null((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
+         Assert.Equal("capability-stamp", (await stores.Employees.Users.AsNoTracking().SingleAsync()).SecurityStamp);
+         app.Clock.Advance(TimeSpan.FromSeconds(maximumSeconds));
+@@ -670,7 +670,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
+     }
+ 
+     [Theory]
+-    [InlineData(HttpStatusCode.NotFound, 1)]
++    [InlineData(HttpStatusCode.NotFound, 2)]
+     [InlineData(HttpStatusCode.Unauthorized, 3)]
+     [InlineData(HttpStatusCode.Forbidden, 3)]
+     public async Task RepeatedAuthorizedRequest_RechecksLiveAuthorityAndPreservesWorkloadInvalidation(HttpStatusCode admissionStatus, int expectedExchanges)
+@@ -944,9 +944,9 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
+             Assert.Equal(2, StandardAdmissionRequests);
+             Assert.Equal(expectedExchanges, issuedWorkloadIds.Count);
+             Assert.Equal(expectedExchanges, issuedWorkloadIds.Distinct(StringComparer.Ordinal).Count());
+-            string[] expectedOrder = expectedExchanges == 1
+-                ? ["workload-token", "standard-service-admission", "scoped-employee-live-authority", "standard-service-admission", "scoped-employee-live-authority"]
+-                : ["workload-token", "standard-service-admission", "workload-token", "scoped-employee-live-authority", "standard-service-admission", "workload-token", "scoped-employee-live-authority"];
++            string[] expectedOrder = expectedExchanges == 2
++                ? ["workload-token", "standard-service-admission", "iam-profile-token", "scoped-employee-live-authority", "standard-service-admission", "scoped-employee-live-authority"]
++                : ["workload-token", "standard-service-admission", "iam-profile-token", "scoped-employee-live-authority", "workload-token", "standard-service-admission", "scoped-employee-live-authority"];
+             Assert.Equal(expectedOrder, boundaryOrder.ToArray());
+         }
+ 
+@@ -975,11 +975,14 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
+                     ["ConnectionStrings:RefreshSessions"] = stores.State.Database.GetConnectionString(),
+                     ["Jwt:Issuer"] = "https://quotation-capability.test",
+                     ["Jwt:Audience"] = "quotation-capability-access",
++                    ["Jwt:IamAudience"] = "quotation-capability-iam",
+                     ["Jwt:PrivateKeyPem"] = key.ExportPkcs8PrivateKeyPem(),
+                     ["Jwt:KeyId"] = "quotation-capability-key",
+                     ["Jwt:AccessTokenLifetimeSeconds"] = "900",
+                     ["ServiceClients:Clients:legacy-auth:SecretSha256"] = ServiceClientCredential.HashSecret(Secret),
+                     ["ServiceClients:Clients:legacy-auth:Permissions:0"] = "legacy.iam.permissions.check",
++                    ["ServiceClients:Clients:legacy-auth:IamServiceName"] = "AuthService",
++                    ["ServiceClients:Clients:legacy-auth:Permissions:2"] = IamServiceTokenProfile.CheckPermission,
+                     ["ServiceAuthentication:ClientId"] = missingLive ? null : "legacy-auth",
+                     ["ServiceAuthentication:ClientSecret"] = missingLive ? null : Secret,
+                     ["Services:Auth:BaseUrl"] = missingLive ? null : "https://quotation-capability.test",
+@@ -990,7 +993,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
+                 {
+                     values["Services:AccountingService:BaseUrl"] = "https://capability-accounting.test";
+                     if (!missingFinancialGrant)
+-                        values["ServiceClients:Clients:legacy-auth:Permissions:1"] = "legacy.accounting.invoice-financial-ownership.read";
++                        values["ServiceClients:Clients:legacy-auth:Permissions:1"] = "legacy.accounting-financial-ownership.read";
+                 }
+                 foreach (var service in new[] { "legacy-intranet", "legacy-accounting" })
+                 {
+@@ -1094,12 +1097,12 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
+             return Assert.IsType<JwtSecurityToken>(validated);
+         }
+ 
+-        private void ValidateOwnMachine(string token)
++        private void ValidateOwnMachine(string token, bool iamProfile = false)
+         {
+             var principal = new JwtSecurityTokenHandler { MapInboundClaims = false }.ValidateToken(token, new TokenValidationParameters
+             {
+                 ValidIssuer = "https://quotation-capability.test",
+-                ValidAudience = "quotation-capability-access",
++                ValidAudience = iamProfile ? "quotation-capability-iam" : "quotation-capability-access",
+                 IssuerSigningKey = new RsaSecurityKey(key),
+                 ValidAlgorithms = [SecurityAlgorithms.RsaSha256],
+                 ValidateIssuer = true,
+@@ -1110,12 +1113,12 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
+                 RequireExpirationTime = true,
+                 ClockSkew = TimeSpan.Zero,
+             }, out var verified);
+-            Assert.Equal(["quotation-capability-access"], Assert.IsType<JwtSecurityToken>(verified).Audiences);
+-            Assert.Equal("service:legacy-auth", Assert.Single(principal.Claims, x => x.Type == "sub").Value);
++            Assert.Equal(new[] { iamProfile ? "quotation-capability-iam" : "quotation-capability-access" }, Assert.IsType<JwtSecurityToken>(verified).Audiences);
++            Assert.Equal(iamProfile ? "system:service:auth" : "service:legacy-auth", Assert.Single(principal.Claims, x => x.Type == "sub").Value);
+             Assert.Equal("service", Assert.Single(principal.Claims, x => x.Type == "identity_kind").Value);
+-            Assert.Equal(invoiceBoundary && !missingFinancialGrant
+-                ? new[] { "legacy.iam.permissions.check", "legacy.accounting.invoice-financial-ownership.read" }
+-                : new[] { "legacy.iam.permissions.check" }, principal.FindAll("permissions").Select(value => value.Value));
++            Assert.Equal(iamProfile ? new[] { IamServiceTokenProfile.CheckPermission } : invoiceBoundary && !missingFinancialGrant
++                ? new[] { "legacy.iam.permissions.check", "legacy.accounting-financial-ownership.read", IamServiceTokenProfile.CheckPermission }
++                : new[] { "legacy.iam.permissions.check", IamServiceTokenProfile.CheckPermission }, principal.FindAll("permissions").Select(value => value.Value));
+             Assert.DoesNotContain(principal.Claims, x => x.Type is "sid" or "executor");
+         }
+ 
+@@ -1123,7 +1126,8 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
+         {
+             ExchangeRequests++;
+             Assert.Equal(HttpMethod.Post, request.Method);
+-            Assert.Equal("https://quotation-capability.test/auth/v1/service/login", request.RequestUri!.AbsoluteUri);
++            var iamProfile = request.RequestUri!.AbsolutePath == "/auth/v1/service/iam-login";
++            Assert.Equal("https://quotation-capability.test/auth/v1/service/" + (iamProfile ? "iam-login" : "login"), request.RequestUri.AbsoluteUri);
+             Assert.Null(request.Headers.Authorization);
+             using var body = System.Text.Json.JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+             Assert.Equal("legacy-auth", body.RootElement.GetProperty("clientId").GetString());
+@@ -1137,9 +1141,9 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
+             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+             var bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+             var parsed = Assert.IsType<ServiceTokenResponse>(System.Text.Json.JsonSerializer.Deserialize<ServiceTokenResponse>(bytes, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)));
+-            ValidateOwnMachine(parsed.AccessToken);
++            ValidateOwnMachine(parsed.AccessToken, iamProfile);
+             issuedWorkloadIds.Enqueue(new JwtSecurityTokenHandler().ReadJwtToken(parsed.AccessToken).Id);
+-            boundaryOrder.Enqueue("workload-token");
++            boundaryOrder.Enqueue(iamProfile ? "iam-profile-token" : "workload-token");
+             response.Content.Dispose();
+             response.Content = new ByteArrayContent(bytes);
+             response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+@@ -1187,7 +1191,7 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
+             Assert.Equal(HttpMethod.Post, request.Method);
+             Assert.Equal("https://capability-iam.test/iam/v1/auth/check-permission", request.RequestUri!.AbsoluteUri);
+             Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+-            ValidateOwnMachine(request.Headers.Authorization.Parameter!);
++            ValidateOwnMachine(request.Headers.Authorization.Parameter!, iamProfile: true);
+             Assert.Equal("synthetic-capability-live-key", Assert.Single(request.Headers.GetValues("X-Maliev-IAM-Live-Check-Key")));
+             using var body = System.Text.Json.JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+             Assert.Equal("capability-employee", body.RootElement.GetProperty("principalId").GetString());
+diff --git a/Legacy.Maliev.AuthService.Tests/QuotationInvoiceLiveTransportHttpTests.cs b/Legacy.Maliev.AuthService.Tests/QuotationInvoiceLiveTransportHttpTests.cs
+index 88b2f84..8ccb9e0 100644
+--- a/Legacy.Maliev.AuthService.Tests/QuotationInvoiceLiveTransportHttpTests.cs
++++ b/Legacy.Maliev.AuthService.Tests/QuotationInvoiceLiveTransportHttpTests.cs
+@@ -119,6 +119,17 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
+     [InlineData("expired")]
+     [InlineData("future-iat")]
+     [InlineData("multiple-audiences")]
++    [InlineData("legacy-profile")]
++    [InlineData("wrong-service-name")]
++    [InlineData("wrong-purpose")]
++    [InlineData("wrong-role")]
++    [InlineData("wrong-azp")]
++    [InlineData("wrong-permission")]
++    [InlineData("duplicate-service_name")]
++    [InlineData("duplicate-purpose")]
++    [InlineData("duplicate-role")]
++    [InlineData("duplicate-azp")]
++    [InlineData("duplicate-permissions")]
+     public async Task LoginResponseWrongTrust_DoesNotSendCredentialedIamRequest(string mutation)
+     {
+         await using var stores = await Stores.CreateAsync(postgres);
+@@ -237,7 +248,7 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
+             await scope.ServiceProvider.GetRequiredService<IQuotationInvoiceLiveAuthorityClient>().CheckAsync("literal-employee", 84));
+         Assert.Equal(1, trap.SourceRequests);
+         Assert.Equal(0, trap.LeakRequests);
+-        Assert.Equal(phase == "exchange" ? "/auth/v1/service/login" : "/iam/v1/auth/check-permission", trap.SourcePath);
++        Assert.Equal(phase == "exchange" ? "/auth/v1/service/iam-login" : "/iam/v1/auth/check-permission", trap.SourcePath);
+         Assert.Equal(phase == "iam", trap.SawBearer);
+         Assert.True(trap.SawBody);
+     }
+@@ -285,11 +296,14 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
+                     ["ConnectionStrings:RefreshSessions"] = stores.State.Database.GetConnectionString(),
+                     ["Jwt:Issuer"] = "https://transport-auth.test",
+                     ["Jwt:Audience"] = "transport-access",
++                    ["Jwt:IamAudience"] = "transport-iam",
+                     ["Jwt:PrivateKeyPem"] = key.ExportPkcs8PrivateKeyPem(),
+                     ["Jwt:KeyId"] = "transport-key",
+                     ["Jwt:AccessTokenLifetimeSeconds"] = "900",
+                     ["ServiceClients:Clients:legacy-auth:SecretSha256"] = ServiceClientCredential.HashSecret(Secret),
+                     ["ServiceClients:Clients:legacy-auth:Permissions:0"] = "legacy.iam.permissions.check",
++                    ["ServiceClients:Clients:legacy-auth:IamServiceName"] = "AuthService",
++                    ["ServiceClients:Clients:legacy-auth:Permissions:1"] = IamServiceTokenProfile.CheckPermission,
+                     ["ServiceAuthentication:ClientId"] = missing == "own-client" ? null : "legacy-auth",
+                     ["ServiceAuthentication:ClientSecret"] = missing == "own-secret" ? null : Secret,
+                     ["Services:Auth:BaseUrl"] = missing == "auth-origin" ? null : RealPrimaryPhase == "exchange" ? RealOrigin : "https://transport-auth.test",
+@@ -306,14 +320,14 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
+             });
+         }
+ 
+-        public void ValidateOwnToken(string token)
++        public void ValidateOwnToken(string token, bool iamProfile = false)
+         {
+             var principal = new JwtSecurityTokenHandler { MapInboundClaims = false }.ValidateToken(token, new TokenValidationParameters
+             {
+                 ValidateIssuer = true,
+                 ValidIssuer = "https://transport-auth.test",
+                 ValidateAudience = true,
+-                ValidAudience = "transport-access",
++                ValidAudience = iamProfile ? "transport-iam" : "transport-access",
+                 ValidateIssuerSigningKey = true,
+                 IssuerSigningKey = new RsaSecurityKey(key),
+                 RequireSignedTokens = true,
+@@ -324,10 +338,10 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
+                 LifetimeValidator = (notBefore, expires, _, _) => expires > Clock.GetUtcNow().UtcDateTime && (notBefore is null || notBefore <= Clock.GetUtcNow().UtcDateTime),
+             }, out var jwt);
+             Assert.Equal("RS256", Assert.IsType<JwtSecurityToken>(jwt).Header.Alg);
+-            Assert.Equal("service:legacy-auth", Assert.Single(principal.Claims, x => x.Type == "sub").Value);
++            Assert.Equal(iamProfile ? "system:service:auth" : "service:legacy-auth", Assert.Single(principal.Claims, x => x.Type == "sub").Value);
+             Assert.Equal("service", Assert.Single(principal.Claims, x => x.Type == "identity_kind").Value);
+             Assert.DoesNotContain(principal.Claims, x => x.Type is "sid" or "executor");
+-            Assert.Equal("legacy.iam.permissions.check", Assert.Single(principal.Claims, x => x.Type == "permissions").Value);
++            Assert.Equal(iamProfile ? new[] { IamServiceTokenProfile.CheckPermission } : new[] { "legacy.iam.permissions.check", IamServiceTokenProfile.CheckPermission }, principal.FindAll("permissions").Select(claim => claim.Value));
+         }
+ 
+         private async Task<HttpResponseMessage> ExchangeAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+@@ -335,13 +349,14 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
+             ExchangeRequests++;
+             if (StreamMode == "exchange-headers-hang") await WaitForDeadlineAsync(cancellationToken);
+             Assert.Equal(HttpMethod.Post, request.Method);
+-            Assert.Equal("https://transport-auth.test/auth/v1/service/login", request.RequestUri!.AbsoluteUri);
++            Assert.Equal("https://transport-auth.test/auth/v1/service/iam-login", request.RequestUri!.AbsoluteUri);
+             Assert.Null(request.Headers.Authorization);
+             using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+             Assert.Equal("legacy-auth", body.RootElement.GetProperty("clientId").GetString());
+             Assert.Equal(Secret, body.RootElement.GetProperty("clientSecret").GetString());
+             using var actual = CreateClient();
+-            using var forwarded = new HttpRequestMessage(request.Method, request.RequestUri)
++            using var forwarded = new HttpRequestMessage(request.Method, tokenMutation == "legacy-profile"
++                ? new Uri("https://transport-auth.test/auth/v1/service/login") : request.RequestUri)
+             {
+                 Content = new StringContent(body.RootElement.GetRawText(), Encoding.UTF8, "application/json"),
+             };
+@@ -349,21 +364,21 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
+             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+             var normalBytes = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+             var token = Assert.IsType<ServiceTokenResponse>(JsonSerializer.Deserialize<ServiceTokenResponse>(normalBytes, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
+-            ValidateOwnToken(token.AccessToken);
++            ValidateOwnToken(token.AccessToken, iamProfile: tokenMutation != "legacy-profile");
+             response.Content.Dispose();
+             response.Content = new ByteArrayContent(normalBytes);
+             response.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+             if (StreamMode == "exchange-hang") response.Content = new StreamContent(new BlockingBody(this));
+             if (StreamMode == "exchange-oversize") response.Content = new StringContent(new string(' ', 32769));
+             if (StreamMode == "exchange-chunked-overflow") response.Content = new StreamContent(new UnknownLengthBody());
+-            if (tokenMutation is not null)
++            if (tokenMutation is not null && tokenMutation != "legacy-profile")
+             {
+                 var parsed = new JwtSecurityTokenHandler().ReadJwtToken(token.AccessToken);
+                 var claims = parsed.Claims.Where(x => x.Type is not ("iss" or "aud" or "nbf" or "exp") && (tokenMutation != "wrong-machine" || x.Type != "sub")).ToList();
+-                if (tokenMutation == "wrong-machine") claims.Add(new Claim("sub", "service:legacy-intranet"));
++                if (tokenMutation == "wrong-machine") claims.Add(new Claim("sub", "system:service:intranet"));
+                 using var forged = RSA.Create(2048);
+                 var signingKey = tokenMutation == "forged" ? forged : key;
+-                var changed = new JwtSecurityToken("https://transport-auth.test", tokenMutation == "wrong-audience" ? "other-audience" : "transport-access",
++                var changed = new JwtSecurityToken("https://transport-auth.test", tokenMutation == "wrong-audience" ? "other-audience" : "transport-iam",
+                     claims, DateTime.UtcNow.AddSeconds(-1), DateTime.UtcNow.AddMinutes(15), new SigningCredentials(new RsaSecurityKey(signingKey), SecurityAlgorithms.RsaSha256));
+                 response.Content = JsonContent.Create(token with { AccessToken = new JwtSecurityTokenHandler().WriteToken(changed) });
+                 if (tokenMutation is not ("wrong-machine" or "wrong-audience" or "forged"))
+@@ -379,7 +394,7 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
+             Assert.Equal(HttpMethod.Post, request.Method);
+             Assert.Equal("https://controlled-iam.test/iam/v1/auth/check-permission", request.RequestUri!.AbsoluteUri);
+             Assert.Equal("Bearer", request.Headers.Authorization!.Scheme);
+-            ValidateOwnToken(request.Headers.Authorization.Parameter!);
++            ValidateOwnToken(request.Headers.Authorization.Parameter!, iamProfile: true);
+             Assert.Equal(LiveKey, Assert.Single(request.Headers.GetValues("X-Maliev-IAM-Live-Check-Key")));
+             using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(cancellationToken));
+             Assert.Equal("literal-employee", body.RootElement.GetProperty("principalId").GetString());
+@@ -412,6 +427,16 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
+                 raw = raw[..^1] + "," + JsonSerializer.Serialize(property) + ":" + original.RootElement.GetProperty(property).GetRawText() + "}";
+             }
+             else if (mutation == "session-claim") raw = raw[..^1] + ",\"sid\":\"synthetic-session\"}";
++            else if (mutation.StartsWith("wrong-", StringComparison.Ordinal))
++            {
++                var name = mutation switch
++                {
++                    "wrong-service-name" => "service_name", "wrong-purpose" => "purpose", "wrong-role" => "role",
++                    "wrong-azp" => "azp", _ => "permissions",
++                };
++                raw = raw.Replace(JsonSerializer.Serialize(name) + ":" + original.RootElement.GetProperty(name).GetRawText(),
++                    JsonSerializer.Serialize(name) + ":\"unapproved-profile-value\"", StringComparison.Ordinal);
++            }
+             else if (mutation.EndsWith("-claim", StringComparison.Ordinal))
+             {
+                 var claim = mutation switch { "executor-claim" => "executor", "session-id-claim" => "session_id", "family-claim" => "family_id", "employee-id-claim" => "employee_id", _ => "security_stamp" };
+@@ -425,7 +450,7 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
+                     "employee-kind" => "\"employee\"",
+                     "expired" => (Clock.GetUtcNow().ToUnixTimeSeconds() - 1).ToString(System.Globalization.CultureInfo.InvariantCulture),
+                     "future-iat" => (Clock.GetUtcNow().ToUnixTimeSeconds() + 1000).ToString(System.Globalization.CultureInfo.InvariantCulture),
+-                    _ => "[\"transport-access\",\"other-audience\"]",
++                    _ => "[\"transport-iam\",\"other-audience\"]",
+                 };
+                 raw = raw.Replace(JsonSerializer.Serialize(name) + ":" + original.RootElement.GetProperty(name).GetRawText(), JsonSerializer.Serialize(name) + ":" + replacement, StringComparison.Ordinal);
+             }
+diff --git a/acceptance/OrdinaryFinancialIamHost/OrdinaryFinancialIamHost.csproj b/acceptance/OrdinaryFinancialIamHost/OrdinaryFinancialIamHost.csproj
+new file mode 100644
+index 0000000..fc21793
+--- /dev/null
++++ b/acceptance/OrdinaryFinancialIamHost/OrdinaryFinancialIamHost.csproj
+@@ -0,0 +1,18 @@
++<Project Sdk="Microsoft.NET.Sdk">
++  <PropertyGroup>
++    <OutputType>Exe</OutputType>
++    <TargetFramework>net10.0</TargetFramework>
++    <IsPackable>false</IsPackable>
++    <GenuineIamSourceRoot>$(MSBuildThisFileDirectory)../../.genuine-iam-source</GenuineIamSourceRoot>
++  </PropertyGroup>
++  <ItemGroup>
++    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
++    <PackageReference Include="Moq" Version="4.20.72" />
++    <ProjectReference Include="$(GenuineIamSourceRoot)/Maliev.IAMService/Maliev.IAMService.Api/Maliev.IAMService.Api.csproj" Aliases="IamApi" />
++    <ProjectReference Include="$(GenuineIamSourceRoot)/Maliev.IAMService/Maliev.IAMService.Infrastructure/Maliev.IAMService.Infrastructure.csproj" Aliases="IamInfrastructure" />
++    <ProjectReference Include="$(GenuineIamSourceRoot)/Maliev.IAMService/Maliev.IAMService.Application/Maliev.IAMService.Application.csproj" Aliases="IamApplication" />
++    <ProjectReference Include="$(GenuineIamSourceRoot)/Maliev.IAMService/Maliev.IAMService.Domain/Maliev.IAMService.Domain.csproj" Aliases="IamDomain" />
++    <ProjectReference Include="$(GenuineIamSourceRoot)/Maliev.Aspire/Maliev.Aspire.ServiceDefaults/Maliev.Aspire.ServiceDefaults.csproj" Aliases="OriginalDefaults" />
++  </ItemGroup>
++</Project>
++
+diff --git a/acceptance/OrdinaryFinancialIamHost/Program.cs b/acceptance/OrdinaryFinancialIamHost/Program.cs
+new file mode 100644
+index 0000000..f10ed90
+--- /dev/null
++++ b/acceptance/OrdinaryFinancialIamHost/Program.cs
+@@ -0,0 +1,204 @@
++extern alias IamApi;
++extern alias IamInfrastructure;
++extern alias IamApplication;
++extern alias IamDomain;
++
++using System.Security.Cryptography;
++using System.Text;
++using System.Text.Json;
++using Microsoft.AspNetCore.Authentication.JwtBearer;
++using Microsoft.AspNetCore.Hosting;
++using Microsoft.AspNetCore.Hosting.Server;
++using Microsoft.AspNetCore.Hosting.Server.Features;
++using Microsoft.AspNetCore.Mvc.Testing;
++using Microsoft.EntityFrameworkCore;
++using Microsoft.Extensions.DependencyInjection;
++using Microsoft.Extensions.Hosting;
++using Microsoft.Extensions.Logging;
++using Microsoft.Extensions.Options;
++using Microsoft.IdentityModel.Tokens;
++using MassTransit;
++using Moq;
++using Npgsql;
++using IamProgram = IamApi::Program;
++using IamDb = IamInfrastructure::Maliev.IAMService.Infrastructure.Persistence.IAMDbContext;
++using KeyProvider = IamApplication::Maliev.IAMService.Application.Services.IRsaKeyProvider;
++
++// Only fixed receipts leave stdout: injected configuration and key material must
++// never enter public CI logs, including through framework startup exceptions.
++var protocol = Console.Out;
++Console.SetOut(TextWriter.Null);
++Console.SetError(TextWriter.Null);
++var failures = new List<string>();
++var phase = "configuration";
++IamFactory? factory = null;
++RSA? signingKey = null;
++RSA? validationKey = null;
++var capabilityKeys = new List<RSA>();
++NpgsqlConnection? ownedPool = null;
++HttpClient? client = null;
++using var signing = RSA.Create();
++try
++{
++    signing.ImportFromPem(Required("GENUINE_IAM_PRIVATE_PEM"));
++    factory = new IamFactory(signing, Required("GENUINE_IAM_CONNECTION"), Required("GENUINE_IAM_LIVE_KEY"));
++    phase = "host-start";
++    factory.UseKestrel(0);
++    client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
++    using var startupDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(60));
++    await using (var scope = factory.Services.CreateAsyncScope())
++    {
++        phase = "jwt-contract";
++        var db = scope.ServiceProvider.GetRequiredService<IamDb>();
++        signingKey = scope.ServiceProvider.GetRequiredService<KeyProvider>().GetRsa();
++        var authentication = scope.ServiceProvider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
++            .Get(JwtBearerDefaults.AuthenticationScheme);
++        var parameters = authentication.TokenValidationParameters;
++        var capability = scope.ServiceProvider.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
++            .Get(IamApi::Maliev.IAMService.Api.Authorization.TokenIssuanceCapabilityAuthentication.Scheme);
++        foreach (var candidate in capability.TokenValidationParameters.IssuerSigningKeyResolver!(
++            string.Empty, null!, "genuine-join", capability.TokenValidationParameters))
++        {
++            if (candidate is RsaSecurityKey { Rsa: not null } rsaKey) capabilityKeys.Add(rsaKey.Rsa);
++        }
++        if (!parameters.ValidateIssuer || !parameters.ValidateAudience || !parameters.ValidateLifetime
++            || !parameters.ValidateIssuerSigningKey || parameters.SignatureValidator is not null)
++        {
++            throw new InvalidOperationException("JWT validation contract failed.");
++        }
++        var key = parameters.IssuerSigningKey ?? parameters.IssuerSigningKeys?.Single();
++        validationKey = (key as RsaSecurityKey)?.Rsa
++            ?? throw new InvalidOperationException("RSA JWT validation is required.");
++        phase = "no-authority-seed";
++        ownedPool = new NpgsqlConnection(db.Database.GetDbConnection().ConnectionString);
++        if (await db.PrincipalPermissionBindings.AnyAsync(startupDeadline.Token))
++            throw new InvalidOperationException("The ordinary-enrollment lane requires an empty authority database.");
++
++    }
++    phase = "listener-contract";
++    var addresses = factory.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()
++        ?? throw new InvalidOperationException("Kestrel address is unavailable.");
++    var address = new Uri(addresses.Addresses.Single());
++    if (address.Scheme != "http" || !address.IsLoopback || address.Port <= 0)
++    {
++        throw new InvalidOperationException("IAM listener must be HTTP loopback.");
++    }
++    await protocol.WriteLineAsync("GENUINE_IAM_READY=" + JsonSerializer.Serialize(new
++    {
++        baseAddress = address.AbsoluteUri.TrimEnd('/'), seeded = false, migrated = true, jwtValidationPreserved = true
++    }));
++    await protocol.FlushAsync();
++    phase = "stop-protocol";
++    using var lease = new CancellationTokenSource(TimeSpan.FromMinutes(10));
++    if (await Console.In.ReadLineAsync(lease.Token) != "stop")
++    {
++        throw new InvalidOperationException("Owned host requires a stop command.");
++    }
++}
++catch (Exception)
++{
++    // Exclude exception payloads, which may contain credentials.
++    failures.Add(phase);
++}
++finally
++{
++    await CleanupAsync("client", () => { client?.Dispose(); return Task.CompletedTask; });
++    await CleanupAsync("host", async () =>
++    {
++        if (factory is not null)
++        {
++            await factory.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(20));
++        }
++    });
++    await CleanupAsync("signing-rsa", () => { signingKey?.Dispose(); return Task.CompletedTask; });
++    await CleanupAsync("validation-rsa", () => { validationKey?.Dispose(); return Task.CompletedTask; });
++    foreach (var capabilityKey in capabilityKeys)
++    {
++        await CleanupAsync("capability-rsa", () => { capabilityKey.Dispose(); return Task.CompletedTask; });
++    }
++    await CleanupAsync("fixture-rsa", () => { signing.Dispose(); return Task.CompletedTask; });
++    await CleanupAsync("owned-pool", () =>
++    {
++        if (ownedPool is not null)
++        {
++            try { NpgsqlConnection.ClearPool(ownedPool); }
++            finally { ownedPool.Dispose(); }
++        }
++        return Task.CompletedTask;
++    });
++    await protocol.WriteLineAsync("GENUINE_IAM_STOPPED=" + JsonSerializer.Serialize(new
++    {
++        disposed = failures.Count == 0, failedSteps = failures
++    }));
++    await protocol.FlushAsync();
++}
++return failures.Count == 0 ? 0 : 1;
++
++async Task CleanupAsync(string name, Func<Task> action)
++{
++    try { await action(); }
++    catch (Exception) { failures.Add(name); }
++}
++
++static string Required(string name) => Environment.GetEnvironmentVariable(name)
++    ?? throw new InvalidOperationException("A synthetic acceptance setting is missing.");
++
++internal sealed class IamFactory(RSA signing, string connection, string liveKey) : WebApplicationFactory<IamProgram>
++{
++    protected override void ConfigureWebHost(IWebHostBuilder builder)
++    {
++        builder.UseContentRoot(Path.Combine(FindRepositoryRoot(), ".genuine-iam-source", "Maliev.IAMService", "Maliev.IAMService.Api"));
++        builder.UseEnvironment("Production");
++        builder.ConfigureLogging(logging => logging.ClearProviders());
++        foreach (var setting in new Dictionary<string, string?>
++        {
++            ["ASPNETCORE_ENVIRONMENT"] = "Production",
++            ["ConnectionStrings:IamDbContext"] = connection,
++            ["ConnectionStrings:rabbitmq"] = "amqp://unused:unused@127.0.0.1:1/",
++            ["Cache:RedisEnabled"] = "false",
++            ["Observability:RuntimeMetricsEnabled"] = "false",
++            ["CORS:AllowedOrigins:0"] = "https://localhost",
++            ["CORS:AllowedOrigins"] = "https://localhost",
++            ["Jwt:Issuer"] = "https://auth.join.invalid",
++            ["Jwt:Audience"] = "https://iam.join.invalid",
++            ["Jwt:PublicKey"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(signing.ExportSubjectPublicKeyInfoPem())),
++            ["Jwt:PrivateKey"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(signing.ExportPkcs8PrivateKeyPem())),
++            ["IAM:TokenIssuanceCapability:PublicKeys:genuine-join"] = Convert.ToBase64String(signing.ExportSubjectPublicKeyInfo()),
++            ["IAM:LivePermissionChecks:AllowedServices:0"] = "QuotationService",
++            ["IAM:LivePermissionChecks:AllowedServices:1"] = "AuthService",
++            ["IAM:LivePermissionChecks:AllowedServices:2"] = "AccountingService",
++            ["IAM:LivePermissionChecks:CredentialHashes:AccountingService"] = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes("accounting:" + liveKey))),
++            ["IAM:LivePermissionChecks:CredentialHashes:QuotationService"] = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes("quotation:" + liveKey))),
++            ["IAM:LivePermissionChecks:CredentialHashes:AuthService"] = Convert.ToBase64String(SHA256.HashData(Encoding.UTF8.GetBytes(liveKey)))
++        })
++        {
++            builder.UseSetting(setting.Key, setting.Value);
++        }
++        builder.ConfigureServices(services =>
++        {
++            string[] disabled = ["IAMInitializationHostedService", "IAMInfrastructureSeederHostedService", "BackgroundIAMRegistrationService", "MassTransitHostedService"];
++            foreach (var descriptor in services.Where(d => d.ServiceType == typeof(IHostedService)
++                && disabled.Contains(d.ImplementationType?.Name)).ToArray())
++            {
++                services.Remove(descriptor);
++            }
++            // Only the external broker transport is controlled. Controllers, authorization,
++            // principal/role/binding services, audit persistence and resolvers remain real.
++            foreach (var descriptor in services.Where(d => d.ServiceType == typeof(IPublishEndpoint)).ToArray())
++                services.Remove(descriptor);
++            var broker = new Mock<IPublishEndpoint>();
++            broker.SetReturnsDefault(Task.CompletedTask);
++            services.AddSingleton(broker.Object);
++        });
++    }
++
++    private static string FindRepositoryRoot()
++    {
++        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
++        {
++            if (File.Exists(Path.Combine(directory.FullName, "Legacy.Maliev.AuthService.slnx"))) return directory.FullName;
++        }
++        throw new InvalidOperationException("The owned acceptance source root was not found.");
++    }
++}
++
+diff --git a/acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialFixture.cs b/acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialFixture.cs
+new file mode 100644
+index 0000000..83e8b6c
+--- /dev/null
++++ b/acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialFixture.cs
+@@ -0,0 +1,512 @@
++extern alias AuthApi;
++extern alias AuthInfrastructure;
++extern alias LegacyDefaults;
++
++using System.Diagnostics;
++using System.IdentityModel.Tokens.Jwt;
++using System.Net;
++using System.Net.Http.Headers;
++using System.Net.Http.Json;
++using System.Security.Cryptography;
++using System.Text;
++using System.Text.Json;
++using Microsoft.AspNetCore.Authentication.JwtBearer;
++using Microsoft.AspNetCore.Hosting;
++using Microsoft.AspNetCore.Mvc.Testing;
++using Microsoft.EntityFrameworkCore;
++using Microsoft.Extensions.DependencyInjection;
++using Microsoft.Extensions.Hosting;
++using Microsoft.Extensions.Options;
++using Microsoft.IdentityModel.Tokens;
++using Npgsql;
++using Testcontainers.PostgreSql;
++using AuthProgram = AuthApi::Program;
++using Defaults = LegacyDefaults::Microsoft.Extensions.Hosting.Extensions;
++using Exchange = LegacyDefaults::Microsoft.Extensions.Hosting.LegacyServiceAuthenticationExtensions;
++using Profile = LegacyDefaults::Maliev.Aspire.ServiceDefaults.LegacyAuth.LegacyServiceAccessTokenProvider;
++
++
++
++using Legacy.Maliev.AuthService.GenuineIamHttp.Tests;
++
++namespace Legacy.Maliev.AuthService.OrdinaryFinancialIam.Tests;
++
++public partial class OrdinaryFinancialFixture : IAsyncLifetime
++{
++    public static readonly string ClientSecret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
++    public static readonly string QuotationSecret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
++    public static readonly string LiveKey = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
++    public const string Issuer = "https://auth.join.invalid";
++    public const string IamAudience = "https://iam.join.invalid";
++    public const string PermissionId = "legacy.quotations.update";
++    public const string LegacyAudience = "https://legacy.financial.invalid";
++    public static readonly string EnrollmentSecret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
++    public static readonly string AccountingSecret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
++    public static readonly string UnrelatedSecret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
++    public static readonly string IntranetSecret = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
++    public static readonly string Password = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
++    public const string OpaqueEmployeeId = "ordinary-employee-opaque";
++    public string EmployeeConnection { get; private set; } = null!;
++    private static readonly string RepositoryRoot = FindRepositoryRoot();
++    private readonly RSA signing = RequireAdmission();
++    private readonly string run = Guid.NewGuid().ToString("N");
++    private int lifecycle;
++    private PostgreSqlContainer? database;
++    private NpgsqlConnection? ownedPool;
++    private NpgsqlConnection? authPool;
++    private NpgsqlConnection? employeePool;
++    private RSA? authValidationRsa;
++    private RSA? enrollmentAuthValidationRsa;
++    private Task<RSA>? authStartup;
++    private Task<RSA>? enrollmentStartup;
++    private bool authStartupUncertain;
++    private bool enrollmentStartupUncertain;
++    private string? refreshConnection;
++    private string? createdAtUtc;
++    private string? containerStartedAtUtc;
++    private string? containerImageId;
++    private KernelStorageMount? startedKernelMount;
++    private bool storagePolicyComplete;
++    private readonly OwnedHelperSafety helperSafety = new();
++    private readonly List<OwnedProcessLease> quarantinedHelpers = [];
++    private bool helperCleanupFailed;
++    private readonly OwnedHostDisposal authDisposal = new();
++    private readonly OwnedHostDisposal enrollmentAuthDisposal = new();
++    public AuthFactory Auth { get; private set; } = null!;
++    public AuthFactory EnrollmentAuth { get; private set; } = null!;
++    public OrdinaryFinancialIamProcess Iam { get; private set; } = null!;
++    protected virtual bool IncludeQuotationCatalogue => true;
++
++    private static RSA RequireAdmission()
++    {
++        if (!OperatingSystem.IsLinux())
++            throw new InvalidOperationException("This separately owned qualification lane is Linux-only.");
++        var available = File.ReadLines("/proc/meminfo").Single(line => line.StartsWith("MemAvailable:", StringComparison.Ordinal))
++            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
++        if (!long.TryParse(available[1], out var kib) || kib < 4L * 1024 * 1024)
++            throw new InvalidOperationException("4096 MiB available memory is required before allocation.");
++        return RSA.Create(2048);
++    }
++
++    private async Task SeedOnlyLegacyIdentityAsync(CancellationToken token)
++    {
++        await using var scope = Auth.Services.CreateAsyncScope();
++        var db = scope.ServiceProvider.GetRequiredService<AuthInfrastructure::Legacy.Maliev.AuthService.Infrastructure.EmployeeIdentityDbContext>();
++        await db.Database.EnsureCreatedAsync(token);
++        var identity = new AuthInfrastructure::Legacy.Maliev.AuthService.Infrastructure.LegacyIdentityRow
++        {
++            Id = OpaqueEmployeeId, UserName = "ordinary.employee@example.invalid", NormalizedUserName = "ORDINARY.EMPLOYEE@EXAMPLE.INVALID",
++            Email = "ordinary.employee@example.invalid", NormalizedEmail = "ORDINARY.EMPLOYEE@EXAMPLE.INVALID",
++            EmailConfirmed = true, SecurityStamp = "ordinary-stamp", ConcurrencyStamp = "ordinary-concurrency",
++            DatabaseID = 135, LockoutEnabled = true
++        };
++        identity.PasswordHash = new Microsoft.AspNetCore.Identity.PasswordHasher<AuthInfrastructure::Legacy.Maliev.AuthService.Infrastructure.LegacyIdentityRow>().HashPassword(identity, Password);
++        db.Users.Add(identity);
++        await db.SaveChangesAsync(token);
++    }
++
++    private static string FindRepositoryRoot()
++    {
++        for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
++            if (File.Exists(Path.Combine(directory.FullName, "Legacy.Maliev.AuthService.slnx"))) return directory.FullName;
++        throw new InvalidOperationException("The owned Auth acceptance source root was not found.");
++    }
++
++    public async Task InitializeAsync()
++    {
++        if (Interlocked.CompareExchange(ref lifecycle, 1, 0) != 0)
++            throw new InvalidOperationException("This exact ordinary financial owner cannot initialize twice or after disposal.");
++        try
++        {
++            database = new PostgreSqlBuilder("postgres:18-alpine")
++                .WithEntrypoint("/bin/sh", "-c")
++                .WithCommand("exec timeout -s TERM 900s docker-entrypoint.sh postgres -c statement_timeout=10000 -c lock_timeout=5000")
++                .WithLabel("maliev.owner", "auth-ordinary-financial-http")
++                .WithLabel("maliev.run", run)
++                .WithLabel("maliev.expires-utc", DateTime.UtcNow.AddMinutes(15).ToString("O"))
++                .WithCreateParameterModifier(parameters =>
++                {
++                    parameters.HostConfig.Memory = 512L * 1024 * 1024;
++                    parameters.HostConfig.NanoCPUs = 1_000_000_000;
++                    parameters.HostConfig.Tmpfs = new Dictionary<string, string> { ["/var/lib/postgresql"] = "rw,size=134217728" };
++                    foreach (var bindings in parameters.HostConfig.PortBindings.Values)
++                        foreach (var binding in bindings) binding.HostIP = "127.0.0.1";
++                }).Build();
++            using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(2));
++            await database.StartAsync(deadline.Token);
++            await RecordContainerStateAsync("started", deadline.Token);
++            ownedPool = new NpgsqlConnection(database.GetConnectionString());
++            await ownedPool.OpenAsync(deadline.Token);
++            await using (var createRefresh = new NpgsqlCommand("CREATE DATABASE auth_refresh", ownedPool))
++                await createRefresh.ExecuteNonQueryAsync(deadline.Token);
++            refreshConnection = new NpgsqlConnectionStringBuilder(database.GetConnectionString()) { Database = "auth_refresh" }.ConnectionString;
++            authPool = new NpgsqlConnection(refreshConnection);
++            await using (var createEmployees = new NpgsqlCommand("CREATE DATABASE auth_employees", ownedPool))
++                await createEmployees.ExecuteNonQueryAsync(deadline.Token);
++            EmployeeConnection = new NpgsqlConnectionStringBuilder(database.GetConnectionString()) { Database = "auth_employees" }.ConnectionString;
++            employeePool = new NpgsqlConnection(EmployeeConnection);
++            Auth = new AuthFactory(signing, IamAudience, refreshConnection, EmployeeConnection, LegacyAudience);
++            authStartup = Task.Run(() => CaptureValidationRsa(Auth));
++            try { authValidationRsa = await authStartup.WaitAsync(deadline.Token); }
++            catch { authStartupUncertain = true; throw; }
++            EnrollmentAuth = new AuthFactory(signing, IamAudience, refreshConnection, EmployeeConnection, IamAudience);
++            enrollmentStartup = Task.Run(() => CaptureValidationRsa(EnrollmentAuth));
++            try { enrollmentAuthValidationRsa = await enrollmentStartup.WaitAsync(deadline.Token); }
++            catch { enrollmentStartupUncertain = true; throw; }
++            await using (var scope = Auth.Services.CreateAsyncScope())
++                await scope.ServiceProvider.GetRequiredService<AuthInfrastructure::Legacy.Maliev.AuthService.Infrastructure.RefreshSessionDbContext>()
++                    .Database.EnsureCreatedAsync(deadline.Token);
++            Iam = new OrdinaryFinancialIamProcess();
++            await Iam.StartAsync(RepositoryRoot, database.GetConnectionString(), signing.ExportPkcs8PrivateKeyPem(), LiveKey,
++                (entry, token) => WriteLedgerAsync(new { run, iamProcess = entry }, token), deadline.Token);
++            await SeedOnlyLegacyIdentityAsync(deadline.Token);
++            Auth.IamAddress = Iam.BaseAddress;
++            await EnrollViaActualHttpAsync(deadline.Token);
++            await InitializeAccountingAsync(deadline.Token);
++        }
++        catch (Exception initializationFailure)
++        {
++            try { await DisposeAsync(); }
++            catch (Exception cleanupFailure) { throw new AggregateException("Fixture initialization and cleanup failed.", initializationFailure, cleanupFailure); }
++            throw;
++        }
++    }
++
++    private static RSA CaptureValidationRsa(AuthFactory factory)
++        => (factory.Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
++            .Get(JwtBearerDefaults.AuthenticationScheme).TokenValidationParameters.IssuerSigningKey as RsaSecurityKey)?.Rsa
++            ?? throw new InvalidOperationException("The actual Auth JWT validation RSA is required.");
++
++    public async Task DisposeAsync()
++    {
++        Interlocked.Exchange(ref lifecycle, 2);
++        await OwnedCleanup.RunAsync(
++            [("AccountingHost", DisposeAccountingHostAsync),
++             ("IamHost", token => Iam is null ? Task.CompletedTask : Iam.DisposeAsync(token)),
++             ("AuthHost", token => DisposeAuthHostAsync(false, token)),
++             ("EnrollmentAuthHost", token => DisposeAuthHostAsync(true, token)),
++             ("AuthValidationRsa", _ => { RequireHostsQuiescent(); authValidationRsa?.Dispose(); authValidationRsa = null; return Task.CompletedTask; }),
++             ("EnrollmentAuthValidationRsa", _ => { RequireHostsQuiescent(); enrollmentAuthValidationRsa?.Dispose(); enrollmentAuthValidationRsa = null; return Task.CompletedTask; }),
++             ("FixtureRsa", _ => { RequireHostsQuiescent(); signing.Dispose(); return Task.CompletedTask; }),
++             ("OwnedPool", _ => { RequireHostsQuiescent(); if (ownedPool is not null) { try { NpgsqlConnection.ClearPool(ownedPool); } finally { ownedPool.Dispose(); ownedPool = null; } } return Task.CompletedTask; }),
++             ("AuthPool", _ => { RequireHostsQuiescent(); if (authPool is not null) { try { NpgsqlConnection.ClearPool(authPool); } finally { authPool.Dispose(); authPool = null; } } return Task.CompletedTask; }),
++             ("EmployeePool", _ => { RequireHostsQuiescent(); if (employeePool is not null) { try { NpgsqlConnection.ClearPool(employeePool); } finally { employeePool.Dispose(); employeePool = null; } } return Task.CompletedTask; }),
++             ("AccountingValidationRsa", _ => { RequireHostsQuiescent(); accountingValidationRsa?.Dispose(); accountingValidationRsa = null; return Task.CompletedTask; }),
++             ("AccountingPools", DisposeAccountingPoolsAsync),
++             ("PostgresContainer", RemoveContainerAsync)],
++            (name, complete, token) => WriteLedgerAsync(new { run, resource = name, cleanupComplete = complete, remainingOwnership = !complete, leaseMinutes = complete ? 0 : 15 }, token),
++            TimeSpan.FromSeconds(30));
++        if (helperCleanupFailed)
++            throw new OwnedHelperCleanupException([new InvalidOperationException("Owned helper cleanup previously failed; independent quiescence recovery does not erase the failure.")]);
++        if (authDisposal.FailureObserved || enrollmentAuthDisposal.FailureObserved || accountingDisposal.FailureObserved)
++            throw new InvalidOperationException("Owned Auth host cleanup previously failed; completed recovery does not erase the failure.");
++        if (!storagePolicyComplete)
++            throw new InvalidOperationException("Owned storage policy failed; physical cleanup receipts remain independent.");
++    }
++
++    private void RequireHostsQuiescent()
++    {
++        if (authStartupUncertain || enrollmentStartupUncertain || accountingStartupUncertain)
++            throw new InvalidOperationException("Actual host entrypoint quiescence after failed/interrupted startup is unknown; preserve backend for exact external SDK-owner recovery.");
++        if ((Auth is not null && !authDisposal.Complete) || (EnrollmentAuth is not null && !enrollmentAuthDisposal.Complete)
++            || (Iam is not null && !Iam.IsQuiescent))
++            throw new InvalidOperationException("Actual owned host shutdown is incomplete; retain dependent keys, pools and backend.");
++        if (Accounting is not null && !accountingDisposal.Complete)
++            throw new InvalidOperationException("Actual owned Accounting shutdown is incomplete; retain dependent keys, pools and backend.");
++    }
++
++    private async Task DisposeAuthHostAsync(bool enrollment, CancellationToken token)
++    {
++        var factory = enrollment ? EnrollmentAuth : Auth;
++        var startup = enrollment ? enrollmentStartup : authStartup;
++        if (factory is null) return;
++        if (startup is not null)
++        {
++            try
++            {
++                var key = await startup.WaitAsync(token);
++                if (enrollment) enrollmentAuthValidationRsa ??= key;
++                else authValidationRsa ??= key;
++            }
++            catch (Exception) when (startup.IsCompleted)
++            {
++                // Observe settled startup failure; it cannot suppress actual host disposal.
++                // The original initialization failure is preserved by InitializeAsync. Task settlement
++                // is not Program-entrypoint quiescence; quarantine is sticky until external owner exit.
++                if (enrollment) enrollmentStartupUncertain = true;
++                else authStartupUncertain = true;
++            }
++            if (!startup.IsCompleted) throw new InvalidOperationException("Actual owned Auth startup remains unsettled; retain its host and backend.");
++        }
++        var disposal = enrollment ? enrollmentAuthDisposal : authDisposal;
++        await disposal.WaitAsync(() => factory.DisposeAsync().AsTask(), token);
++        if (enrollment ? enrollmentStartupUncertain : authStartupUncertain)
++            throw new InvalidOperationException("Factory disposal after uncertain startup cannot prove actual entrypoint exit; retain exact backend ownership.");
++    }
++
++    private Task RemoveContainerAsync(CancellationToken cancellationToken)
++        => database is null ? Task.CompletedTask : OwnedHostDisposal.AfterShutdownAsync(
++            [(Auth is not null, authDisposal), (EnrollmentAuth is not null, enrollmentAuthDisposal), (Accounting is not null, accountingDisposal)],
++            () => RemoveContainerAfterHostShutdownAsync(cancellationToken));
++
++    private async Task RemoveContainerAfterHostShutdownAsync(CancellationToken cancellationToken)
++    {
++        if (database is null) return;
++        RequireHostsQuiescent();
++        if (Iam is not null && !Iam.IsQuiescent)
++            throw new InvalidOperationException("Owned IAM helper remains active; preserve its PostgreSQL backend.");
++        await VerifyQuarantinedHelpersAsync(cancellationToken);
++        helperSafety.RequireQuiescence();
++        var id = database.Id;
++        JsonElement? lastObservedStorage = null;
++        KernelStorageMount? lastKernelMount = null;
++        var lastStoragePolicyComplete = false;
++        var ownership = await InspectAsync(id, cancellationToken);
++        if (ownership.ExitCode != 0 && !OwnedCleanup.IsExactContainerAbsence(id, ownership.ExitCode, ownership.Error))
++        {
++            await WriteLedgerAsync(new { run, containerId = id, state = "preserved-ownership-unverifiable", leaseMinutes = 15 });
++            throw new InvalidOperationException("Container ownership cannot be verified; preserve exact resource.");
++        }
++        if (ownership.ExitCode == 0)
++        {
++            using var receipt = JsonDocument.Parse(ownership.Output);
++            Assert.Equal(run, receipt.RootElement.GetProperty("labels").GetProperty("maliev.run").GetString());
++            Assert.Equal("auth-ordinary-financial-http", receipt.RootElement.GetProperty("labels").GetProperty("maliev.owner").GetString());
++            if (createdAtUtc is not null) Assert.Equal(createdAtUtc, receipt.RootElement.GetProperty("created").GetString());
++            if (containerStartedAtUtc is not null) Assert.Equal(containerStartedAtUtc, receipt.RootElement.GetProperty("state").GetProperty("StartedAt").GetString());
++            lastObservedStorage = receipt.RootElement.Clone();
++            var storage = await ObserveStoragePolicyAsync(receipt.RootElement, cancellationToken);
++            lastKernelMount = storage.Mount;
++            lastStoragePolicyComplete = storage.Complete;
++            storagePolicyComplete &= storage.Complete;
++            var stopped = await helperSafety.MutateAsync(() => DockerAsync(["stop", "--time", "5", id], cancellationToken));
++            Assert.Equal(0, stopped.ExitCode);
++            var removed = await helperSafety.MutateAsync(() => DockerAsync(["rm", id], cancellationToken));
++            Assert.Equal(0, removed.ExitCode);
++        }
++        else storagePolicyComplete = false; // Missing pre-removal evidence is not a storage-policy pass.
++        var state = await InspectAsync(id, cancellationToken);
++        Assert.True(OwnedCleanup.IsExactContainerAbsence(id, state.ExitCode, state.Error));
++        // Release managed ownership before policy/receipt failures can affect teardown.
++        await database.DisposeAsync().AsTask().WaitAsync(cancellationToken);
++        database = null;
++        await WriteLedgerAsync(new { run, containerId = id, state = "removed", persistentData = storagePolicyComplete ? (bool?)false : null,
++            mounts = lastObservedStorage?.GetProperty("mounts"), tmpfs = lastObservedStorage?.GetProperty("tmpfs"),
++            declaredVolumes = lastObservedStorage?.GetProperty("volumes"), imageId = lastObservedStorage?.GetProperty("imageId"),
++            kernelMount = lastKernelMount, storagePolicyComplete,
++            lastStoragePolicyComplete, storagePolicyFault = storagePolicyComplete ? null : "owned-storage-policy-unverified",
++            helperCleanupFailed, authDisposalComplete = Auth is null || authDisposal.Complete,
++            enrollmentAuthDisposalComplete = EnrollmentAuth is null || enrollmentAuthDisposal.Complete,
++            authDisposalPreviouslyFailed = authDisposal.FailureObserved,
++            enrollmentAuthDisposalPreviouslyFailed = enrollmentAuthDisposal.FailureObserved,
++            cleanupComplete = true, remainingOwnership = false });
++    }
++
++    private async Task RecordContainerStateAsync(string state, CancellationToken cancellationToken)
++    {
++        var observed = await InspectAsync(database!.Id, cancellationToken);
++        Assert.Equal(0, observed.ExitCode);
++        using var json = JsonDocument.Parse(observed.Output);
++        createdAtUtc = json.RootElement.GetProperty("created").GetString();
++        containerStartedAtUtc = json.RootElement.GetProperty("state").GetProperty("StartedAt").GetString();
++        containerImageId = json.RootElement.GetProperty("imageId").GetString();
++        Assert.Equal(512L * 1024 * 1024, json.RootElement.GetProperty("memory").GetInt64());
++        Assert.Equal(1_000_000_000L, json.RootElement.GetProperty("nanoCpus").GetInt64());
++        foreach (var port in json.RootElement.GetProperty("ports").EnumerateObject())
++            if (port.Value.ValueKind == JsonValueKind.Array)
++                foreach (var binding in port.Value.EnumerateArray()) Assert.Equal("127.0.0.1", binding.GetProperty("HostIp").GetString());
++        var storage = await ObserveStoragePolicyAsync(json.RootElement, cancellationToken);
++        startedKernelMount = storage.Mount;
++        storagePolicyComplete = storage.Complete;
++        await WriteLedgerAsync(new { run, containerId = database.Id, state, startedAtUtc = json.RootElement.GetProperty("state").GetProperty("StartedAt").GetString(), createdAtUtc = json.RootElement.GetProperty("created").GetString(), ownership = json.RootElement.GetProperty("labels").Clone(), mounts = json.RootElement.GetProperty("mounts").Clone(), tmpfs = json.RootElement.GetProperty("tmpfs").Clone(), declaredVolumes = json.RootElement.GetProperty("volumes").Clone(), ports = json.RootElement.GetProperty("ports").Clone(), image = json.RootElement.GetProperty("image").GetString(), imageId = containerImageId, kernelMount = startedKernelMount, storagePolicyComplete, storagePolicyFault = storagePolicyComplete ? null : "owned-storage-policy-unverified", persistentData = storagePolicyComplete ? (bool?)false : null, memoryBytes = 512L * 1024 * 1024, cpuCount = 1, leaseMinutes = 15 });
++        if (!storagePolicyComplete) throw new InvalidOperationException("Owned storage policy failed at startup.");
++    }
++
++    private static void AssertExactDisposableStorage(JsonElement receipt)
++    {
++        var tmpfs = Assert.Single(receipt.GetProperty("tmpfs").EnumerateObject());
++        Assert.Equal("/var/lib/postgresql", tmpfs.Name);
++        Assert.Equal("rw,size=134217728", tmpfs.Value.GetString());
++        var volumes = receipt.GetProperty("volumes");
++        if (volumes.ValueKind != JsonValueKind.Null)
++        {
++            Assert.Equal(JsonValueKind.Object, volumes.ValueKind);
++            var declarations = volumes.EnumerateObject().ToArray();
++            if (declarations.Length != 0)
++            {
++                var declaration = Assert.Single(declarations);
++                Assert.Equal("/var/lib/postgresql", declaration.Name);
++                Assert.Equal(JsonValueKind.Object, declaration.Value.ValueKind);
++                Assert.Empty(declaration.Value.EnumerateObject());
++            }
++        }
++        Assert.DoesNotContain(receipt.GetProperty("mounts").EnumerateArray(), mount => mount.GetProperty("Type").GetString() is not "tmpfs");
++    }
++
++    private sealed record KernelStorageMount(string Target, string FileSystem, string Source, bool ReadWrite, string Size);
++    private async Task RecordHelperQuiescenceAsync(OwnedProcessLease helper)
++    {
++        using var receiptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(1));
++        await WriteLedgerAsync(new { run, purpose = helper.ReadersObserved ? "Exact owned container command disposal" : "Exact owned container command",
++            processId = helper.ProcessId, startedAtUtc = helper.StartedAtUtc, executable = helper.Executable,
++            launchAttempted = helper.StartAttempted, started = helper.Started,
++            outputReaderStarted = helper.Output is not null, errorReaderStarted = helper.Error is not null,
++            exited = helper.Exited, exitCode = helper.ExitCode, terminationFailed = helper.TerminationFailed,
++            readersSettled = helper.ReadersSettled, readersObserved = helper.ReadersObserved,
++            handlesDisposed = helper.Disposed,
++            outputReaderDisposed = helper.OutputReader is null ? (bool?)null : helper.OutputReaderDisposed,
++            errorReaderDisposed = helper.ErrorReader is null ? (bool?)null : helper.ErrorReaderDisposed,
++            deadlineDisposed = helper.Deadline is null ? (bool?)null : helper.DeadlineDisposed,
++            processHandleDisposed = helper.ProcessHandleDisposed,
++            remainingHandleOwnership = !helper.Disposed,
++            remainingOwnership = !helper.Exited || !helper.ReadersSettled || !helper.Disposed,
++            originalCleanupFailure = helperCleanupFailed || helper.CleanupFaultObserved, leaseSeconds = 15 }, receiptDeadline.Token).WaitAsync(receiptDeadline.Token);
++    }
++
++    private async Task VerifyQuarantinedHelpersAsync(CancellationToken cancellationToken)
++    {
++        if (!helperSafety.IsQuarantined) return;
++        List<Exception> failures = [];
++        if (quarantinedHelpers.Count == 0)
++            throw new OwnedHelperCleanupException([new InvalidOperationException("Quarantined helper ownership is unavailable.")]);
++        foreach (var helper in quarantinedHelpers.ToArray())
++        {
++            try
++            {
++                // Reconciliation has its own finite deadlines; cancellation cannot skip later stages.
++                await helper.ReconcileAsync(RecordHelperQuiescenceAsync);
++                if (!helper.Disposed) throw new InvalidOperationException("Owned helper remains retained.");
++                quarantinedHelpers.Remove(helper);
++            }
++            catch (Exception) { failures.Add(new InvalidOperationException("Independent owned helper quiescence verification failed.")); }
++        }
++        if (failures.Count != 0 || quarantinedHelpers.Count != 0)
++            throw new OwnedHelperCleanupException(failures);
++        helperSafety.ReleaseAfterVerifiedQuiescence();
++    }
++
++    private async Task<(bool Complete, KernelStorageMount? Mount)> ObserveStoragePolicyAsync(JsonElement receipt, CancellationToken cancellationToken)
++    {
++        return await helperSafety.ObservePolicyAsync(async () =>
++        {
++            AssertExactDisposableStorage(receipt);
++            Assert.Matches("^sha256:[0-9a-f]{64}$", receipt.GetProperty("imageId").GetString()!);
++            Assert.Equal(containerImageId, receipt.GetProperty("imageId").GetString());
++            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
++            deadline.CancelAfter(TimeSpan.FromSeconds(2));
++            var observed = await DockerAsync(["exec", database!.Id, "cat", "/proc/self/mountinfo"], deadline.Token, 2, 500);
++            if (observed.ExitCode != 0) throw new InvalidOperationException("Owned kernel storage observation failed.");
++            var entries = observed.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
++                .Select(line => line.Split(' ', StringSplitOptions.RemoveEmptyEntries))
++                .Where(parts => parts.Length > 6).ToArray();
++            Assert.DoesNotContain(entries, parts => parts[4].StartsWith("/var/lib/postgresql/", StringComparison.Ordinal));
++            var matches = entries.Where(parts => parts[4] == "/var/lib/postgresql").ToArray();
++            var fields = Assert.Single(matches);
++            var separator = Array.IndexOf(fields, "-");
++            Assert.True(separator >= 6 && fields.Length > separator + 3);
++            Assert.Equal("tmpfs", fields[separator + 1]);
++            Assert.Equal("tmpfs", fields[separator + 2]);
++            Assert.Contains("rw", fields[5].Split(','));
++            var superOptions = fields[separator + 3].Split(',');
++            Assert.Contains("rw", superOptions);
++            Assert.Equal("size=131072k", Assert.Single(superOptions, option => option.StartsWith("size=", StringComparison.Ordinal)));
++            var mount = new KernelStorageMount("/var/lib/postgresql", "tmpfs", "tmpfs", true, "size=131072k");
++            if (startedKernelMount is not null) Assert.Equal(startedKernelMount, mount);
++            return mount;
++        });
++    }
++
++    private async Task WriteLedgerAsync<T>(T entry, CancellationToken cancellationToken = default)
++    {
++        var directory = Environment.GetEnvironmentVariable("ORDINARY_FINANCIAL_RESOURCE_LEDGER") ?? Path.Combine(AppContext.BaseDirectory, "ordinary-financial-resource-ledger");
++        Directory.CreateDirectory(directory);
++        await File.AppendAllTextAsync(Path.Combine(directory, run + ".jsonl"), JsonSerializer.Serialize(entry) + Environment.NewLine, cancellationToken);
++    }
++
++    private Task<(int ExitCode, string Output, string Error)> InspectAsync(string containerId, CancellationToken cancellationToken)
++        => DockerAsync(["inspect", "--format", "{\"state\":{{json .State}},\"labels\":{{json .Config.Labels}},\"created\":{{json .Created}},\"mounts\":{{json .Mounts}},\"tmpfs\":{{json .HostConfig.Tmpfs}},\"volumes\":{{json .Config.Volumes}},\"ports\":{{json .NetworkSettings.Ports}},\"image\":{{json .Config.Image}},\"imageId\":{{json .Image}},\"memory\":{{json .HostConfig.Memory}},\"nanoCpus\":{{json .HostConfig.NanoCpus}}}", containerId], cancellationToken);
++
++    private async Task<(int ExitCode, string Output, string Error)> DockerAsync(string[] arguments, CancellationToken cancellationToken, int commandSeconds = 15, int reapMilliseconds = 5000)
++    {
++        helperSafety.RequireQuiescence();
++        var start = new ProcessStartInfo("docker") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
++        foreach (var argument in arguments) start.ArgumentList.Add(argument);
++        var helper = new OwnedProcessLease(start, reapMilliseconds);
++        quarantinedHelpers.Add(helper); // Own the handle before instance Start, metadata or readers can fail.
++        try
++        {
++            return await helper.ExecuteAsync(cancellationToken, commandSeconds, RecordHelperQuiescenceAsync);
++        }
++        catch (OwnedHelperCleanupException)
++        {
++            helperCleanupFailed = true;
++            helperSafety.Quarantine();
++            throw;
++        }
++        finally
++        {
++            if (helper.CleanupComplete) quarantinedHelpers.Remove(helper);
++        }
++    }
++
++    public sealed class AuthFactory(RSA signing, string iamAudience, string refreshConnection, string employeeConnection, string ordinaryAudience) : WebApplicationFactory<AuthProgram>
++    {
++        public Uri? IamAddress { get; set; }
++        public List<string> ExchangePaths { get; } = [];
++        public List<string> CheckedSubjects { get; } = [];
++        public List<(string Subject, string Permission, string Audience, HttpStatusCode Status)> NormalIamChecks { get; } = [];
++        public int DeniedUnownedRequests { get; set; }
++        protected override void ConfigureWebHost(IWebHostBuilder builder)
++        {
++            builder.UseContentRoot(Path.Combine(RepositoryRoot, "Legacy.Maliev.AuthService.Api"));
++            builder.UseEnvironment("Production");
++            foreach (var setting in new Dictionary<string, string?>
++            {
++                ["CORS:AllowedOrigins"] = "https://localhost",
++                ["Observability:RuntimeMetricsEnabled"] = "false",
++                ["ConnectionStrings:CustomerIdentity"] = "Host=127.0.0.1;Port=1;Database=unused;Username=unused",
++                ["ConnectionStrings:EmployeeIdentity"] = employeeConnection,
++                ["ConnectionStrings:RefreshSessions"] = refreshConnection,
++                ["Jwt:Issuer"] = Issuer,
++                ["Jwt:Audience"] = ordinaryAudience,
++                ["Jwt:IamAudience"] = iamAudience,
++                ["Jwt:PrivateKeyPem"] = signing.ExportPkcs8PrivateKeyPem(),
++                ["Jwt:KeyId"] = "genuine-join",
++                ["Jwt:AccessTokenLifetimeSeconds"] = "900",
++                ["ServiceAuthentication:ClientId"] = "legacy-auth",
++                ["ServiceAuthentication:ClientSecret"] = ClientSecret,
++                ["Services:Auth:BaseUrl"] = Issuer,
++                ["Services:IAMService:BaseUrl"] = IamAudience,
++                ["IAM:LivePermissionChecks:Credential"] = LiveKey,
++                ["ServiceClients:Clients:legacy-quotation:SecretSha256"] = AuthInfrastructure::Legacy.Maliev.AuthService.Infrastructure.ServiceClientCredential.HashSecret(QuotationSecret),
++                ["ServiceClients:Clients:legacy-quotation:IamServiceName"] = "QuotationService",
++                ["ServiceClients:Clients:legacy-quotation:Permissions:0"] = "iam.auth.check-permission",
++                ["ServiceClients:Clients:legacy-quotation:Permissions:1"] = "legacy.accounting-financial-ownership.read",
++                ["ServiceClients:Clients:legacy-auth:SecretSha256"] = AuthInfrastructure::Legacy.Maliev.AuthService.Infrastructure.ServiceClientCredential.HashSecret(ClientSecret),
++                ["ServiceClients:Clients:legacy-auth:IamServiceName"] = "AuthService",
++                ["ServiceClients:Clients:legacy-auth:Permissions:0"] = "iam.auth.check-permission",
++                ["ServiceClients:Clients:legacy-auth:Permissions:1"] = "legacy.accounting-financial-ownership.read",
++                ["ServiceClients:Clients:legacy-accounting:SecretSha256"] = AuthInfrastructure::Legacy.Maliev.AuthService.Infrastructure.ServiceClientCredential.HashSecret(AccountingSecret),
++                ["ServiceClients:Clients:legacy-accounting:IamServiceName"] = "AccountingService",
++                ["ServiceClients:Clients:legacy-accounting:Permissions:0"] = "iam.auth.check-permission",
++                ["ServiceClients:Clients:legacy-unrelated:SecretSha256"] = AuthInfrastructure::Legacy.Maliev.AuthService.Infrastructure.ServiceClientCredential.HashSecret(UnrelatedSecret),
++                ["ServiceClients:Clients:legacy-unrelated:Permissions:0"] = "legacy.accounting-financial-ownership.read",
++                ["ServiceClients:Clients:legacy-intranet:SecretSha256"] = AuthInfrastructure::Legacy.Maliev.AuthService.Infrastructure.ServiceClientCredential.HashSecret(IntranetSecret),
++                ["ServiceClients:Clients:legacy-intranet:Permissions:0"] = "legacy-auth.invoice-delegation.issue",
++                ["ServiceClients:Clients:ordinary-enrollment:SecretSha256"] = AuthInfrastructure::Legacy.Maliev.AuthService.Infrastructure.ServiceClientCredential.HashSecret(EnrollmentSecret),
++                ["ServiceClients:Clients:ordinary-enrollment:Permissions:0"] = "iam.permissions.create",
++                ["ServiceClients:Clients:ordinary-enrollment:Permissions:1"] = "iam.permissions.read",
++                ["ServiceClients:Clients:ordinary-enrollment:Permissions:2"] = "iam.roles.create",
++                ["ServiceClients:Clients:ordinary-enrollment:Permissions:3"] = "iam.roles.read",
++                ["ServiceClients:Clients:ordinary-enrollment:Permissions:4"] = "iam.principals.create",
++                ["ServiceClients:Clients:ordinary-enrollment:Permissions:5"] = "iam.principals.read",
++                ["ServiceClients:Clients:ordinary-enrollment:Permissions:6"] = "iam.bindings.create",
++                ["ServiceClients:Clients:ordinary-enrollment:Permissions:7"] = "iam.bindings.list",
++                ["ServiceClients:Clients:ordinary-enrollment:Permissions:8"] = "iam.bindings.delete"
++            }) builder.UseSetting(setting.Key, setting.Value);
++            builder.ConfigureServices(services => services.AddSingleton<Microsoft.Extensions.Http.IHttpMessageHandlerBuilderFilter>(new OwnedRouteFilter(this)));
++        }
++    }
++
++}
++
+diff --git a/acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialIamProcess.cs b/acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialIamProcess.cs
+new file mode 100644
+index 0000000..10fbaa0
+--- /dev/null
++++ b/acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialIamProcess.cs
+@@ -0,0 +1,241 @@
++using System.Diagnostics;
++using System.Text;
++using System.Text.Json;
++
++using Legacy.Maliev.AuthService.GenuineIamHttp.Tests;
++
++namespace Legacy.Maliev.AuthService.OrdinaryFinancialIam.Tests;
++
++/// <summary>Owns the genuine IAM HTTP host with its independent dependency graph.</summary>
++public sealed class OrdinaryFinancialIamProcess
++{
++    private Process? process;
++    private readonly CancellationTokenSource readers = new();
++    private readonly TaskCompletionSource<Uri> ready = new(TaskCreationOptions.RunContinuationsAsynchronously);
++    private StreamReader? outputReader;
++    private StreamReader? errorReader;
++    private StreamWriter? inputWriter;
++    private Task? stopWrite;
++    private Task? stopFlush;
++    private Task? output;
++    private Task<string>? error;
++    private Task? exitObservation;
++    private Func<object, CancellationToken, Task>? record;
++    private DateTime? startedAtUtc;
++    private int? processId;
++    private bool startAttempted;
++    private bool started;
++    private bool exited;
++    private int? exitCode;
++    private bool graceful;
++    private bool inputDisposed;
++    private bool outputDisposed;
++    private bool errorDisposed;
++    private bool readersDisposed;
++    private bool processDisposed;
++    private bool handlesDisposed;
++    private bool cleanupFailed;
++    private bool ReadersSettled => (output is null || output.IsCompleted) && (error is null || error.IsCompleted);
++    private bool InputOperationsSettled => (stopWrite is null || stopWrite.IsCompleted) && (stopFlush is null || stopFlush.IsCompleted);
++    private bool disposedByHost;
++    /// <summary>Gets whether the exact process exited, acquired readers settled, and every owned handle closed.</summary>
++    public bool IsQuiescent => exited && ReadersSettled && InputOperationsSettled && (exitObservation is null || exitObservation.IsCompleted) && handlesDisposed;
++
++    /// <summary>Gets the actual loopback Kestrel address.</summary>
++    public Uri BaseAddress { get; private set; } = null!;
++
++    /// <summary>Starts only the prebuilt exact-source IAM graph; credentials travel through its private environment.</summary>
++    public async Task StartAsync(string repository, string connection, string privatePem, string liveKey,
++        Func<object, CancellationToken, Task> receipt, CancellationToken cancellationToken)
++    {
++        if (process is not null || startAttempted || readersDisposed)
++            throw new InvalidOperationException("Owned IAM process cannot be started twice.");
++        record = receipt;
++        var start = new ProcessStartInfo("dotnet")
++        {
++            WorkingDirectory = repository,
++            UseShellExecute = false,
++            CreateNoWindow = true,
++            RedirectStandardInput = true,
++            RedirectStandardOutput = true,
++            RedirectStandardError = true
++        };
++        start.ArgumentList.Add(Path.Combine(repository, "acceptance", "OrdinaryFinancialIamHost", "bin", "Release", "net10.0", "OrdinaryFinancialIamHost.dll"));
++        start.Environment["GENUINE_IAM_CONNECTION"] = connection;
++        start.Environment["GENUINE_IAM_PRIVATE_PEM"] = privatePem;
++        start.Environment["GENUINE_IAM_LIVE_KEY"] = liveKey;
++        start.Environment["DOTNET_GCHeapHardLimit"] = "20000000"; // 512 MiB managed heap; not an OS-wide memory claim.
++        start.Environment["DOTNET_PROCESSOR_COUNT"] = "1";
++        // Register the exact handle before launch or any fallible metadata/reader setup.
++        process = new Process { StartInfo = start };
++        cancellationToken.ThrowIfCancellationRequested();
++        startAttempted = true;
++        started = process.Start();
++        if (!started) throw new InvalidOperationException("Owned IAM process failed to start.");
++        processId = process.Id;
++        startedAtUtc = process.StartTime.ToUniversalTime();
++        inputWriter = process.StandardInput;
++        outputReader = process.StandardOutput;
++        output = ReadProtocolAsync(outputReader, readers.Token);
++        errorReader = process.StandardError;
++        error = BoundedProcessOutput.ReadAsync(errorReader, 65536, readers.Token);
++        await receipt(new { processId, startedAtUtc, executable = "dotnet", state = "started", leaseMinutes = 10 }, cancellationToken);
++        exitObservation = process.WaitForExitAsync(cancellationToken);
++        var completed = await Task.WhenAny(ready.Task, output!, error!, exitObservation).WaitAsync(cancellationToken);
++        if (completed != ready.Task)
++        {
++            if (completed.IsFaulted) await completed;
++            throw new InvalidOperationException("Owned IAM host did not provide its validated ready receipt.");
++        }
++        BaseAddress = await ready.Task;
++    }
++
++    private async Task ReadProtocolAsync(TextReader stream, CancellationToken cancellationToken)
++    {
++        var line = new StringBuilder();
++        var buffer = new char[1024];
++        var total = 0;
++        while (true)
++        {
++            var count = await stream.ReadAsync(buffer.AsMemory(), cancellationToken);
++            if (count == 0) return;
++            total += count;
++            if (total > 65536) throw new InvalidOperationException("Owned IAM output limit exceeded.");
++            foreach (var character in buffer.AsSpan(0, count))
++            {
++                if (character != '\n') { line.Append(character); continue; }
++                var value = line.ToString().TrimEnd('\r');
++                line.Clear();
++                if (value.StartsWith("GENUINE_IAM_READY=", StringComparison.Ordinal))
++                {
++                    using var json = JsonDocument.Parse(value[18..]);
++                    var address = new Uri(json.RootElement.GetProperty("baseAddress").GetString()!);
++                    if (address.Scheme != "http" || address.Host != "127.0.0.1" || address.Port <= 0
++                        || json.RootElement.GetProperty("seeded").GetBoolean()
++                        || !json.RootElement.GetProperty("migrated").GetBoolean()
++                        || !json.RootElement.GetProperty("jwtValidationPreserved").GetBoolean())
++                        throw new InvalidOperationException("Owned IAM ready receipt is invalid.");
++                    ready.TrySetResult(address);
++                }
++                else if (value.StartsWith("GENUINE_IAM_STOPPED=", StringComparison.Ordinal))
++                {
++                    using var json = JsonDocument.Parse(value[20..]);
++                    disposedByHost = json.RootElement.GetProperty("disposed").GetBoolean();
++                }
++            }
++        }
++    }
++
++    /// <summary>Requests finite graceful disposal and retains every unresolved process or stream handle.</summary>
++    public async Task DisposeAsync(CancellationToken cancellationToken)
++    {
++        List<Exception> failures = [];
++        if (!started && startAttempted && process is not null)
++        {
++            try { processId = process.Id; started = true; }
++            catch (Exception) { Fail("launch-unverified"); }
++        }
++        if (!startAttempted) exited = true;
++        if (started && !processDisposed)
++        {
++            try
++            {
++                using var gracefulDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
++                gracefulDeadline.CancelAfter(TimeSpan.FromSeconds(20));
++                if (!process!.HasExited)
++                {
++                    inputWriter ??= process.StandardInput;
++                    stopWrite = inputWriter.WriteLineAsync("stop".AsMemory(), gracefulDeadline.Token);
++                    await stopWrite.WaitAsync(gracefulDeadline.Token);
++                    stopFlush = inputWriter.FlushAsync(gracefulDeadline.Token);
++                    await stopFlush.WaitAsync(gracefulDeadline.Token);
++                    await process.WaitForExitAsync(gracefulDeadline.Token).WaitAsync(gracefulDeadline.Token);
++                }
++                graceful = process.ExitCode == 0;
++            }
++            catch (Exception) { /* Exact-handle reconciliation always proceeds independently. */ }
++            try { if (!process!.HasExited) process.Kill(); }
++            catch (Exception) { Fail("terminate"); }
++            try { if (!process!.WaitForExit(5000)) Fail("reap"); }
++            catch (Exception) { Fail("reap"); }
++            try { exited = process!.HasExited; }
++            catch (Exception) { Fail("process-absence"); }
++            if (exited)
++            {
++                try { exitCode = process!.ExitCode; }
++                catch (Exception) { Fail("exit-code"); }
++            }
++        }
++        else if (startAttempted && !started) exited = false;
++
++        // Allow the stopped receipt to drain before cancelling unfinished reads.
++        await Task.WhenAll(SettleAsync(output, "output-drain", false), SettleAsync(error, "error-drain", false));
++        if (!readersDisposed)
++        {
++            try { readers.Cancel(); }
++            catch (Exception) { Fail("readers-cancel"); }
++        }
++        await Task.WhenAll(SettleAsync(output, "output-settle", true), SettleAsync(error, "error-settle", true));
++        await Task.WhenAll(SettleAsync(stopWrite, "input-write-settle", true), SettleAsync(stopFlush, "input-flush-settle", true));
++        await SettleAsync(exitObservation, "exit-observation-settle", true);
++        if (!InputOperationsSettled) Fail("input-unsettled");
++        if (!exited) Fail("process-unreaped");
++        if (!ReadersSettled) Fail("readers-unsettled");
++
++        // Exposed streams belong to this caller; Process.Dispose does not close
++        // its caller-exposed SyncMode readers. Never close a live/unsettled lease.
++        if (exited && ReadersSettled && InputOperationsSettled && (exitObservation is null || exitObservation.IsCompleted))
++        {
++            Close("input-handle", () => inputWriter?.Dispose(), ref inputDisposed);
++            Close("output-handle", () => outputReader?.Dispose(), ref outputDisposed);
++            Close("error-handle", () => errorReader?.Dispose(), ref errorDisposed);
++            Close("readers-handle", readers.Dispose, ref readersDisposed);
++            Close("process-handle", () => process?.Dispose(), ref processDisposed);
++            handlesDisposed = inputDisposed && outputDisposed && errorDisposed && readersDisposed && processDisposed;
++        }
++        if (startAttempted && (!graceful || !disposedByHost)) Fail("graceful-disposal-contract");
++        if (!handlesDisposed) Fail("handles-retained");
++        cleanupFailed |= failures.Count != 0;
++        try
++        {
++            if (record is not null)
++            {
++                using var receiptDeadline = new CancellationTokenSource(TimeSpan.FromSeconds(1));
++                await record(new
++                {
++                    processId, startedAtUtc, executable = "dotnet", state = IsQuiescent ? "disposed" : "retained",
++                    launchAttempted = startAttempted, started, exited, exitCode, graceful, hostDisposed = disposedByHost,
++                    outputReaderStarted = outputReader is not null, errorReaderStarted = errorReader is not null,
++                    readersSettled = ReadersSettled, inputOperationsSettled = InputOperationsSettled, inputHandleDisposed = inputDisposed,
++                    outputHandleDisposed = outputDisposed, errorHandleDisposed = errorDisposed,
++                    readersHandleDisposed = readersDisposed, processHandleDisposed = processDisposed,
++                    handlesDisposed, originalCleanupFailure = cleanupFailed, remainingOwnership = !IsQuiescent,
++                    leaseMinutes = IsQuiescent ? 0 : 10
++                }, receiptDeadline.Token).WaitAsync(receiptDeadline.Token);
++            }
++        }
++        catch (Exception) { Fail("disposition-receipt"); cleanupFailed = true; }
++        if (failures.Count != 0 || cleanupFailed)
++            throw new AggregateException("Owned IAM cleanup failed; inspect fixed ownership receipts.",
++                failures.Count != 0 ? failures : [new InvalidOperationException("Owned IAM cleanup previously failed.")]);
++
++        async Task SettleAsync(Task? task, string step, bool allowCancelled)
++        {
++            if (task is null) return;
++            try { await task.WaitAsync(TimeSpan.FromSeconds(1)); }
++            catch (OperationCanceledException) when (allowCancelled && task.IsCompleted) { }
++            catch (Exception) { Fail(step); }
++        }
++        void Close(string step, Action close, ref bool complete)
++        {
++            if (complete) return;
++            try { close(); complete = true; }
++            catch (Exception) { Fail(step); }
++        }
++        void Fail(string step)
++        {
++            lock (failures) failures.Add(new InvalidOperationException("Owned IAM cleanup incomplete: " + step));
++        }
++    }
++}
++
+diff --git a/acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialIamTests.cs b/acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialIamTests.cs
+new file mode 100644
+index 0000000..c2a27d9
+--- /dev/null
++++ b/acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialIamTests.cs
+@@ -0,0 +1,454 @@
++extern alias AuthApi;
++extern alias AuthApplication;
++extern alias LegacyDefaults;
++
++using System.IdentityModel.Tokens.Jwt;
++using System.Net;
++using System.Net.Http.Headers;
++using System.Net.Http.Json;
++using System.Security.Cryptography;
++using System.Text.Json;
++using Microsoft.Extensions.DependencyInjection;
++using Microsoft.Extensions.Http;
++using Authority = AuthApplication::Legacy.Maliev.AuthService.Application.IQuotationInvoiceLiveAuthorityClient;
++using Result = AuthApplication::Legacy.Maliev.AuthService.Application.QuotationInvoiceLiveAuthorityResult;
++using Profile = LegacyDefaults::Maliev.Aspire.ServiceDefaults.LegacyAuth.LegacyServiceAccessTokenProvider;
++
++namespace Legacy.Maliev.AuthService.OrdinaryFinancialIam.Tests;
++
++[CollectionDefinition("Ordinary financial IAM", DisableParallelization = true)]
++public sealed class OrdinaryFinancialCollection : ICollectionFixture<OrdinaryFinancialFixture> { }
++
++/// <summary>Real credential-first Auth and real separate-process IAM enrollment, resolution and revocation.</summary>
++[Collection("Ordinary financial IAM")]
++public sealed class OrdinaryFinancialIamTests(OrdinaryFinancialFixture fixture)
++{
++    [Theory]
++    [InlineData("anonymous", HttpStatusCode.Unauthorized)]
++    [InlineData("check-only", HttpStatusCode.Forbidden)]
++    [InlineData("ordinary-wrong-audience", HttpStatusCode.Unauthorized)]
++    public async Task OrdinaryFinancial_EnrollmentNeedsItsOwnNormalApiAuthority(string scenario, HttpStatusCode expected)
++    {
++        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
++        using var operatorClient = await fixture.CreateOperatorClientAsync(deadline.Token);
++        using var caller = new HttpClient { BaseAddress = fixture.Iam.BaseAddress, Timeout = TimeSpan.FromSeconds(10) };
++        if (scenario != "anonymous")
++        {
++            var token = await fixture.LoginServiceAsync(fixture.Auth, "legacy-auth", OrdinaryFinancialFixture.ClientSecret,
++                scenario == "check-only" ? "service/iam-login" : "service/login", deadline.Token);
++            caller.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
++        }
++        var email = "never-enrolled-" + Guid.NewGuid().ToString("N") + "@serviceaccount.maliev.local";
++        using var attempted = await caller.PostAsJsonAsync("/iam/v1/principals", new { principalType = "service_account", email }, deadline.Token);
++        Assert.Equal(expected, attempted.StatusCode);
++        using var readback = await operatorClient.GetAsync("/iam/v1/principals/by-email/" + Uri.EscapeDataString(email), HttpCompletionOption.ResponseHeadersRead, deadline.Token);
++        Assert.Equal(HttpStatusCode.NotFound, readback.StatusCode);
++    }
++
++    [Theory]
++    [InlineData("allowed", Result.Allowed)]
++    [InlineData("unbound", Result.Denied)]
++    [InlineData("wrong-resource", Result.Denied)]
++    [InlineData("revoked", Result.Denied)]
++    [InlineData("expired", Result.Denied)]
++    [InlineData("unknown-opaque", Result.Denied)]
++    [InlineData("wrong-key", Result.Unavailable)]
++    public async Task OrdinaryFinancial_OpaqueIssuedEmployeeUsesOnlyNormalPersistedEnrollment(string scenario, Result expected)
++    {
++        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
++        using var operatorClient = await fixture.CreateOperatorClientAsync(deadline.Token);
++        Guid? binding = null;
++        var originalKey = fixture.Auth.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>()["IAM:LivePermissionChecks:Credential"];
++        Exception? failure = null;
++        try
++        {
++            if (scenario != "unbound")
++                binding = await fixture.GrantAsync(operatorClient, fixture.EmployeePrincipal, fixture.EmployeeRole,
++                    scenario == "wrong-resource" ? "/quotations/136" : "/quotations/135",
++                    scenario == "expired" ? DateTime.UtcNow.AddMinutes(-1) : DateTime.UtcNow.AddMinutes(2), deadline.Token);
++            if (scenario == "revoked")
++            {
++                await fixture.RevokeAsync(operatorClient, fixture.EmployeePrincipal, binding!.Value, deadline.Token);
++                binding = null;
++            }
++            if (scenario == "wrong-key")
++                fixture.Auth.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>()["IAM:LivePermissionChecks:Credential"] = "wrong-isolated-key";
++            var subject = scenario == "unknown-opaque" ? "never-enrolled-opaque" : fixture.IssuedEmployeeSubject;
++            await using var scope = fixture.Auth.Services.CreateAsyncScope();
++            var authority = scope.ServiceProvider.GetRequiredService<Authority>();
++            var before = fixture.Auth.CheckedSubjects.Count;
++            Assert.Equal(expected, await authority.CheckAsync(subject, 135, deadline.Token));
++            Assert.Equal(subject, Assert.Single(fixture.Auth.CheckedSubjects.Skip(before)));
++            Assert.Equal(OrdinaryFinancialFixture.OpaqueEmployeeId, fixture.IssuedEmployeeSubject);
++            Assert.False(Guid.TryParse(fixture.IssuedEmployeeSubject, out _));
++            Assert.Contains("/auth/v1/service/iam-login", fixture.Auth.ExchangePaths);
++            await fixture.AssertPrincipalReadbackAsync(operatorClient, fixture.EmployeePrincipal, fixture.EmployeeEmail, "user", deadline.Token);
++        }
++        catch (Exception caught) { failure = caught; throw; }
++        finally
++        {
++            fixture.Auth.Services.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>()["IAM:LivePermissionChecks:Credential"] = originalKey;
++            if (binding is not null)
++            {
++                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
++                try { await fixture.RevokeAsync(operatorClient, fixture.EmployeePrincipal, binding.Value, cleanup.Token); }
++                catch (Exception cleanupFailure) when (failure is not null)
++                { throw new AggregateException("Ordinary IAM assertion and exact binding cleanup failed.", failure, cleanupFailure); }
++            }
++        }
++    }
++
++    [Fact]
++    public async Task OrdinaryFinancial_CanceledCallerCannotAcquireOrUseAuthorityAndNextCallRecovers()
++    {
++        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
++        using var operatorClient = await fixture.CreateOperatorClientAsync(deadline.Token);
++        var binding = await fixture.GrantAsync(operatorClient, fixture.EmployeePrincipal, fixture.EmployeeRole,
++            "/quotations/135", DateTime.UtcNow.AddMinutes(2), deadline.Token);
++        Exception? failure = null;
++        try
++        {
++            await using var scope = fixture.Auth.Services.CreateAsyncScope();
++            var authority = scope.ServiceProvider.GetRequiredService<Authority>();
++            using var canceled = new CancellationTokenSource();
++            canceled.Cancel();
++            var before = fixture.Auth.CheckedSubjects.Count;
++            await Assert.ThrowsAnyAsync<OperationCanceledException>(() => authority.CheckAsync(fixture.IssuedEmployeeSubject, 135, canceled.Token));
++            Assert.Equal(before, fixture.Auth.CheckedSubjects.Count);
++            Assert.Equal(Result.Allowed, await authority.CheckAsync(fixture.IssuedEmployeeSubject, 135, deadline.Token));
++        }
++        catch (Exception caught) { failure = caught; throw; }
++        finally
++        {
++            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
++            try { await fixture.RevokeAsync(operatorClient, fixture.EmployeePrincipal, binding, cleanup.Token); }
++            catch (Exception cleanupFailure) when (failure is not null)
++            { throw new AggregateException("Canceled-caller assertion and exact binding cleanup failed.", failure, cleanupFailure); }
++        }
++    }
++
++    [Theory]
++    [InlineData("legacy-auth")]
++    [InlineData("legacy-quotation")]
++    public async Task OrdinaryFinancial_RealServiceSubjectHasOnlyFiniteFinancialReadBinding(string clientId)
++    {
++        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
++        using var operatorClient = await fixture.CreateOperatorClientAsync(deadline.Token);
++        var principal = clientId == "legacy-auth" ? fixture.AuthPrincipal : fixture.QuotationPrincipal;
++        var secret = clientId == "legacy-auth" ? OrdinaryFinancialFixture.ClientSecret : OrdinaryFinancialFixture.QuotationSecret;
++        await fixture.AssertPrincipalReadbackAsync(operatorClient, principal,
++            "service:" + clientId + "@serviceaccount.maliev.local", "service_account", deadline.Token);
++        var binding = await fixture.GrantAsync(operatorClient, principal, fixture.FinancialRole,
++            null, DateTime.UtcNow.AddMinutes(2), deadline.Token);
++        Exception? failure = null;
++        try
++        {
++            var token = await fixture.LoginServiceAsync(fixture.Auth, clientId, secret, "service/iam-login", deadline.Token);
++            using var iam = new HttpClient { BaseAddress = fixture.Iam.BaseAddress, Timeout = TimeSpan.FromSeconds(10) };
++            foreach (var (subject, permission, allowed) in new[]
++            {
++                ("service:" + clientId, "legacy.accounting-financial-ownership.read", true),
++                ("service:" + clientId, "legacy.accounting.update", false),
++                ("service:never-enrolled", "legacy.accounting-financial-ownership.read", false)
++            })
++            {
++                using var request = new HttpRequestMessage(HttpMethod.Post, "/iam/v1/auth/check-permission")
++                { Content = JsonContent.Create(new { principalId = subject, permissionId = permission, resourcePath = "global", bypassCache = true }) };
++                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
++                request.Headers.Add("X-Maliev-IAM-Live-Check-Key", clientId == "legacy-auth" ? OrdinaryFinancialFixture.LiveKey : "quotation:" + OrdinaryFinancialFixture.LiveKey);
++                using var response = await iam.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, deadline.Token);
++                using var json = await OrdinaryFinancialFixture.ReadJsonAsync(response, HttpStatusCode.OK, deadline.Token);
++                Assert.Equal(allowed, json.RootElement.GetProperty("allowed").GetBoolean());
++                Assert.False(json.RootElement.GetProperty("fromCache").GetBoolean());
++            }
++        }
++        catch (Exception caught) { failure = caught; throw; }
++        finally
++        {
++            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
++            try { await fixture.RevokeAsync(operatorClient, principal, binding, cleanup.Token); }
++            catch (Exception cleanupFailure) when (failure is not null)
++            { throw new AggregateException("Financial-read assertion and exact binding cleanup failed.", failure, cleanupFailure); }
++        }
++    }
++}
++
++public partial class OrdinaryFinancialFixture
++{
++    public Guid EmployeePrincipal { get; private set; }
++    public Guid AuthPrincipal { get; private set; }
++    public Guid QuotationPrincipal { get; private set; }
++    public string EmployeeEmail => IssuedEmployeeSubject.ToLowerInvariant() + "@serviceaccount.maliev.local";
++    public string IssuedEmployeeSubject { get; private set; } = null!;
++    private string issuedEmployeeCredential = null!;
++    public string EmployeeRole { get; private set; } = null!;
++    public string FinancialRole { get; private set; } = null!;
++
++    private async Task EnrollViaActualHttpAsync(CancellationToken token)
++    {
++        using (var auth = Auth.CreateClient())
++        using (var response = await auth.PostAsJsonAsync("/auth/v1/login",
++            new { userName = "ordinary.employee@example.invalid", password = Password, identityKind = 1 }, token))
++        using (var body = await ReadJsonAsync(response, HttpStatusCode.OK, token))
++        {
++            issuedEmployeeCredential = body.RootElement.GetProperty("accessToken").GetString()!;
++            var jwt = new JwtSecurityTokenHandler().ReadJwtToken(issuedEmployeeCredential);
++            Assert.Equal("RS256", jwt.Header.Alg);
++            Assert.Equal(OpaqueEmployeeId, jwt.Subject);
++            Assert.Equal(LegacyAudience, Assert.Single(jwt.Audiences));
++            Assert.Equal("employee", Assert.Single(jwt.Claims, claim => claim.Type == "identity_kind").Value);
++            Assert.Equal("135", Assert.Single(jwt.Claims, claim => claim.Type == "legacy_database_id").Value);
++            Assert.True(Guid.TryParse(Assert.Single(jwt.Claims, claim => claim.Type == "sid").Value, out var session) && session != Guid.Empty);
++            IssuedEmployeeSubject = jwt.Subject;
++        }
++        using var operatorClient = await CreateOperatorClientAsync(token);
++        await RegisterFrozenCatalogueAsync(operatorClient, "ACCOUNTING", "7ef027009178f40ec7d21645d4fb15dea39e779c4a5929edb8cde10a46074ef7", token);
++        // Quote owner supplies the reviewed immutable producer payload/hash, not a guessed constant-only catalogue.
++        if (IncludeQuotationCatalogue)
++            await RegisterFrozenCatalogueAsync(operatorClient, "QUOTATION", "7a7ff1e9122be3ff8f914390d63b447a50e25f5f03f41e75e7609eed499ed34d", token);
++        EmployeePrincipal = await CreatePrincipalAsync(operatorClient, "user", EmployeeEmail, token);
++        AuthPrincipal = await EnrollIssuedServiceAsync(operatorClient, "legacy-auth", ClientSecret, token);
++        QuotationPrincipal = await EnrollIssuedServiceAsync(operatorClient, "legacy-quotation", QuotationSecret, token);
++        await AssertPrincipalReadbackAsync(operatorClient, EmployeePrincipal, EmployeeEmail, "user", token);
++        await AssertPrincipalReadbackAsync(operatorClient, AuthPrincipal, "service:legacy-auth@serviceaccount.maliev.local", "service_account", token);
++        if (IncludeQuotationCatalogue)
++            EmployeeRole = await CreateRoleAsync(operatorClient, "legacy.quotations.update", token);
++        FinancialRole = await CreateRoleAsync(operatorClient, "legacy.accounting-financial-ownership.read", token);
++        await WriteLedgerAsync(new { run, state = "ordinary-http-enrollment-complete", employeePrincipal = EmployeePrincipal,
++            authPrincipal = AuthPrincipal, employeeRole = EmployeeRole, financialRole = FinancialRole,
++            sourceBindingRequired = true, runtimeBusinessAcceptance = false }, token);
++    }
++
++    private async Task<Guid> EnrollIssuedServiceAsync(HttpClient client, string clientId, string secret, CancellationToken token)
++    {
++        var credential = await LoginServiceAsync(Auth, clientId, secret, "service/login", token);
++        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(credential);
++        Assert.Equal("service:" + clientId, jwt.Subject);
++        Assert.Equal(LegacyAudience, Assert.Single(jwt.Audiences));
++        Assert.Equal("service", Assert.Single(jwt.Claims, claim => claim.Type == "identity_kind").Value);
++        var email = jwt.Subject.ToLowerInvariant() + "@serviceaccount.maliev.local";
++        var id = await CreatePrincipalAsync(client, "service_account", email, token);
++        await AssertPrincipalReadbackAsync(client, id, email, "service_account", token);
++        return id;
++    }
++
++    public async Task<HttpClient> CreateOperatorClientAsync(CancellationToken token)
++    {
++        if (Volatile.Read(ref lifecycle) != 1)
++            throw new InvalidOperationException("The ordinary financial fixture owner is terminal; new HTTP clients are forbidden.");
++        var credential = await LoginServiceAsync(EnrollmentAuth, "ordinary-enrollment", EnrollmentSecret, "service/login", token);
++        var jwt = new JwtSecurityTokenHandler().ReadJwtToken(credential);
++        Assert.Equal("service:ordinary-enrollment", jwt.Subject);
++        Assert.Equal(IamAudience, Assert.Single(jwt.Audiences));
++        Assert.DoesNotContain(jwt.Claims, claim => claim.Value == "*");
++        return new HttpClient { BaseAddress = Iam.BaseAddress, Timeout = TimeSpan.FromSeconds(10),
++            DefaultRequestHeaders = { Authorization = new AuthenticationHeaderValue("Bearer", credential) } };
++    }
++
++    public async Task<string> LoginServiceAsync(AuthFactory factory, string clientId, string secret, string path, CancellationToken token)
++    {
++        using var client = factory.CreateClient();
++        using var response = await client.PostAsJsonAsync("/auth/v1/" + path, new { clientId, clientSecret = secret }, token);
++        using var body = await ReadJsonAsync(response, HttpStatusCode.OK, token);
++        return body.RootElement.GetProperty("accessToken").GetString()!;
++    }
++
++    private async Task<Guid> CreatePrincipalAsync(HttpClient client, string type, string email, CancellationToken token)
++    {
++        using var response = await client.PostAsJsonAsync("/iam/v1/principals", new { principalType = type, email }, token);
++        using var body = await ReadJsonAsync(response, HttpStatusCode.Created, token);
++        var id = body.RootElement.GetProperty("principalId").GetGuid();
++        Assert.NotEqual(Guid.Empty, id);
++        return id;
++    }
++
++    public async Task AssertPrincipalReadbackAsync(HttpClient client, Guid id, string email, string type, CancellationToken token)
++    {
++        using var response = await client.GetAsync("/iam/v1/principals/by-email/" + Uri.EscapeDataString(email), HttpCompletionOption.ResponseHeadersRead, token);
++        using var body = await ReadJsonAsync(response, HttpStatusCode.OK, token);
++        Assert.Equal(id, body.RootElement.GetProperty("principalId").GetGuid());
++        Assert.Equal(email, body.RootElement.GetProperty("email").GetString());
++        Assert.Equal(type, body.RootElement.GetProperty("principalType").GetString());
++        Assert.True(body.RootElement.GetProperty("isActive").GetBoolean());
++    }
++
++    private async Task<string> CreateRoleAsync(HttpClient client, string permission, CancellationToken token)
++    {
++        var roleId = "roles.legacy.financial-test-" + Guid.NewGuid().ToString("N");
++        using var response = await client.PostAsJsonAsync("/iam/v1/roles",
++            new { roleId, serviceName = "legacy", description = "Disposable least-privilege financial source qualification", permissionIds = new[] { permission } }, token);
++        using var body = await ReadJsonAsync(response, HttpStatusCode.Created, token);
++        Assert.Equal(roleId, body.RootElement.GetProperty("roleId").GetString());
++        Assert.Equal(permission, Assert.Single(body.RootElement.GetProperty("permissionIds").EnumerateArray()).GetString());
++        return roleId;
++    }
++
++    public async Task<Guid> GrantAsync(HttpClient client, Guid principal, string role, string? resource, DateTime expires, CancellationToken token)
++    {
++        using var response = await client.PostAsJsonAsync($"/iam/v1/principals/{principal:D}/roles", new { roleId = role, resourcePath = resource, expiresAt = expires }, token);
++        using var body = await ReadJsonAsync(response, HttpStatusCode.OK, token);
++        var id = body.RootElement.GetProperty("bindingId").GetGuid();
++        Assert.NotEqual(Guid.Empty, id);
++        Assert.Equal(principal, body.RootElement.GetProperty("principalId").GetGuid());
++        Assert.Equal(role, body.RootElement.GetProperty("roleId").GetString());
++        Assert.Equal(resource, body.RootElement.GetProperty("resourcePath").GetString());
++        Assert.Equal(expires, body.RootElement.GetProperty("expiresAt").GetDateTime());
++        await WriteLedgerAsync(new { run, purpose = "disposable ordinary binding", principal, bindingId = id, role,
++            resourcePath = resource, expiresAt = expires, livePolicyWrite = false }, token);
++        return id;
++    }
++
++    public async Task RevokeAsync(HttpClient client, Guid principal, Guid binding, CancellationToken token)
++    {
++        using var response = await client.DeleteAsync($"/iam/v1/principals/{principal:D}/roles/{binding:D}", token);
++        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
++        using var readback = await client.GetAsync($"/iam/v1/principals/{principal:D}/roles", HttpCompletionOption.ResponseHeadersRead, token);
++        using var body = await ReadJsonAsync(readback, HttpStatusCode.OK, token);
++        Assert.DoesNotContain(body.RootElement.EnumerateArray(), item => item.GetProperty("bindingId").GetGuid() == binding);
++        await WriteLedgerAsync(new { run, purpose = "disposable ordinary binding", principal, bindingId = binding, state = "revoked-and-absent" }, token);
++    }
++
++    private async Task RegisterFrozenCatalogueAsync(HttpClient client, string producer, string expectedHash, CancellationToken token)
++    {
++        if (expectedHash.Length != 64 || expectedHash.Any(character => character is not (>= '0' and <= '9' or >= 'a' and <= 'f')))
++            throw new InvalidOperationException("A reviewed producer catalogue hash is required.");
++        var path = RequiredBinding(producer + "_CATALOGUE_PATH");
++        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.Asynchronous);
++        var bytes = new byte[65537];
++        var count = 0;
++        while (count < bytes.Length)
++        {
++            var read = await stream.ReadAsync(bytes.AsMemory(count), token);
++            if (read == 0) break;
++            count += read;
++        }
++        if (count is 0 or > 65536 || Convert.ToHexString(SHA256.HashData(bytes.AsSpan(0, count))).ToLowerInvariant() != expectedHash)
++            throw new InvalidOperationException("The exact frozen producer catalogue is unavailable.");
++        using var source = JsonDocument.Parse(bytes.AsMemory(0, count), new JsonDocumentOptions { MaxDepth = 16 });
++        Assert.Equal("legacy", source.RootElement.GetProperty("ServiceName").GetString());
++        var required = producer == "ACCOUNTING" ? "legacy.accounting-financial-ownership.read" : "legacy.quotations.update";
++        Assert.Contains(source.RootElement.GetProperty("Permissions").EnumerateArray(), item => item.GetProperty("PermissionId").GetString() == required);
++        using var response = await client.PostAsJsonAsync("/iam/v1/permissions/register", source.RootElement, token);
++        using var registered = await ReadJsonAsync(response, HttpStatusCode.OK, token);
++        using var readback = await client.GetAsync("/iam/v1/permissions/" + required, HttpCompletionOption.ResponseHeadersRead, token);
++        using var permission = await ReadJsonAsync(readback, HttpStatusCode.OK, token);
++        Assert.Equal(required, permission.RootElement.GetProperty("permissionId").GetString());
++        await WriteLedgerAsync(new { run, purpose = "exact producer catalogue registration", producer, sha256 = expectedHash,
++            method = "POST", path = "/iam/v1/permissions/register", sqlPositiveSeed = false }, token);
++    }
++
++    private static string RequiredBinding(string name) => Environment.GetEnvironmentVariable("ORDINARY_FINANCIAL_" + name)
++        ?? throw new InvalidOperationException("The explicit reviewed financial producer source binding is required.");
++
++    public static async Task<JsonDocument> ReadJsonAsync(HttpResponseMessage response, HttpStatusCode expected, CancellationToken token)
++    {
++        Assert.Equal(expected, response.StatusCode);
++        if (response.Content.Headers.ContentLength is > 32768) throw new InvalidOperationException("Owned HTTP response exceeds its bound.");
++        await using var stream = await response.Content.ReadAsStreamAsync(token);
++        var bytes = new byte[32769];
++        var count = 0;
++        while (count < bytes.Length)
++        {
++            var read = await stream.ReadAsync(bytes.AsMemory(count), token);
++            if (read == 0) break;
++            count += read;
++        }
++        if (count > 32768) throw new InvalidOperationException("Owned HTTP response exceeds its bound.");
++        return JsonDocument.Parse(bytes.AsMemory(0, count), new JsonDocumentOptions { MaxDepth = 16 });
++    }
++
++    private sealed class OwnedRouteFilter(AuthFactory factory) : IHttpMessageHandlerBuilderFilter
++    {
++        public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) => builder =>
++        {
++            next(builder);
++            if (builder.Name == Profile.HttpClientName)
++            {
++                builder.PrimaryHandler.Dispose();
++                builder.PrimaryHandler = new ExchangeRoute(factory.Server.CreateHandler(), factory);
++            }
++            else if (builder.Name == AuthApi::Legacy.Maliev.AuthService.Api.Authorization.QuotationInvoiceLiveAuthorityClient.HttpClientName)
++            {
++                builder.PrimaryHandler.Dispose();
++                builder.PrimaryHandler = new IamRoute(new HttpClientHandler { AllowAutoRedirect = false }, factory);
++            }
++            else if (builder.Name == "IAMService")
++            {
++                builder.PrimaryHandler.Dispose();
++                builder.PrimaryHandler = new NormalAuthIamRoute(new HttpClientHandler { AllowAutoRedirect = false }, factory);
++            }
++            else
++            {
++                builder.PrimaryHandler.Dispose();
++                builder.PrimaryHandler = new DeniedUnownedTransport(factory);
++            }
++        };
++    }
++
++    private sealed class ExchangeRoute(HttpMessageHandler inner, AuthFactory factory) : DelegatingHandler(inner)
++    {
++        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
++        {
++            Assert.Equal(Issuer, request.RequestUri!.GetLeftPart(UriPartial.Authority));
++            Assert.Contains(request.RequestUri.AbsolutePath, new[] { "/auth/v1/service/login", "/auth/v1/service/iam-login" });
++            Assert.Null(request.Headers.Authorization);
++            factory.ExchangePaths.Add(request.RequestUri.AbsolutePath);
++            return base.SendAsync(request, token);
++        }
++    }
++
++    private sealed class IamRoute(HttpMessageHandler inner, AuthFactory factory) : DelegatingHandler(inner)
++    {
++        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
++        {
++            Assert.Equal(IamAudience + "/iam/v1/auth/check-permission", request.RequestUri!.AbsoluteUri);
++            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
++            factory.CheckedSubjects.Add(body.RootElement.GetProperty("PrincipalId").GetString()!);
++            var jwt = new JwtSecurityTokenHandler().ReadJwtToken(request.Headers.Authorization!.Parameter!);
++            Assert.Equal("system:service:auth", jwt.Subject);
++            Assert.Equal(IamAudience, Assert.Single(jwt.Audiences));
++            Assert.Equal("AuthService", Assert.Single(jwt.Claims, claim => claim.Type == "service_name").Value);
++            Assert.Equal("iam.auth.check-permission", Assert.Single(jwt.Claims, claim => claim.Type == "permissions").Value);
++            // Owned transport substitution only: the response is actual loopback IAM HTTP.
++            // This lane does not claim real HTTPS certificate/TLS qualification.
++            request.RequestUri = new Uri(factory.IamAddress ?? throw new InvalidOperationException("Owned IAM host is not ready."), request.RequestUri.PathAndQuery);
++            return await base.SendAsync(request, token);
++        }
++    }
++
++    private sealed class NormalAuthIamRoute(HttpMessageHandler inner, AuthFactory factory) : DelegatingHandler(inner)
++    {
++        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
++        {
++            Assert.Equal(IamAudience + "/iam/v1/auth/check-permission", request.RequestUri!.AbsoluteUri);
++            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
++            var subject = body.RootElement.GetProperty("PrincipalId").GetString()!;
++            var permission = body.RootElement.GetProperty("PermissionId").GetString()!;
++            Assert.Equal("service:legacy-intranet", subject);
++            Assert.Equal("legacy-auth.invoice-delegation.issue", permission);
++            var jwt = new JwtSecurityTokenHandler().ReadJwtToken(request.Headers.Authorization!.Parameter!);
++            Assert.Equal("service:legacy-auth", jwt.Subject);
++            Assert.Equal(LegacyAudience, Assert.Single(jwt.Audiences));
++            Assert.DoesNotContain(jwt.Claims, claim => claim.Type == "service_name");
++            // The unchanged normal Auth IAM client uses an ordinary legacy bearer. The actual IAM host
++            // rejects its audience; standard (nonlive) authorization then uses the exact signed claim.
++            // This proves owned transport and real denial, not a positive IAM grant for bootstrap.
++            var destination = new Uri(factory.IamAddress ?? throw new InvalidOperationException("Owned normal IAM host is not ready."), request.RequestUri.PathAndQuery);
++            Assert.True(destination.IsLoopback);
++            Assert.Equal("http", destination.Scheme);
++            request.RequestUri = destination;
++            var response = await base.SendAsync(request, token);
++            factory.NormalIamChecks.Add((subject, permission, Assert.Single(jwt.Audiences), response.StatusCode));
++            return response;
++        }
++    }
++
++    private sealed class DeniedUnownedTransport(AuthFactory factory) : HttpMessageHandler
++    {
++        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
++        {
++            factory.DeniedUnownedRequests++;
++            return Task.FromException<HttpResponseMessage>(new InvalidOperationException("The owned Auth fixture forbids every unregistered external transport."));
++        }
++    }
++}
+diff --git a/acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialIam.Tests.csproj b/acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialIam.Tests.csproj
+new file mode 100644
+index 0000000..5070dbb
+--- /dev/null
++++ b/acceptance/OrdinaryFinancialIam.Tests/OrdinaryFinancialIam.Tests.csproj
+@@ -0,0 +1,32 @@
++<Project Sdk="Microsoft.NET.Sdk">
++  <PropertyGroup>
++    <TargetFramework>net10.0</TargetFramework>
++    <IsTestProject>true</IsTestProject>
++    <IsPackable>false</IsPackable>
++    <GenuineIamSourceRoot>$(MSBuildThisFileDirectory)../../.genuine-iam-source</GenuineIamSourceRoot>
++    <AccountingSourceRoot Condition="'$(AccountingSourceRoot)' == ''">$(MSBuildThisFileDirectory)../../.accounting-financial-source</AccountingSourceRoot>
++  </PropertyGroup>
++  <ItemGroup>
++    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
++    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
++    <PackageReference Include="Testcontainers.PostgreSql" Version="4.10.0" />
++    <PackageReference Include="SSH.NET" Version="2026.0.0" />
++    <PackageReference Include="xunit" Version="2.9.3" />
++    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
++  </ItemGroup>
++  <ItemGroup>
++    <Using Include="Xunit" />
++    <AssemblyMetadata Include="AccountingSourceRoot" Value="$(AccountingSourceRoot)" />
++    <ProjectReference Include="../../Legacy.Maliev.AuthService.Api/Legacy.Maliev.AuthService.Api.csproj" Aliases="AuthApi" />
++    <ProjectReference Include="../../Legacy.Maliev.AuthService.Infrastructure/Legacy.Maliev.AuthService.Infrastructure.csproj" Aliases="AuthInfrastructure" />
++    <ProjectReference Include="../../Legacy.Maliev.AuthService.Application/Legacy.Maliev.AuthService.Application.csproj" Aliases="AuthApplication" />
++    <ProjectReference Include="$(AccountingSourceRoot)/Legacy.Maliev.AccountingService.Api/Legacy.Maliev.AccountingService.Api.csproj" Aliases="AccountingApi" />
++    <ProjectReference Include="$(AccountingSourceRoot)/Legacy.Maliev.AccountingService.Data/Legacy.Maliev.AccountingService.Data.csproj" Aliases="AccountingData" />
++    <ProjectReference Include="$(AccountingSourceRoot)/Legacy.Maliev.AccountingService.Domain/Legacy.Maliev.AccountingService.Domain.csproj" Aliases="AccountingDomain" />
++    <ProjectReference Include="$(AccountingSourceRoot)/Legacy.Maliev.AccountingService.Application/Legacy.Maliev.AccountingService.Application.csproj" Aliases="AccountingApplication" />
++    <ProjectReference Include="$(GenuineIamSourceRoot)/Legacy.Maliev.ServiceDefaults/src/Legacy.Maliev.ServiceDefaults/Legacy.Maliev.ServiceDefaults.csproj" Aliases="LegacyDefaults" />
++    <Compile Include="../GenuineIamHttp.Tests/OwnedCleanup.cs" Link="RetainedOwnedCleanup.cs" />
++    <Compile Include="../GenuineIamHttp.Tests/BoundedProcessOutput.cs" Link="RetainedBoundedProcessOutput.cs" />
++  </ItemGroup>
++</Project>
++
+diff --git a/acceptance/OrdinaryFinancialIam.Tests/README.md b/acceptance/OrdinaryFinancialIam.Tests/README.md
+new file mode 100644
+index 0000000..95f39bb
+--- /dev/null
++++ b/acceptance/OrdinaryFinancialIam.Tests/README.md
+@@ -0,0 +1,146 @@
++# Ordinary financial IAM enrollment — source candidate, not runtime acceptance
++
++This separate Linux-only lane implements nineteen new HTTP case forecasts (thirteen
++ordinary enrollment rows plus six Accounting rows). It is
++not included in the existing accepted genuine IAM project or its 935/31/11 results.
++It references the **current Auth source candidate** explicitly, not the archived
++Auth `88e430946465a1df6238e10b815d495d43453411` project. The unchanged source preparation
++script supplies IAM `4fe6642e5674013de9a3672505aec898fdcae0ed`, original Aspire
++`01d506203763b914e237268a8746f1406423df86`, Messaging
++`559a00db0c7920a5247fdff60d4476ad23a9a501`, accepted Defaults
++`7b3099bf67d0f17e56cfdb3dcf36541304abaac2`, and CompatibilityContracts
++`78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7`. Retaining its old Auth archive is not
++an assertion that old producer and current candidate are equivalent.
++
++The IAM MT8 graph runs in its own prebuilt `OrdinaryFinancialIamHost`; current
++Auth/Defaults stay in the test process. Both use real Program and RS256 validation.
++Only the external broker publisher is controlled. The dedicated Auth consumer's
++canonical HTTPS route is forwarded to exact owned loopback IAM HTTP; the response
++is not fabricated. TLS/certificate and broker-delivery qualification are excluded.
++
++## Actual implemented authority path
++
++The disposable legacy identity store holds a non-GUID employee ID. Real Auth
++`POST /auth/v1/login` validates its password and persists the refresh/session
++record; the unchanged issued subject is used as the IAM target. The independent
++IAM host inserts **no** positive principal, permission, or binding. Normal
++`POST /iam/v1/principals` generates a server GUID for the exact opaque resolver's
++lower-case `@serviceaccount.maliev.local` email. Readback verifies that GUID,
++email, type and active status. Auth/Quotation service subjects similarly come
++from real credential-first `/service/login`; separate secrets are generated.
++
++A second disposable real Auth Program issues the normal operator service token
++for the IAM audience with exactly the declared enrollment/registration API
++permissions, never `*`. This supplies test-only operator authority; it does not
++claim a deployed operator token, automatic enrollment, platform bootstrap,
++managed-workload equivalence, or live policy grants. Anonymous, check-only and
++wrong-audience enrollment callers must leave the attempted principal absent.
++
++The normal permission registration, custom-role creation, principal creation,
++finite role grants, readback and exact binding revocation use real IAM HTTP APIs.
++Each created role contains exactly one permission. Employee scope is one literal
++quotation resource. Auth/Quotation financial-read scope is global with a two-minute
++binding expiry. SQL writes are restricted to the disposable legacy identity seed;
++no positive IAM authority seed or employee-subject rewrite is used.
++
++## Mandatory immutable producer input admission
++
++`ORDINARY_FINANCIAL_ACCOUNTING_CATALOGUE_PATH` must identify the frozen Accounting
++producer payload `provisioning/iam/accounting-financial-ownership.json` from the
++source-clear 44-file packet (`2d619689fead1344a38c84f9c97097efb0206d146b77326e9d7aeb901d57a90a`).
++The code requires its exact raw SHA256
++`7ef027009178f40ec7d21645d4fb15dea39e779c4a5929edb8cde10a46074ef7` and registers it
++through `POST /iam/v1/permissions/register` with ServiceName `legacy`.
++
++`ORDINARY_FINANCIAL_QUOTATION_CATALOGUE_PATH` is required for the original thirteen
++rows. Its exact reviewed producer is `quotation-iam-catalogue-registration-source-v2-20261008`
++receipt `b9cc1463d43a818d672a06230c6d77ee975a5369ceb5ddade1b8848673a0a84e`,
++`source/provisioning/iam/quotation-permissions.json` raw SHA256
++`7a7ff1e9122be3ff8f914390d63b447a50e25f5f03f41e75e7609eed499ed34d`.
++The fixed hash is checked against bounded bytes and the payload must declare
++`legacy.quotations.update`. Missing/mismatched input blocks execution. There is no
++constant-only catalogue fallback or direct permission INSERT.
++
++The separate six-row `OrdinaryAccounting_` collection now joins actual Accounting
++Program HTTP and immutable PostgreSQL financial rows. Build with `AccountingSourceRoot`
++pointing to exact source-clear combined49 (`cc314f03b3cee337ddd2ea40609a7c40d664a8e8177eae82b6a87b353590d0a2`)
++and provide that manifest in `ORDINARY_FINANCIAL_ACCOUNTING_SOURCE_MANIFEST`.
++Assembly metadata binds the same project/content root; all49 raw source hashes
++are checked before host allocation. This Accounting-only collection does not need
++the Quotation catalogue input. The shared default thirteen-row collection still does.
++
++Real normal Auth employee login/session plus real `/exchange/invoice-create`
++issues the delegation; Accounting's actual signature/claim verifier supplies the
++origin before scoped Admission/CreationStore transaction commits financial rows
++and an immutable receipt. The setup is not `/prepare` HTTP/source-provider proof.
++The unchanged Auth normal `IAMService` client first sends its ordinary legacy
++workload bearer to actual owned loopback IAM HTTP. That bearer has the legacy
++audience, so actual IAM returns 401. The real nonlive Auth permission handler then
++uses its existing exact signed `legacy-auth.invoice-delegation.issue` claim fallback.
++Bootstrap asserts that actual owned denial and zero unregistered transport
++attempts; it is not a positive IAM enrollment/grant proof for delegation issuance.
++Every other unregistered Auth HTTP transport is rejected before external send.
++This is separate from the successful dedicated live financial-read IAM profile.
++It never fabricates ownership JSON or positive IAM rows. Normal IAM APIs grant,
++read back and revoke finite global financial-read bindings for real normal
++Auth-issued `service:legacy-auth` and `service:legacy-quotation` subjects. Accounting's
++real named IAM client obtains a real `AccountingService` profile from normal Auth
++and performs real uncached IAM HTTP. Positive/revocation, unrelated workload with
++its own actual binding, wrong-key, genuine wrong-profile-token transport corruption,
++and wrong inbound audience preserve financial-row hashes; key/profile recovery
++must regain a real successful read. The unrelated test-only normal service registry
++and enrollment are adversarial proof, not production AppHost/client grants.
++Redis is disabled by supported cache configuration; no Redis/provider acceptance
++is asserted. TLS is substituted with owned loopback HTTP; external broker remains
++controlled. Quotation orchestration, complete `/prepare` transport, operator CLI
++and optional AppHost whole-business graph remain separate/unqualified.
++
++## Resource and validation obligations
++
++The resource boundary is a separately adapted copy of the accepted ownership
++source, not a modification to its accepted files. Before RSA/host/container
++allocation it requires Linux MemAvailable >=4096 MiB. PostgreSQL has precreation
++512 MiB/one-CPU limits, loopback publication, tmpfs128 MiB, exact owner/run/expiry
++labels, and an actual 900-second TERM timeout around the original entrypoint.
++Startup has a two-minute caller deadline; real factory startup tasks are retained
++and joined before shutdown, keys/pools/backend release are fenced on verified
++host quiescence, and teardown attempts independent named resources with 30-second
++windows. Docker helpers preserve exact process handles and quarantine unresolved
++readers; removal verifies IDs, creation/start evidence, image/content identity,
++labels, mounts and kernel storage policy, then exact daemon absence, never volume
++deletion or broad process termination. The IAM host has a ten-minute lease,
++512 MiB managed-heap setting and one logical processor; these are **not** an
++OS-wide memory/CPU cap claim. Its exact handle, readers, input and exit task are
++retained until quiescent. SDK/host OS caps and external exact recovery still need
++the coordinator's independently reviewed finite native runner before execution.
++Faulted or interrupted `WebApplicationFactory.Services` startup does not prove the
++actual Program entrypoint has stopped. All three new factory wrappers retain a
++sticky uncertain-startup guard, independently attempt cached factory disposal, and
++quarantine dependent keys, pools and PostgreSQL even when the Services task or
++disposer settles. Only an exact finite external SDK owner proving whole-unit
++quiescence may recover that backend. No ApplicationStopped or task-completion
++event is substituted for that proof; the failed qualification stays failed.
++
++The linked accepted helper-control source remains unchanged. Its discovered
++controls must not be counted as new test passes. The thirteen ordinary rows, six Accounting HTTP rows, eleven
++V3 controlled profile rows, and all linked controls are unexecuted in this
++successor. Independent source review must precede native admission. After that,
++prepare the exact committed dependency graph and immutable producer inputs;
++build both new projects Release with zero warnings/errors, run the
++`FullyQualifiedName~OrdinaryFinancial_|FullyQualifiedName~OrdinaryAccounting_`
++nineteen-row focus and the full new project (39 forecasts: nineteen new rows plus
++twenty linked retained controls), relevant existing suites and raw
++coverage floors, format checks, and retain exact source bindings/TRX/cleanup
++receipts. Do not execute these commands while the 4096 MiB floor is failing.
++
++No live IAM grants, database/provider writes, credentials, deployment, commit or
++publication are part of this source-authoring phase. Actual task resources at
++packet creation: zero workers, containers, listeners and helpers.
++
++The eleven V3 new profile rows are in the existing AuthService project, not this
++project. Its selected LoginResponseWrongTrust method has29 forecasts: eleven new
++and eighteen retained. Together the two focused runs have48 forecasts, of which
++thirty are new candidate tuples and eighteen are retained. The normal Auth suite
++has946 forecasts (935 retained plus eleven new); existing genuine31 remains
++unchanged. Qualification must join each named TRX tuple, not treat30 as one
++project's execution count or attribute old hosted935/31/11 passes to this source.
+diff --git a/docs/financial-iam-consumer-recovery-source-contract.md b/docs/financial-iam-consumer-recovery-source-contract.md
+new file mode 100644
+index 0000000..30e69ae
+--- /dev/null
++++ b/docs/financial-iam-consumer-recovery-source-contract.md
+@@ -0,0 +1,84 @@
++# Financial IAM consumer recovery — source candidate only
++
++Base: Auth `85a00d4bb54cf95199ee67dfd97d2b168233ff68`.
++
++This successor imports the four production and two controlled-HTTP regression
++changes from `auth-financial-iam-consumer-source-v2-out-of-process-20261007`.
++The normal hosted dependency graph explicitly selects accepted Defaults
++`7b3099bf67d0f17e56cfdb3dcf36541304abaac2`, which supplies the separate IAM
++provider. The existing isolated genuine IAM graph already selects that revision.
++No other dependency pin, accepted genuine test, enrollment, or permission catalogue
++is changed here. No deployment or live grant is authorized by this document.
++
++## Token boundaries
++
++The dedicated quotation live-authority client uses the server-owned AuthService
++IAM profile issued by the real `/auth/v1/service/iam-login` endpoint. Its audience
++must differ from the ordinary legacy audience. Exact admission claims, issuer,
++RS256 signature, bounded lifetime, canonical origin, live-check credential,
++uncached scoped employee decision, and independent token cache remain required.
++The ordinary service token is not a fallback for this dedicated IAM client.
++
++Accounting and employee/customer profile clients retain the ordinary legacy
++provider, `service:legacy-auth` subject, and exact configured permissions. Only the
++Accounting financial-read literal is corrected to the producer's existing
++`legacy.accounting-financial-ownership.read` contract. Employee identity IDs,
++session behavior, database schema, and profile wire formats are unchanged.
++
++## Separate ordinary-enrollment financial qualification lane — source implementation
++
++Do not alter the accepted synthetic `join.resource.read` tests or their UUID seed.
++Their 935 normal / 31 dedicated / 11 focused hosted observations do not prove the
++financial business graph. The old exported five-row companion directly inserts
++a UUID principal/binding and is not imported or discovered by this successor.
++
++A separately implemented, independently reviewed lane must bind exact source revisions
++for each boundary it exercises. Whole-business composition additionally needs
++Quotation and AppHost/operator bindings; their separate pending acceptance does not
++invalidate the scoped Accounting-only source lane.
++Keep the original IAM/Aspire MassTransit8 graph out of the Defaults MassTransit9
++process. Reuse qualified lifecycle code only with explicit ownership contracts;
++do not invent new fixture APIs or weaken the 4096 MiB admission floor.
++
++The original IAM ordinary resolver accepts a GUID or exact email, then resolves
++an opaque subject through its lower-case `@serviceaccount.maliev.local` fallback.
++Real server-side principal creation and the normal `/iam/v1/principals` route
++exist; the route separately requires `iam.principals.create`. Check-permission
++admission does not authorize enrollment. Managed-workload email resolution is a
++different contract. No inspected source automatically enrolls this financial graph.
++
++The standing migration/test authority covers the disposable ordinary employee
++association and explicit Auth/Quotation service-account enrollment with finite,
++least-privilege bindings in this isolated test lane. No additional generic approval
++is required to implement that source or its controlled tests. This is not authority
++to enroll live principals or modify deployed permissions. Enrollment must exercise the real supported
++producer/operator paths in an owned disposable PostgreSQL fixture, record their
++returned identities, and prove persisted ordinary-subject resolution. Do not
++rewrite the Auth-issued employee subject to a fixture GUID, insert a positive
++catalogue permission to manufacture success, or claim an operator tool's existence
++is proof of completed enrollment. Unknown opaque subjects must remain denied.
++
++Then exercise real credential-first Auth issuance and actual IAM/Accounting HTTP:
++correct scope allowed; absent binding, unknown subject, wrong resource, inactive
++or revoked principal, unrelated caller, wrong audience/key/profile denied; expired
++credential, transport failure, cancellation, and cleanup uncertainty fail closed.
++Retain actual bounded host/request/context quiescence, exact resource identity,
++disposable mount/cap observations, and absence receipts. No production data,
++credentials, catalogue grants, or live policy writes are part of this source lane.
++
++## Qualification status
++
++The successor implements thirteen ordinary Auth/IAM API rows and six actual
++Accounting financial-read HTTP rows. The Accounting-only setup obtains an actual
++Auth HTTP employee delegation and verifies its origin with Accounting's real
++verifier before the supported scoped store transaction. It is not complete
++`/prepare` HTTP/source-provider orchestration or operator CLI acceptance.
++The exact Quotation18-permission producer payload is now source-bound, not a
++guessed catalogue. See the new lane README and immutable successor manifest.
++
++This candidate has no executed build, test, format, or joined-runtime result.
++The eleven added controlled-HTTP profile-rejection rows remain forecasts.
++Release build with zero warnings/errors, focused regressions, the relevant full
++suite, static checks, raw owned coverage floors, and independent source review
++must precede publication/commit acceptance. A successful ordinary Auth run at the
++base revision must not be attributed to these new consumer changes.
+diff --git a/acceptance/OrdinaryFinancialIam.Tests/AccountingFinancialFixture.cs b/acceptance/OrdinaryFinancialIam.Tests/AccountingFinancialFixture.cs
+new file mode 100644
+index 0000000..4e1a2d5
+--- /dev/null
++++ b/acceptance/OrdinaryFinancialIam.Tests/AccountingFinancialFixture.cs
+@@ -0,0 +1,289 @@
++extern alias AccountingApi;
++extern alias AccountingData;
++extern alias AccountingDomain;
++extern alias AccountingApplication;
++extern alias LegacyDefaults;
++
++using System.IdentityModel.Tokens.Jwt;
++using System.Net;
++using System.Net.Http.Headers;
++using System.Net.Http.Json;
++using System.Reflection;
++using System.Security.Cryptography;
++using System.Text;
++using System.Text.Json;
++using Microsoft.AspNetCore.Authentication.JwtBearer;
++using Microsoft.AspNetCore.Hosting;
++using Microsoft.AspNetCore.Mvc.Testing;
++using Microsoft.EntityFrameworkCore;
++using Microsoft.Extensions.Configuration;
++using Microsoft.Extensions.DependencyInjection;
++using Microsoft.Extensions.Http;
++using Microsoft.Extensions.Options;
++using Microsoft.IdentityModel.Tokens;
++using Npgsql;
++using Legacy.Maliev.AuthService.GenuineIamHttp.Tests;
++using InvoiceDb = AccountingData::Legacy.Maliev.AccountingService.Data.InvoiceDbContext;
++using FinancialStore = AccountingData::Legacy.Maliev.AccountingService.Data.InvoiceFinancialOwnershipStore;
++using AdmissionStore = AccountingData::Legacy.Maliev.AccountingService.Data.InvoiceCreationAdmissionStore;
++using CreationStore = AccountingData::Legacy.Maliev.AccountingService.Data.InvoiceCreationStore;
++using Invoice = AccountingDomain::Legacy.Maliev.AccountingService.Domain.Invoice.Invoice;
++using Item = AccountingDomain::Legacy.Maliev.AccountingService.Domain.Invoice.InvoiceOrderItem;
++using Origin = AccountingApplication::Legacy.Maliev.AccountingService.Application.Models.InvoiceNotificationOrigin;
++using Ownership = AccountingApplication::Legacy.Maliev.AccountingService.Application.Models.InvoiceFinancialOwnership;
++using Profile = LegacyDefaults::Maliev.Aspire.ServiceDefaults.LegacyAuth.LegacyServiceAccessTokenProvider;
++
++namespace Legacy.Maliev.AuthService.OrdinaryFinancialIam.Tests;
++
++[CollectionDefinition("Ordinary Accounting financial HTTP", DisableParallelization = true)]
++public sealed class AccountingFinancialCollection : ICollectionFixture<AccountingFinancialFixture> { }
++
++public sealed class AccountingFinancialFixture : OrdinaryFinancialFixture
++{
++    protected override bool IncludeQuotationCatalogue => false;
++    protected override bool IncludeAccounting => true;
++}
++
++public partial class OrdinaryFinancialFixture
++{
++    protected virtual bool IncludeAccounting => false;
++    public AccountingFactory? Accounting { get; private set; }
++    private readonly OwnedHostDisposal accountingDisposal = new();
++    private Task<RSA>? accountingStartup;
++    private bool accountingStartupUncertain;
++    private RSA? accountingValidationRsa;
++    private readonly List<NpgsqlConnection> accountingPools = [];
++    private string? accountingConnection;
++    public Guid FinancialOperation { get; private set; }
++    public Ownership? FinancialReceipt { get; private set; }
++    public Guid UnrelatedPrincipal { get; private set; }
++    public List<string> AccountingCheckedSubjects { get; } = [];
++    public List<string> AccountingProfiles { get; } = [];
++    public string? ControlledWrongProfileBearer { get; set; }
++
++    private async Task InitializeAccountingAsync(CancellationToken token)
++    {
++        if (!IncludeAccounting) return;
++        var root = VerifyAccountingSource();
++        using (var operatorClient = await CreateOperatorClientAsync(token))
++            UnrelatedPrincipal = await EnrollIssuedServiceAsync(operatorClient, "legacy-unrelated", UnrelatedSecret, token);
++        var connections = new Dictionary<string, string>();
++        foreach (var context in new[] { "InvoiceDbContext", "PaymentDbContext", "ReceiptDbContext" })
++        {
++            var db = "ordinary_" + context.ToLowerInvariant();
++            await using (var command = new NpgsqlCommand($"CREATE DATABASE \"{db}\"", ownedPool))
++                await command.ExecuteNonQueryAsync(token);
++            var connection = new NpgsqlConnectionStringBuilder(database!.GetConnectionString()) { Database = db }.ConnectionString;
++            connections.Add(context, connection);
++            accountingPools.Add(new NpgsqlConnection(connection));
++        }
++        accountingConnection = connections["InvoiceDbContext"];
++        Accounting = new AccountingFactory(this, root, connections);
++        // Ownership is recorded before actual factory startup can throw or outlive the caller.
++        accountingStartup = Task.Run(() =>
++            (Accounting.Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
++                .Get(JwtBearerDefaults.AuthenticationScheme).TokenValidationParameters.IssuerSigningKey as RsaSecurityKey)?.Rsa
++                ?? throw new InvalidOperationException("Actual Accounting JWT validation key is required."));
++        try { accountingValidationRsa = await accountingStartup.WaitAsync(token); }
++        catch { accountingStartupUncertain = true; throw; }
++        await using var scope = Accounting.Services.CreateAsyncScope();
++        var dbContext = scope.ServiceProvider.GetRequiredService<InvoiceDb>();
++        await dbContext.Database.MigrateAsync(token);
++        FinancialOperation = Guid.NewGuid();
++        var origin = await VerifiedActualOriginAsync(token);
++        // Real supported store transaction creates disposable financial rows and immutable receipt.
++        // This is not the HTTP prepare/delegation orchestration or a positive IAM authority seed.
++        await scope.ServiceProvider.GetRequiredService<AdmissionStore>().AdmitAsync(FinancialOperation, 135, origin,
++            new string('A', 64), token);
++        var invoice = await new CreationStore(dbContext, TimeProvider.System).CreateAsync(
++            new Invoice { Number = "ORDINARY-" + FinancialOperation.ToString("N"), CustomerId = 42, Total = 12m },
++            [new Item { Description = "owned fixture", Quantity = 3, UnitPrice = 4m }],
++            new(FinancialOperation, 135, origin, new DateTime(2026, 10, 8, 1, 2, 3, DateTimeKind.Unspecified)), token);
++        FinancialReceipt = await scope.ServiceProvider.GetRequiredService<FinancialStore>().ReadAsync(FinancialOperation, token);
++        Assert.Equal(invoice.Id, FinancialReceipt.InvoiceId);
++        await WriteLedgerAsync(new { run, state = "actual-accounting-http-ready", operation = FinancialOperation,
++            sourceManifestSha256 = AccountingManifestHash, httpPrepareQualified = false }, token);
++    }
++
++    private const string AccountingManifestHash = "cc314f03b3cee337ddd2ea40609a7c40d664a8e8177eae82b6a87b353590d0a2";
++    private async Task<Origin> VerifiedActualOriginAsync(CancellationToken token)
++    {
++        var serviceBearer = await LoginServiceAsync(Auth, "legacy-intranet", IntranetSecret, "service/login", token);
++        using var client = Auth.CreateClient();
++        using var request = new HttpRequestMessage(HttpMethod.Post, "/auth/v1/exchange/invoice-create")
++        {
++            Content = JsonContent.Create(new { quotationId = 135, operationId = FinancialOperation.ToString("D"),
++                employeeAccessToken = issuedEmployeeCredential })
++        };
++        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", serviceBearer);
++        var before = Auth.NormalIamChecks.Count;
++        using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
++        using var body = await ReadJsonAsync(response, HttpStatusCode.OK, token);
++        var check = Assert.Single(Auth.NormalIamChecks.Skip(before));
++        Assert.Equal("service:legacy-intranet", check.Subject);
++        Assert.Equal("legacy-auth.invoice-delegation.issue", check.Permission);
++        Assert.Equal(LegacyAudience, check.Audience);
++        Assert.Equal(HttpStatusCode.Unauthorized, check.Status);
++        Assert.Equal(0, Auth.DeniedUnownedRequests);
++        var delegation = body.RootElement.GetProperty("accessToken").GetString()!;
++        var parameters = Auth.Services.GetRequiredService<IOptionsMonitor<JwtBearerOptions>>()
++            .Get(JwtBearerDefaults.AuthenticationScheme).TokenValidationParameters;
++        var service = new JwtSecurityTokenHandler { MapInboundClaims = false }.ValidateToken(serviceBearer, parameters, out _);
++        Assert.Equal("service:legacy-intranet", service.FindFirst("sub")!.Value);
++        var verifier = Accounting!.Services.GetRequiredService<AccountingApi::Legacy.Maliev.AccountingService.Api.Authorization.InvoiceCreationDelegationVerifier>();
++        var origin = verifier.VerifyOrigin("Bearer " + delegation, service, 135, FinancialOperation)
++            ?? throw new InvalidOperationException("Actual issued delegation must yield verified financial origin.");
++        Assert.Equal(Issuer, origin.Issuer);
++        Assert.Equal(IssuedEmployeeSubject, origin.EmployeeSubject);
++        Assert.Equal("service:legacy-intranet", origin.ServiceSubject);
++        return origin;
++    }
++    private static string VerifyAccountingSource()
++    {
++        var configured = typeof(OrdinaryFinancialFixture).Assembly.GetCustomAttributes<AssemblyMetadataAttribute>()
++            .Single(attribute => attribute.Key == "AccountingSourceRoot").Value
++            ?? throw new InvalidOperationException("Accounting source-project metadata is required.");
++        var root = Path.GetFullPath(configured);
++        var manifestPath = Environment.GetEnvironmentVariable("ORDINARY_FINANCIAL_ACCOUNTING_SOURCE_MANIFEST")
++            ?? throw new InvalidOperationException("Immutable Accounting source manifest is required.");
++        var info = new FileInfo(manifestPath);
++        if (info.Length > 1024 * 1024) throw new InvalidOperationException("Accounting manifest exceeds bound.");
++        var bytes = File.ReadAllBytes(manifestPath);
++        if (Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant() != AccountingManifestHash)
++            throw new InvalidOperationException("Accounting manifest identity differs.");
++        using var manifest = JsonDocument.Parse(bytes, new JsonDocumentOptions { MaxDepth = 32 });
++        Assert.Equal("668f2cb63c64b911db776329b983dd91944b3b8c", manifest.RootElement.GetProperty("base").GetString());
++        var files = manifest.RootElement.GetProperty("files").EnumerateArray().ToArray();
++        Assert.Equal(49, files.Length);
++        foreach (var file in files)
++        {
++            var relative = file.GetProperty("path").GetString()!;
++            var path = Path.GetFullPath(Path.Combine(root, relative));
++            if (!path.StartsWith(root.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar, StringComparison.Ordinal))
++                throw new InvalidOperationException("Accounting source path escapes exact root.");
++            var source = new FileInfo(path);
++            if (source.Length > 4 * 1024 * 1024) throw new InvalidOperationException("Accounting source exceeds bound.");
++            Assert.Equal(file.GetProperty("sha256").GetString(), Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))).ToLowerInvariant());
++        }
++        return root;
++    }
++
++    private async Task DisposeAccountingHostAsync(CancellationToken token)
++    {
++        if (Accounting is null) return;
++        if (accountingStartup is not null)
++        {
++            try { accountingValidationRsa ??= await accountingStartup.WaitAsync(token); }
++            catch (Exception) when (accountingStartup.IsCompleted)
++            {
++                accountingStartupUncertain = true;
++                // Original startup failure retained by InitializeAsync; completed Services task
++                // is not actual Program-entrypoint completion. Backend remains quarantined.
++            }
++            if (!accountingStartup.IsCompleted) throw new InvalidOperationException("Accounting startup remains unsettled; retain backend.");
++        }
++        await accountingDisposal.WaitAsync(() => Accounting.DisposeAsync().AsTask(), token);
++        if (accountingStartupUncertain)
++            throw new InvalidOperationException("Accounting entrypoint after uncertain startup remains unverified; retain backend for exact external SDK-owner recovery.");
++    }
++
++    private Task DisposeAccountingPoolsAsync(CancellationToken token)
++    {
++        RequireHostsQuiescent();
++        var failures = new List<Exception>();
++        foreach (var pool in accountingPools.ToArray())
++        {
++            Exception? failure = null;
++            try { NpgsqlConnection.ClearPool(pool); }
++            catch (Exception caught) { failure = caught; }
++            finally
++            {
++                try { pool.Dispose(); }
++                catch (Exception caught) { failure = failure is null ? caught : new AggregateException(failure, caught); }
++            }
++            if (failure is null) accountingPools.Remove(pool);
++            else failures.Add(failure);
++        }
++        if (failures.Count != 0) throw new AggregateException("Accounting owned pools cleanup failed; exact owners retained for recovery.", failures);
++        return Task.CompletedTask;
++    }
++
++    public async Task<string> AccountingFinancialStateAsync(CancellationToken token)
++    {
++        await using var database = new InvoiceDb(new DbContextOptionsBuilder<InvoiceDb>().UseNpgsql(accountingConnection).Options);
++        var state = JsonSerializer.Serialize(new {
++            admission = await database.InvoiceCreationAdmissions.AsNoTracking().SingleAsync(value => value.OperationId == FinancialOperation, token),
++            invoice = await database.Invoices.AsNoTracking().SingleAsync(value => value.Id == FinancialReceipt!.InvoiceId, token),
++            items = await database.Items.AsNoTracking().Where(value => value.InvoiceId == FinancialReceipt!.InvoiceId).OrderBy(value => value.Id).ToArrayAsync(token)
++        });
++        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(state)));
++    }
++
++    public sealed class AccountingFactory(OrdinaryFinancialFixture owner, string root, Dictionary<string, string> connections)
++        : WebApplicationFactory<AccountingApi::Program>
++    {
++        protected override void ConfigureWebHost(IWebHostBuilder builder)
++        {
++            builder.UseContentRoot(Path.Combine(root, "Legacy.Maliev.AccountingService.Api"));
++            builder.UseEnvironment("Production");
++            foreach (var setting in new Dictionary<string, string?> {
++                ["Jwt:Issuer"] = Issuer, ["Jwt:Audience"] = LegacyAudience,
++                ["Jwt:PublicKey"] = Convert.ToBase64String(Encoding.UTF8.GetBytes(owner.signing.ExportSubjectPublicKeyInfoPem())),
++                ["Cache:RedisEnabled"] = "false", ["Cache:AllowInMemoryFallback"] = "true",
++                ["Observability:RuntimeMetricsEnabled"] = "false",
++                ["ServiceAuthentication:ClientId"] = "legacy-accounting", ["ServiceAuthentication:ClientSecret"] = AccountingSecret,
++                ["Services:Auth:BaseUrl"] = Issuer, ["Services:IAMService:BaseUrl"] = IamAudience,
++                ["IAM:LivePermissionChecks:Credential"] = "accounting:" + LiveKey
++            }) builder.UseSetting(setting.Key, setting.Value);
++            foreach (var (context, connection) in connections) builder.UseSetting("ConnectionStrings:" + context, connection);
++            builder.ConfigureServices(services => services.AddSingleton<IHttpMessageHandlerBuilderFilter>(new AccountingRouteFilter(owner)));
++        }
++    }
++
++    private sealed class AccountingRouteFilter(OrdinaryFinancialFixture owner) : IHttpMessageHandlerBuilderFilter
++    {
++        public Action<HttpMessageHandlerBuilder> Configure(Action<HttpMessageHandlerBuilder> next) => builder => {
++            next(builder);
++            if (builder.Name == Profile.HttpClientName)
++            {
++                builder.PrimaryHandler.Dispose();
++                builder.PrimaryHandler = new ExchangeRoute(owner.Auth.Server.CreateHandler(), owner.Auth);
++            }
++            else if (builder.Name == "IAMService")
++            {
++                builder.PrimaryHandler.Dispose();
++                builder.PrimaryHandler = new AccountingIamRoute(new HttpClientHandler { AllowAutoRedirect = false }, owner);
++            }
++            else
++            {
++                builder.PrimaryHandler.Dispose();
++                builder.PrimaryHandler = new DenyExternalHttp();
++            }
++        };
++    }
++
++    private sealed class AccountingIamRoute(HttpMessageHandler inner, OrdinaryFinancialFixture owner) : DelegatingHandler(inner)
++    {
++        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
++        {
++            Assert.Equal(IamAudience + "/iam/v1/auth/check-permission", request.RequestUri!.AbsoluteUri);
++            using var body = JsonDocument.Parse(await request.Content!.ReadAsStringAsync(token));
++            Assert.Equal("legacy.accounting-financial-ownership.read", body.RootElement.GetProperty("PermissionId").GetString());
++            Assert.Equal("global", body.RootElement.GetProperty("ResourcePath").GetString());
++            Assert.True(body.RootElement.GetProperty("BypassCache").GetBoolean());
++            owner.AccountingCheckedSubjects.Add(body.RootElement.GetProperty("PrincipalId").GetString()!);
++            if (owner.ControlledWrongProfileBearer is { } wrongProfile)
++                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", wrongProfile);
++            var jwt = new JwtSecurityTokenHandler().ReadJwtToken(request.Headers.Authorization!.Parameter!);
++            owner.AccountingProfiles.Add(Assert.Single(jwt.Claims, claim => claim.Type == "service_name").Value);
++            request.RequestUri = new Uri(owner.Iam.BaseAddress, request.RequestUri.PathAndQuery);
++            return await base.SendAsync(request, token);
++        }
++    }
++
++    private sealed class DenyExternalHttp : HttpMessageHandler
++    {
++        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
++            => Task.FromException<HttpResponseMessage>(new InvalidOperationException("Unrelated external HTTP is forbidden."));
++    }
++}
+diff --git a/acceptance/OrdinaryFinancialIam.Tests/AccountingFinancialHttpTests.cs b/acceptance/OrdinaryFinancialIam.Tests/AccountingFinancialHttpTests.cs
+new file mode 100644
+index 0000000..30d3602
+--- /dev/null
++++ b/acceptance/OrdinaryFinancialIam.Tests/AccountingFinancialHttpTests.cs
+@@ -0,0 +1,132 @@
++using System.Net;
++using System.Net.Http.Headers;
++using System.Text.Json;
++using Microsoft.Extensions.Configuration;
++using Microsoft.Extensions.DependencyInjection;
++
++namespace Legacy.Maliev.AuthService.OrdinaryFinancialIam.Tests;
++
++[Collection("Ordinary Accounting financial HTTP")]
++public sealed class AccountingFinancialHttpTests(AccountingFinancialFixture fixture)
++{
++    [Theory]
++    [InlineData("legacy-auth")]
++    [InlineData("legacy-quotation")]
++    public async Task OrdinaryAccounting_ActualFinancialHttpReadRequiresLiveNormalBindingAndRevocationWins(string caller)
++    {
++        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
++        using var operatorClient = await fixture.CreateOperatorClientAsync(deadline.Token);
++        var principal = caller == "legacy-auth" ? fixture.AuthPrincipal : fixture.QuotationPrincipal;
++        var secret = caller == "legacy-auth" ? OrdinaryFinancialFixture.ClientSecret : OrdinaryFinancialFixture.QuotationSecret;
++        var credential = await fixture.LoginServiceAsync(fixture.Auth, caller, secret, "service/login", deadline.Token);
++        Guid? binding = await fixture.GrantAsync(operatorClient, principal, fixture.FinancialRole, null, DateTime.UtcNow.AddMinutes(2), deadline.Token);
++        Exception? failure = null;
++        try
++        {
++            var before = await fixture.AccountingFinancialStateAsync(deadline.Token);
++            using var client = fixture.Accounting!.CreateClient();
++            var calls = fixture.AccountingCheckedSubjects.Count;
++            using (var response = await ReadAsync(client, credential, deadline.Token))
++            {
++                using var body = await OrdinaryFinancialFixture.ReadJsonAsync(response, HttpStatusCode.OK, deadline.Token);
++                Assert.Equal(fixture.FinancialOperation.ToString("D"), body.RootElement.GetProperty("OperationId").GetString());
++                Assert.Equal(fixture.FinancialReceipt!.InvoiceId, body.RootElement.GetProperty("InvoiceId").GetInt32());
++                Assert.Equal(fixture.FinancialReceipt.FinancialBinding, body.RootElement.GetProperty("FinancialBinding").GetString());
++                Assert.Equal("no-store", response.Headers.CacheControl!.ToString());
++                Assert.Equal("service:" + caller, Assert.Single(fixture.AccountingCheckedSubjects.Skip(calls)));
++                Assert.Equal("AccountingService", fixture.AccountingProfiles.Last());
++            }
++            await fixture.RevokeAsync(operatorClient, principal, binding.Value, deadline.Token);
++            binding = null;
++            calls = fixture.AccountingCheckedSubjects.Count;
++            using (var revoked = await ReadAsync(client, credential, deadline.Token))
++                Assert.Equal(HttpStatusCode.Forbidden, revoked.StatusCode);
++            Assert.Equal("service:" + caller, Assert.Single(fixture.AccountingCheckedSubjects.Skip(calls)));
++            Assert.Equal(before, await fixture.AccountingFinancialStateAsync(deadline.Token));
++        }
++        catch (Exception caught) { failure = caught; throw; }
++        finally
++        {
++            if (binding is not null)
++            {
++                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
++                try { await fixture.RevokeAsync(operatorClient, principal, binding.Value, cleanup.Token); }
++                catch (Exception cleanupFailure) when (failure is not null)
++                { throw new AggregateException("Actual financial HTTP assertion and binding cleanup failed.", failure, cleanupFailure); }
++            }
++        }
++    }
++
++    [Theory]
++    [InlineData("unrelated", HttpStatusCode.Forbidden)]
++    [InlineData("wrong-key", HttpStatusCode.Forbidden)]
++    [InlineData("wrong-profile", HttpStatusCode.Forbidden)]
++    [InlineData("wrong-audience", HttpStatusCode.Unauthorized)]
++    public async Task OrdinaryAccounting_RealFinancialHttpRejectsWrongWorkloadOrBoundaryWithoutMutation(string scenario, HttpStatusCode expected)
++    {
++        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
++        using var operatorClient = await fixture.CreateOperatorClientAsync(deadline.Token);
++        var principal = scenario == "unrelated" ? fixture.UnrelatedPrincipal : fixture.AuthPrincipal;
++        var clientId = scenario == "unrelated" ? "legacy-unrelated" : "legacy-auth";
++        var secret = scenario == "unrelated" ? OrdinaryFinancialFixture.UnrelatedSecret : OrdinaryFinancialFixture.ClientSecret;
++        var credential = await fixture.LoginServiceAsync(fixture.Auth, clientId, secret,
++            scenario == "wrong-audience" ? "service/iam-login" : "service/login", deadline.Token);
++        var binding = await fixture.GrantAsync(operatorClient, principal, fixture.FinancialRole, null, DateTime.UtcNow.AddMinutes(2), deadline.Token);
++        var config = fixture.Accounting!.Services.GetRequiredService<IConfiguration>();
++        var saved = new[] { "IAM:LivePermissionChecks:Credential", "ServiceAuthentication:ClientId", "ServiceAuthentication:ClientSecret" }
++            .ToDictionary(key => key, key => config[key]);
++        Exception? failure = null;
++        try
++        {
++            var before = await fixture.AccountingFinancialStateAsync(deadline.Token);
++            if (scenario == "wrong-key") config["IAM:LivePermissionChecks:Credential"] = "wrong-isolated-accounting-key";
++            if (scenario == "wrong-profile")
++            {
++                // Controlled corruption uses a genuine Auth-issued wrong-workload profile, never a fake JWT.
++                fixture.ControlledWrongProfileBearer = await fixture.LoginServiceAsync(fixture.Auth, "legacy-quotation",
++                    OrdinaryFinancialFixture.QuotationSecret, "service/iam-login", deadline.Token);
++            }
++            using var client = fixture.Accounting.CreateClient();
++            var calls = fixture.AccountingCheckedSubjects.Count;
++            using (var rejected = await ReadAsync(client, credential, deadline.Token))
++                Assert.Equal(expected, rejected.StatusCode);
++            if (scenario == "wrong-audience") Assert.Equal(calls, fixture.AccountingCheckedSubjects.Count);
++            else
++            {
++                Assert.Equal("service:" + clientId, Assert.Single(fixture.AccountingCheckedSubjects.Skip(calls)));
++                Assert.Equal(scenario == "wrong-profile" ? "QuotationService" : "AccountingService", fixture.AccountingProfiles.Last());
++            }
++            Assert.Equal(before, await fixture.AccountingFinancialStateAsync(deadline.Token));
++            foreach (var (key, value) in saved) config[key] = value;
++            fixture.ControlledWrongProfileBearer = null;
++            if (scenario is "wrong-key" or "wrong-profile")
++            {
++                using var recovered = await ReadAsync(client, credential, deadline.Token);
++                Assert.Equal(HttpStatusCode.OK, recovered.StatusCode);
++            }
++        }
++        catch (Exception caught) { failure = caught; throw; }
++        finally
++        {
++            foreach (var (key, value) in saved) config[key] = value;
++            fixture.ControlledWrongProfileBearer = null;
++            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
++            try { await fixture.RevokeAsync(operatorClient, principal, binding, cleanup.Token); }
++            catch (Exception cleanupFailure) when (failure is not null)
++            { throw new AggregateException("Financial HTTP negative assertion and binding cleanup failed.", failure, cleanupFailure); }
++        }
++    }
++
++    private Task<HttpResponseMessage> ReadAsync(HttpClient client, string credential, CancellationToken token)
++    {
++        var request = new HttpRequestMessage(HttpMethod.Get, "/internal/invoice-creation/operations/" + fixture.FinancialOperation.ToString("D") + "/financial-ownership");
++        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", credential);
++        // Request remains owned until SendAsync completes; do not dispose during its active send.
++        return SendAndDisposeAsync(client, request, token);
++    }
++
++    private static async Task<HttpResponseMessage> SendAndDisposeAsync(HttpClient client, HttpRequestMessage request, CancellationToken token)
++    {
++        using (request) return await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token);
++    }
++}

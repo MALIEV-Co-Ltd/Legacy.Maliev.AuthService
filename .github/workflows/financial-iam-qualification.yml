@@ -1,0 +1,116 @@
+name: Isolated financial IAM qualification (source candidate)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auth-financial-iam-qualification
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    if: github.repository == 'MALIEV-Co-Ltd/Legacy.Maliev.AuthService'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        lane: [auth, accounting]
+    steps:
+      - name: Check out authenticating workflow source (not a candidate source pin)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Provision SDK through the accepted setup action
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.x
+      - name: Exact Auth base source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.AuthService
+          ref: 85a00d4bb54cf95199ee67dfd97d2b168233ff68
+          fetch-depth: 0
+          path: .source-checkouts/Legacy.Maliev.AuthService
+          persist-credentials: false
+      - name: Archived Auth graph for retained genuine controls only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.AuthService
+          ref: 88e430946465a1df6238e10b815d495d43453411
+          path: .source-checkouts/Archived.Legacy.Maliev.AuthService
+          persist-credentials: false
+      - name: Exact Accounting base plus sealed 49-file overlay
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.AccountingService
+          ref: 668f2cb63c64b911db776329b983dd91944b3b8c
+          path: .source-checkouts/Legacy.Maliev.AccountingService
+          persist-credentials: false
+      - name: Exact real IAM source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Maliev.IAMService
+          ref: 4fe6642e5674013de9a3672505aec898fdcae0ed
+          path: .source-checkouts/Maliev.IAMService
+          persist-credentials: false
+      - name: Exact original Aspire
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Maliev.Aspire
+          ref: 01d506203763b914e237268a8746f1406423df86
+          path: .source-checkouts/Maliev.Aspire
+          persist-credentials: false
+      - name: Exact original messaging
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Maliev.MessagingContracts
+          ref: 559a00db0c7920a5247fdff60d4476ad23a9a501
+          path: .source-checkouts/Maliev.MessagingContracts
+          persist-credentials: false
+      - name: Exact accepted ordinary Defaults
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+          path: .source-checkouts/Legacy.Maliev.ServiceDefaults
+          persist-credentials: false
+      - name: Exact compatibility contracts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts
+          ref: 78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7
+          path: .source-checkouts/Legacy.Maliev.CompatibilityContracts
+          persist-credentials: false
+      - name: Exact existing Customer test producer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.CustomerService
+          ref: 4eedecd81d1d8dcb4f38d8f76e51e7e9cb2110be
+          path: .source-checkouts/Legacy.Maliev.CustomerService
+          persist-credentials: false
+      - name: Exact accepted credential and setup gate source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.Workflows
+          ref: e3a6093324a24968876782153286f52db8b29fd8
+          path: .source-checkouts/Legacy.Maliev.Workflows
+          persist-credentials: false
+      - name: Finite private native qualification and independent finally recovery
+        timeout-minutes: 56
+        shell: pwsh
+        run: ./eng/financial-iam/Start-FinancialIamHostedOwner.ps1 -SourceCheckouts .source-checkouts -EvidenceRoot financial-iam-evidence -Lane '${{ matrix.lane }}'
+      - name: Retain private source-bound diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: financial-iam-${{ matrix.lane }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: financial-iam-evidence
+          retention-days: 7
+          if-no-files-found: error

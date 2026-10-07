@@ -1,0 +1,77 @@
+{
+  "ServiceName": "legacy",
+  "Permissions": [
+    {
+      "PermissionId": "legacy.quotations.read",
+      "Description": "Quotation service QuotationsRead permission."
+    },
+    {
+      "PermissionId": "legacy.customer-quotations.read",
+      "Description": "Quotation service CustomerQuotationsRead permission."
+    },
+    {
+      "PermissionId": "legacy.quotations.create",
+      "Description": "Quotation service QuotationsCreate permission."
+    },
+    {
+      "PermissionId": "legacy.quotations.update",
+      "Description": "Quotation service QuotationsUpdate permission."
+    },
+    {
+      "PermissionId": "legacy.quotations.delete",
+      "Description": "Quotation service QuotationsDelete permission."
+    },
+    {
+      "PermissionId": "legacy.quotation-lines.read",
+      "Description": "Quotation service LinesRead permission."
+    },
+    {
+      "PermissionId": "legacy.quotation-lines.write",
+      "Description": "Quotation service LinesWrite permission."
+    },
+    {
+      "PermissionId": "legacy.quotation-lines.delete",
+      "Description": "Quotation service LinesDelete permission."
+    },
+    {
+      "PermissionId": "legacy.quotation-orders.read",
+      "Description": "Quotation service OrdersRead permission."
+    },
+    {
+      "PermissionId": "legacy.quotation-orders.write",
+      "Description": "Quotation service OrdersWrite permission."
+    },
+    {
+      "PermissionId": "legacy.quotation-orders.delete",
+      "Description": "Quotation service OrdersDelete permission."
+    },
+    {
+      "PermissionId": "legacy.quotation-files.read",
+      "Description": "Quotation service FilesRead permission."
+    },
+    {
+      "PermissionId": "legacy.quotation-files.write",
+      "Description": "Quotation service FilesWrite permission."
+    },
+    {
+      "PermissionId": "legacy.quotation-files.delete",
+      "Description": "Quotation service FilesDelete permission."
+    },
+    {
+      "PermissionId": "legacy.quotation-requests.read",
+      "Description": "Quotation service RequestsRead permission."
+    },
+    {
+      "PermissionId": "legacy.quotation-requests.create",
+      "Description": "Quotation service RequestsCreate permission."
+    },
+    {
+      "PermissionId": "legacy.quotation-requests.update",
+      "Description": "Quotation service RequestsUpdate permission."
+    },
+    {
+      "PermissionId": "legacy.quotation-requests.delete",
+      "Description": "Quotation service RequestsDelete permission."
+    }
+  ]
+}
