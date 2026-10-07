@@ -14,6 +14,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Time.Testing;
@@ -446,9 +447,11 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
     private sealed class Factory(Stores stores) : WebApplicationFactory<Program>
     {
         private readonly RSA signing = RSA.Create(2048);
+        private readonly OwnedFixtureConnectionPools pools = new();
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
+            builder.ConfigureLogging(logging => logging.AddProvider(new FixtureResourceFailureLogger()));
             builder.UseSetting("CORS:AllowedOrigins", "https://localhost");
             builder.ConfigureAppConfiguration((_, config) => config.AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -460,7 +463,13 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
                 ["Jwt:PrivateKeyPem"] = signing.ExportPkcs8PrivateKeyPem(),
                 ["Jwt:KeyId"] = "email-generation-test",
             }));
-            builder.ConfigureTestServices(services => services.Replace(ServiceDescriptor.Singleton<TimeProvider>(stores.Clock)));
+            builder.ConfigureTestServices(services =>
+            {
+                services.AddDbContext<CustomerIdentityDbContext>(options => pools.Configure(options));
+                services.AddDbContext<EmployeeIdentityDbContext>(options => pools.Configure(options));
+                services.AddDbContext<RefreshSessionDbContext>(options => pools.Configure(options));
+                services.Replace(ServiceDescriptor.Singleton<TimeProvider>(stores.Clock));
+            });
         }
         public HttpClient Client(string caller = "owner")
         {
@@ -476,25 +485,12 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
         }
         public override async ValueTask DisposeAsync()
         {
-            var connections = new List<NpgsqlConnection>();
-            await using (var scope = Services.CreateAsyncScope())
+            try { await base.DisposeAsync(); }
+            finally
             {
-                var contexts = new DbContext[]
-                {
-                    scope.ServiceProvider.GetRequiredService<CustomerIdentityDbContext>(),
-                    scope.ServiceProvider.GetRequiredService<EmployeeIdentityDbContext>(),
-                    scope.ServiceProvider.GetRequiredService<RefreshSessionDbContext>(),
-                };
-                foreach (var context in contexts)
-                {
-                    await context.Database.OpenConnectionAsync();
-                    connections.Add((NpgsqlConnection)context.Database.GetDbConnection());
-                    await context.Database.CloseConnectionAsync();
-                }
+                try { signing.Dispose(); }
+                finally { await pools.DisposeAsync(); }
             }
-            await base.DisposeAsync();
-            signing.Dispose();
-            foreach (var connection in connections) NpgsqlConnection.ClearPool(connection);
         }
     }
 

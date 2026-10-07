@@ -60,6 +60,13 @@ jobs:
             -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~EmployeeSessionIssuanceHttpTests" \
             --logger "trx;LogFileName=actor-roles.trx" --results-directory artifacts/actor-roles
+      - name: Verify identity business ID and session claim preservation through normal HTTP
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName~NormalIdentityDatabaseIdContract_" \
+            --logger "trx;LogFileName=identity-database-id-contract.trx" --results-directory artifacts/identity-database-id-contract
       - name: Verify genuine employee edit grants and actor isolation
         shell: bash
         run: |
@@ -237,6 +244,7 @@ jobs:
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/customer-profile-binding -OutputDirectory artifacts/coverage-evidence/customer-profile-binding
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-password-policy -OutputDirectory artifacts/coverage-evidence/administrative-password-policy
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/administrative-identity-policy -OutputDirectory artifacts/coverage-evidence/administrative-identity-policy
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/identity-database-id-contract -OutputDirectory artifacts/coverage-evidence/identity-database-id-contract
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/employee-edit-grants -OutputDirectory artifacts/coverage-evidence/employee-edit-grants
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/invoice-bound-capability -OutputDirectory artifacts/coverage-evidence/invoice-bound-capability
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/readonly-lockout -OutputDirectory artifacts/coverage-evidence/readonly-lockout

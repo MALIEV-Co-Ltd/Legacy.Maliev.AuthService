@@ -23,6 +23,7 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
@@ -2062,6 +2063,65 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
     }
 
+    // Original customer DatabaseID is non-nullable; null characterizes the current nullable PostgreSQL extension.
+    // Original employee DatabaseID is nullable. Login/refresh must preserve either selected projection without rebinding.
+    [Theory]
+    [InlineData(IdentityKind.Customer, null)]
+    [InlineData(IdentityKind.Customer, 0)]
+    [InlineData(IdentityKind.Customer, 42)]
+    [InlineData(IdentityKind.Employee, null)]
+    [InlineData(IdentityKind.Employee, 0)]
+    [InlineData(IdentityKind.Employee, 42)]
+    public async Task NormalIdentityDatabaseIdContract_LoginAndRefreshPreserveSelectedIdWithoutRebinding(IdentityKind kind, int? databaseId)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var context = kind == IdentityKind.Customer ? (LegacyIdentityDbContext)stores.Customers : stores.Employees;
+        var selected = await context.Users.SingleAsync(deadline.Token);
+        selected.DatabaseID = databaseId;
+        await context.SaveChangesAsync(deadline.Token);
+        var before = await IdentityHashAsync();
+        await using var factory = new Factory(stores);
+        using var client = factory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
+        using var login = await client.PostAsJsonAsync("/auth/v1/login", Login(kind), deadline.Token);
+        var originalTokens = await ReadTokensAsync(login);
+        var original = await stores.State.RefreshSessions.AsNoTracking().SingleAsync(deadline.Token);
+        using var refresh = await client.PostAsJsonAsync("/auth/v1/refresh", new RefreshRequest(originalTokens.RefreshToken), deadline.Token);
+        var renewed = await ReadTokensAsync(refresh);
+        var replacement = await stores.State.RefreshSessions.AsNoTracking().SingleAsync(value => value.TokenHash == Hash(renewed.RefreshToken), deadline.Token);
+        foreach (var pair in new[] { (Tokens: originalTokens, Session: original), (Tokens: renewed, Session: replacement) })
+        {
+            var jwt = ReadJwt(pair.Tokens.AccessToken, factory);
+            Assert.Equal(selected.Id, Assert.Single(jwt.Claims, value => value.Type == "sub").Value);
+            Assert.Equal(kind.ToString().ToLowerInvariant(), Assert.Single(jwt.Claims, value => value.Type == "identity_kind").Value);
+            if (databaseId is { } businessId)
+                Assert.Equal(businessId.ToString(System.Globalization.CultureInfo.InvariantCulture), Assert.Single(jwt.Claims, claim => claim.Type == "legacy_database_id").Value);
+            else
+                Assert.DoesNotContain(jwt.Claims, claim => claim.Type == "legacy_database_id");
+            if (kind == IdentityKind.Employee)
+                Assert.Equal(pair.Session.Id.ToString("D"), Assert.Single(jwt.Claims, claim => claim.Type == "sid").Value);
+            else
+                Assert.DoesNotContain(jwt.Claims, claim => claim.Type == "sid");
+            Assert.Equal(kind, pair.Session.IdentityKind);
+            Assert.Equal(selected.Id, pair.Session.IdentityId);
+            Assert.Equal(Hash(selected.SecurityStamp!), Hash(pair.Session.SecurityStamp!));
+        }
+        Assert.Equal(original.FamilyId, replacement.FamilyId);
+        Assert.NotEqual(original.Id, replacement.Id);
+        Assert.Equal(2, await stores.State.RefreshSessions.CountAsync(deadline.Token));
+        Assert.Equal(before, await IdentityHashAsync());
+        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync(deadline.Token));
+        Assert.Empty(await stores.Employees.RecoveryEffects.AsNoTracking().ToListAsync(deadline.Token));
+        Assert.Equal(databaseId, (await context.Users.AsNoTracking().SingleAsync(deadline.Token)).DatabaseID);
+        async Task<string> IdentityHashAsync()
+        {
+            var customers = await stores.Customers.Users.AsNoTracking().OrderBy(value => value.Id).ToListAsync(deadline.Token);
+            var employees = await stores.Employees.Users.AsNoTracking().OrderBy(value => value.Id).ToListAsync(deadline.Token);
+            return Hash(JsonSerializer.Serialize(new { Customers = customers, Employees = employees }));
+        }
+    }
+
     private static LoginRequest Login(IdentityKind kind) => new(kind == IdentityKind.Employee ? "issuance@example.com" : "customer@example.com", "issuance-password", kind);
     private static async Task<TokenResponse> LoginAsync(HttpClient client, IdentityKind kind)
     {
@@ -2122,6 +2182,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
     {
         public const string ServiceSecret = "issuance-test-only-secret-0123456789";
         private readonly RSA signing = RSA.Create(2048);
+        private readonly OwnedFixtureConnectionPools pools = new();
         public Dictionary<int, EmployeeProfileBinding> Profiles { get; } = [];
         public Dictionary<int, CustomerProfileBinding> CustomerProfiles { get; } = [];
         public HttpStatusCode? ProfileStatus { get; set; }
@@ -2132,6 +2193,7 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
+            builder.ConfigureLogging(logging => logging.AddProvider(new FixtureResourceFailureLogger()));
             builder.UseSetting("CORS:AllowedOrigins", "https://localhost");
             builder.ConfigureAppConfiguration((_, configuration) =>
             {
@@ -2169,6 +2231,9 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
             });
             builder.ConfigureTestServices(services =>
             {
+                services.AddDbContext<CustomerIdentityDbContext>(options => pools.Configure(options));
+                services.AddDbContext<EmployeeIdentityDbContext>(options => pools.Configure(options));
+                services.AddDbContext<RefreshSessionDbContext>(options => pools.Configure(options));
                 services.AddHttpClient(LegacyServiceAccessTokenProvider.HttpClientName)
                     .ConfigurePrimaryHttpMessageHandler(() => Server.CreateHandler());
                 services.AddHttpClient(EmployeeProfileBindingClient.HttpClientName)
@@ -2247,25 +2312,12 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
             : context.Database.GetConnectionString();
         public override async ValueTask DisposeAsync()
         {
-            var connections = new List<NpgsqlConnection>();
-            await using (var scope = Services.CreateAsyncScope())
+            try { await base.DisposeAsync(); }
+            finally
             {
-                var contexts = new DbContext[]
-                {
-                    scope.ServiceProvider.GetRequiredService<EmployeeIdentityDbContext>(),
-                    scope.ServiceProvider.GetRequiredService<CustomerIdentityDbContext>(),
-                    scope.ServiceProvider.GetRequiredService<RefreshSessionDbContext>(),
-                };
-                foreach (var context in contexts)
-                {
-                    await context.Database.OpenConnectionAsync();
-                    connections.Add((NpgsqlConnection)context.Database.GetDbConnection());
-                    await context.Database.CloseConnectionAsync();
-                }
+                try { signing.Dispose(); }
+                finally { await pools.DisposeAsync(); }
             }
-            await base.DisposeAsync();
-            signing.Dispose();
-            foreach (var connection in connections) NpgsqlConnection.ClearPool(connection);
         }
     }
     private sealed class GoogleValidator : IGoogleIdentityTokenValidator
