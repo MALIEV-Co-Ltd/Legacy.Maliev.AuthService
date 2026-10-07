@@ -172,6 +172,9 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
     private string? containerImageId;
     private KernelStorageMount? startedKernelMount;
     private bool storagePolicyComplete;
+    private readonly OwnedHelperSafety helperSafety = new();
+    private readonly List<OwnedDockerHelper> quarantinedHelpers = [];
+    private bool helperCleanupFailed;
     public AuthFactory Auth { get; private set; } = null!;
     public AuthFactory WrongAudienceAuth { get; private set; } = null!;
     public OwnedIamProcess Iam { get; private set; } = null!;
@@ -283,6 +286,8 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
              ("PostgresContainer", RemoveContainerAsync)],
             (name, complete, token) => WriteLedgerAsync(new { run, resource = name, cleanupComplete = complete, remainingOwnership = !complete, leaseMinutes = complete ? 0 : 15 }, token),
             TimeSpan.FromSeconds(30));
+        if (helperCleanupFailed)
+            throw new OwnedHelperCleanupException([new InvalidOperationException("Owned helper cleanup previously failed; independent quiescence recovery does not erase the failure.")]);
         if (!storagePolicyComplete)
             throw new InvalidOperationException("Owned storage policy failed; physical cleanup receipts remain independent.");
     }
@@ -290,6 +295,8 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
     private async Task RemoveContainerAsync(CancellationToken cancellationToken)
     {
         if (database is null) return;
+        await VerifyQuarantinedHelpersAsync(cancellationToken);
+        helperSafety.RequireQuiescence();
         var id = database.Id;
         JsonElement? lastObservedStorage = null;
         KernelStorageMount? lastKernelMount = null;
@@ -312,9 +319,9 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
             lastKernelMount = storage.Mount;
             lastStoragePolicyComplete = storage.Complete;
             storagePolicyComplete &= storage.Complete;
-            var stopped = await DockerAsync(["stop", "--time", "5", id], cancellationToken);
+            var stopped = await helperSafety.MutateAsync(() => DockerAsync(["stop", "--time", "5", id], cancellationToken));
             Assert.Equal(0, stopped.ExitCode);
-            var removed = await DockerAsync(["rm", id], cancellationToken);
+            var removed = await helperSafety.MutateAsync(() => DockerAsync(["rm", id], cancellationToken));
             Assert.Equal(0, removed.ExitCode);
         }
         else storagePolicyComplete = false; // Missing pre-removal evidence is not a storage-policy pass.
@@ -328,7 +335,7 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
             declaredVolumes = lastObservedStorage?.GetProperty("volumes"), imageId = lastObservedStorage?.GetProperty("imageId"),
             kernelMount = lastKernelMount, storagePolicyComplete,
             lastStoragePolicyComplete, storagePolicyFault = storagePolicyComplete ? null : "owned-storage-policy-unverified",
-            cleanupComplete = true, remainingOwnership = false });
+            helperCleanupFailed, cleanupComplete = true, remainingOwnership = false });
     }
 
     private async Task RecordContainerStateAsync(string state, CancellationToken cancellationToken)
@@ -373,10 +380,58 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
     }
 
     private sealed record KernelStorageMount(string Target, string FileSystem, string Source, bool ReadWrite, string Size);
+    private sealed record OwnedDockerHelper(Process Process, Task<string> Output, Task<string> Error,
+        CancellationTokenSource Deadline, DateTime StartedAtUtc, string Executable);
+
+    private async Task VerifyQuarantinedHelpersAsync(CancellationToken cancellationToken)
+    {
+        if (!helperSafety.IsQuarantined) return;
+        List<Exception> failures = [];
+        if (quarantinedHelpers.Count == 0)
+            throw new OwnedHelperCleanupException([new InvalidOperationException("Quarantined helper ownership is unavailable.")]);
+        foreach (var helper in quarantinedHelpers.ToArray())
+        {
+            var exited = false;
+            var readersSettled = false;
+            try
+            {
+                helper.Deadline.Cancel();
+                if (!helper.Process.HasExited)
+                {
+                    helper.Process.Kill();
+                    helper.Process.WaitForExit(500);
+                }
+                exited = helper.Process.HasExited;
+                try { await Task.WhenAll(helper.Output, helper.Error).WaitAsync(TimeSpan.FromSeconds(1), cancellationToken); }
+                catch (Exception) when (helper.Output.IsCompleted && helper.Error.IsCompleted)
+                {
+                    // A faulted/cancelled reader is settled; the original cleanup failure remains fatal.
+                }
+                readersSettled = helper.Output.IsCompleted && helper.Error.IsCompleted;
+                using var receiptDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                receiptDeadline.CancelAfter(TimeSpan.FromSeconds(1));
+                await WriteLedgerAsync(new { run, purpose = "Independent owned Docker helper quiescence",
+                    processId = helper.Process.Id, startedAtUtc = helper.StartedAtUtc, executable = helper.Executable,
+                    exited, readersSettled, remainingOwnership = !exited || !readersSettled,
+                    originalCleanupFailure = true, leaseSeconds = 15 }, receiptDeadline.Token).WaitAsync(receiptDeadline.Token);
+                if (!exited || !readersSettled) throw new InvalidOperationException("Owned helper remains active.");
+                helper.Process.Dispose();
+                helper.Deadline.Dispose();
+                quarantinedHelpers.Remove(helper);
+            }
+            catch (Exception)
+            {
+                failures.Add(new InvalidOperationException("Independent owned helper quiescence verification failed."));
+            }
+        }
+        if (failures.Count != 0 || quarantinedHelpers.Count != 0)
+            throw new OwnedHelperCleanupException(failures);
+        helperSafety.ReleaseAfterVerifiedQuiescence();
+    }
 
     private async Task<(bool Complete, KernelStorageMount? Mount)> ObserveStoragePolicyAsync(JsonElement receipt, CancellationToken cancellationToken)
     {
-        try
+        return await helperSafety.ObservePolicyAsync(async () =>
         {
             AssertExactDisposableStorage(receipt);
             Assert.Matches("^sha256:[0-9a-f]{64}$", receipt.GetProperty("imageId").GetString()!);
@@ -385,9 +440,11 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
             deadline.CancelAfter(TimeSpan.FromSeconds(2));
             var observed = await DockerAsync(["exec", database!.Id, "cat", "/proc/self/mountinfo"], deadline.Token, 2, 500);
             if (observed.ExitCode != 0) throw new InvalidOperationException("Owned kernel storage observation failed.");
-            var matches = observed.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            var entries = observed.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
                 .Select(line => line.Split(' ', StringSplitOptions.RemoveEmptyEntries))
-                .Where(parts => parts.Length > 6 && parts[4] == "/var/lib/postgresql").ToArray();
+                .Where(parts => parts.Length > 6).ToArray();
+            Assert.DoesNotContain(entries, parts => parts[4].StartsWith("/var/lib/postgresql/", StringComparison.Ordinal));
+            var matches = entries.Where(parts => parts[4] == "/var/lib/postgresql").ToArray();
             var fields = Assert.Single(matches);
             var separator = Array.IndexOf(fields, "-");
             Assert.True(separator >= 6 && fields.Length > separator + 3);
@@ -399,13 +456,8 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
             Assert.Equal("size=131072k", Assert.Single(superOptions, option => option.StartsWith("size=", StringComparison.Ordinal)));
             var mount = new KernelStorageMount("/var/lib/postgresql", "tmpfs", "tmpfs", true, "size=131072k");
             if (startedKernelMount is not null) Assert.Equal(startedKernelMount, mount);
-            return (true, mount);
-        }
-        catch (Exception)
-        {
-            // Never retain arbitrary mountinfo, Docker output, or assertion payloads.
-            return (false, null);
-        }
+            return mount;
+        });
     }
 
     private async Task WriteLedgerAsync<T>(T entry, CancellationToken cancellationToken = default)
@@ -420,14 +472,15 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
 
     private async Task<(int ExitCode, string Output, string Error)> DockerAsync(string[] arguments, CancellationToken cancellationToken, int commandSeconds = 15, int reapMilliseconds = 5000)
     {
+        helperSafety.RequireQuiescence();
         var start = new ProcessStartInfo("docker") { RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false, CreateNoWindow = true };
         foreach (var argument in arguments) start.ArgumentList.Add(argument);
-        using var process = Process.Start(start)!;
+        var process = Process.Start(start)!;
         var startedAtUtc = process.StartTime.ToUniversalTime();
         var executable = start.FileName;
         try { executable = process.MainModule?.FileName ?? executable; }
         catch (Exception) { /* The owned handle and actual PID/start time remain authoritative. */ }
-        using var commandDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var commandDeadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         commandDeadline.CancelAfter(TimeSpan.FromSeconds(commandSeconds));
         var output = BoundedProcessOutput.ReadAsync(process.StandardOutput, 64 * 1024, commandDeadline.Token);
         var error = BoundedProcessOutput.ReadAsync(process.StandardError, 64 * 1024, commandDeadline.Token);
@@ -469,7 +522,20 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
             catch (Exception) { Fail("disposal-receipt"); }
             if (!exited) Fail("process-unreaped");
             if (!readersSettled) Fail("readers-unsettled");
-            if (failures.Count != 0) throw new AggregateException("Owned Docker helper cleanup failed; inspect fixed ownership receipts.", failures);
+            if (failures.Count == 0)
+            {
+                try { process.Dispose(); }
+                catch (Exception) { Fail("process-handle"); }
+                try { commandDeadline.Dispose(); }
+                catch (Exception) { Fail("deadline-handle"); }
+            }
+            if (failures.Count != 0)
+            {
+                helperSafety.Quarantine();
+                helperCleanupFailed = true;
+                quarantinedHelpers.Add(new OwnedDockerHelper(process, output, error, commandDeadline, startedAtUtc, executable));
+                throw new OwnedHelperCleanupException(failures);
+            }
             void Fail(string step) => failures.Add(new InvalidOperationException("Owned Docker helper cleanup incomplete: " + step));
         }
     }

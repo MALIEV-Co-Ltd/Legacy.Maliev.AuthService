@@ -1,5 +1,35 @@
 namespace Legacy.Maliev.AuthService.GenuineIamHttp.Tests;
 
+internal sealed class OwnedHelperCleanupException(IEnumerable<Exception> failures)
+    : AggregateException("Owned Docker helper cleanup failed; retained handles require independent quiescence verification.", failures)
+{ }
+
+internal sealed class OwnedHelperSafety
+{
+    internal bool IsQuarantined { get; private set; }
+    internal void Quarantine() => IsQuarantined = true;
+    internal void ReleaseAfterVerifiedQuiescence() => IsQuarantined = false;
+    internal void RequireQuiescence()
+    {
+        if (IsQuarantined)
+            throw new OwnedHelperCleanupException([new InvalidOperationException("Owned Docker helper remains quarantined.")]);
+    }
+
+    internal async Task<(bool Complete, T? Value)> ObservePolicyAsync<T>(Func<Task<T>> observe) where T : class
+    {
+        RequireQuiescence();
+        try { return (true, await observe()); }
+        catch (OwnedHelperCleanupException) { Quarantine(); throw; }
+        catch (Exception) { return (false, null); }
+    }
+
+    internal async Task<T> MutateAsync<T>(Func<Task<T>> mutation)
+    {
+        RequireQuiescence();
+        return await mutation();
+    }
+}
+
 internal static class OwnedCleanup
 {
     internal static async Task RunAsync(
@@ -36,6 +66,37 @@ internal static class OwnedCleanup
 
 public sealed class OwnedCleanupTests
 {
+    [Fact]
+    public async Task OwnedStorageObservation_HelperCleanupFaultQuarantinesStopAndRemove()
+    {
+        var safety = new OwnedHelperSafety();
+        List<string> mutations = [];
+        await Assert.ThrowsAsync<OwnedHelperCleanupException>(() => safety.ObservePolicyAsync<string>(
+            () => throw new OwnedHelperCleanupException([new InvalidOperationException("Owned helper did not settle.")])));
+        foreach (var command in new[] { "stop", "rm" })
+            await Assert.ThrowsAsync<OwnedHelperCleanupException>(() => safety.MutateAsync(() =>
+            {
+                mutations.Add(command);
+                return Task.FromResult(0);
+            }));
+        Assert.Empty(mutations);
+        Assert.True(safety.IsQuarantined);
+    }
+
+    [Fact]
+    public async Task OwnedStorageObservation_QuiescentPolicyFailureAllowsStopAndRemove()
+    {
+        var safety = new OwnedHelperSafety();
+        List<string> mutations = [];
+        var policy = await safety.ObservePolicyAsync<string>(() => throw new InvalidOperationException("Owned policy mismatch."));
+        Assert.False(policy.Complete);
+        Assert.Null(policy.Value);
+        foreach (var command in new[] { "stop", "rm" })
+            await safety.MutateAsync(() => { mutations.Add(command); return Task.FromResult(0); });
+        Assert.Equal(new[] { "stop", "rm" }, mutations);
+        Assert.False(safety.IsQuarantined);
+    }
+
     [Fact]
     public async Task OwnedCleanup_DisposalFailureStillAttemptsEveryLaterResource()
     {

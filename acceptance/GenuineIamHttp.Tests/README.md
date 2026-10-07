@@ -1,6 +1,6 @@
 # Genuine Auth to IAM HTTP acceptance
 
-This separate suite contains eleven HTTP cases plus 12 cleanup/output fault controls,
+This separate suite contains eleven HTTP cases plus 14 cleanup/output fault controls,
 and preserves the existing 935-case Auth suite and
 761-case Defaults suite. It exercises actual Auth HTTP issuance, the dedicated
 Defaults exchange/handler, and the original IAM production Program, JWT bearer,
@@ -56,6 +56,7 @@ with a 128-MiB limit, both at startup and before removal. The observed image ID
 must remain unchanged. The stock image's sole volume declaration at that path
 is accepted only when masked by this observed tmpfs; unknown declarations and
 actual bind, named-volume or other persistent mounts fail acceptance.
+Nested mounts below the PostgreSQL target also fail the kernel attestation.
 Only the sanitized matching kernel record is retained. A storage policy failure
 fails the suite independently of successful exact-container removal; container
 absence alone does not prove non-persistent storage.
@@ -63,12 +64,18 @@ Docker helpers have owned handles, 64-K-character caps per output stream,
 15-second command deadlines (two seconds for kernel observations) and bounded
 reaping. Cleanup attempts every resource independently and records unfinished
 ownership on failure. Only an exact daemon report for the owned ID proves
+container absence. A helper cleanup or receipt failure propagates independently,
+retains its process/readers/deadline handles and blocks further Docker commands.
+Only bounded independent exit/readers verification releases quarantine; recovery
+preserves the original failure and cannot accept the suite. Shared-path fault
+controls verify blocked stop/remove and safe cleanup after a policy mismatch.
+Only an exact daemon report for the owned ID proves
 container absence; daemon/CLI errors do not. Retained
 resource receipts contain container IDs/state only, never connection strings,
 credentials, JWTs or customer data. A finite runner/test timeout is also required.
 
 The standard Ubuntu hosted workflow builds each graph with warnings as errors,
-runs the eleven HTTP focus cases and 23 dedicated-suite cases, and verifies
+runs the eleven HTTP focus cases and 25 dedicated-suite cases, and verifies
 scoped formatting. The original normal Auth coverage/security gates remain.
 Expected counts describe discovery only; hosted results are required before
 acceptance. Keys/credentials/connection strings/JWTs never enter process receipts.
