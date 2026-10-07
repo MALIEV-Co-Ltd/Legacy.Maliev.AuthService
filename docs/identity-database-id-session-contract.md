@@ -14,4 +14,3 @@ This slice provides no schema migration, data rewrite, live IAM mutation, new gr
 # Fixture resource ownership
 
 The HTTP fixtures retain the exact PostgreSQL pool identities from the production options callbacks, including pools opened by separate credential-validation contexts. Teardown stops the HTTP host first, then clears only those owned pools through unopened connection handles in `finally`; it does not resolve services or open database connections during cleanup. The original connection, pooling, command-timeout, retry, issuer, and permission configuration remains intact.
-
