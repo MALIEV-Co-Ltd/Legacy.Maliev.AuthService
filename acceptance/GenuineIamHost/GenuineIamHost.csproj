@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <GenuineIamSourceRoot>$(MSBuildThisFileDirectory)../../.genuine-iam-source</GenuineIamSourceRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
+    <ProjectReference Include="$(GenuineIamSourceRoot)/Maliev.IAMService/Maliev.IAMService.Api/Maliev.IAMService.Api.csproj" Aliases="IamApi" />
+    <ProjectReference Include="$(GenuineIamSourceRoot)/Maliev.IAMService/Maliev.IAMService.Infrastructure/Maliev.IAMService.Infrastructure.csproj" Aliases="IamInfrastructure" />
+    <ProjectReference Include="$(GenuineIamSourceRoot)/Maliev.IAMService/Maliev.IAMService.Application/Maliev.IAMService.Application.csproj" Aliases="IamApplication" />
+    <ProjectReference Include="$(GenuineIamSourceRoot)/Maliev.IAMService/Maliev.IAMService.Domain/Maliev.IAMService.Domain.csproj" Aliases="IamDomain" />
+    <ProjectReference Include="$(GenuineIamSourceRoot)/Maliev.Aspire/Maliev.Aspire.ServiceDefaults/Maliev.Aspire.ServiceDefaults.csproj" Aliases="OriginalDefaults" />
+  </ItemGroup>
+</Project>

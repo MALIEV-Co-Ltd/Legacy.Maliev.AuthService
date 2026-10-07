@@ -16,6 +16,7 @@ jobs:
       - name: Check out AuthService
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Check out Legacy.Maliev.ServiceDefaults
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -45,12 +46,62 @@ jobs:
           ref: 4fe6642e5674013de9a3672505aec898fdcae0ed
           path: .dependencies/Maliev.IAMService
           persist-credentials: false
+      - name: Check out accepted Defaults solely for the isolated genuine IAM HTTP graph
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+          path: .dependencies/GenuineIamDefaults
+          persist-credentials: false
+      - name: Check out exact original Aspire dependency for genuine IAM HTTP
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Maliev.Aspire
+          ref: 01d506203763b914e237268a8746f1406423df86
+          path: .dependencies/Maliev.Aspire
+          persist-credentials: false
+      - name: Check out exact original messaging dependency for genuine IAM HTTP
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Maliev.MessagingContracts
+          ref: 559a00db0c7920a5247fdff60d4476ad23a9a501
+          path: .dependencies/Maliev.MessagingContracts
+          persist-credentials: false
+      - name: Materialize immutable genuine IAM HTTP build copy
+        shell: pwsh
+        run: ./eng/Prepare-GenuineIamHttpSource.ps1 -CommittedSourceRoot .dependencies
       - name: Validate .NET solution
         # The Customer API reference is test-only; no production project acquires it.
         uses: MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@e3a6093324a24968876782153286f52db8b29fd8
         with:
           solution: Legacy.Maliev.AuthService.slnx
           use-local-maliev-dependencies: 'true'
+      - name: Build and verify the genuine Auth Defaults IAM HTTP join
+        timeout-minutes: 15
+        shell: bash
+        env:
+          GENUINE_IAM_RESOURCE_LEDGER: ${{ github.workspace }}/artifacts/genuine-iam-resource-ledger
+        run: |
+          # Original IAM and accepted Legacy Defaults require different MassTransit majors.
+          dotnet build acceptance/GenuineIamHost/GenuineIamHost.csproj \
+            --configuration Release --warnaserror -p:GITHUB_ACTIONS=false -p:UseLocalMalievDependencies=true \
+            -p:MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source"
+          dotnet build acceptance/GenuineIamHttp.Tests/GenuineIamHttp.Tests.csproj \
+            --configuration Release --warnaserror -p:GITHUB_ACTIONS=false -p:UseLocalMalievDependencies=true \
+            -p:MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source"
+          dotnet test acceptance/GenuineIamHttp.Tests/GenuineIamHttp.Tests.csproj \
+            --configuration Release --no-build --no-restore -p:GITHUB_ACTIONS=false -p:UseLocalMalievDependencies=true \
+            -p:MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" \
+            --filter "FullyQualifiedName~GenuineIamHttp_" \
+            --logger "trx;LogFileName=genuine-iam-http-focus.trx" --results-directory artifacts/genuine-iam-http-focus
+          dotnet test acceptance/GenuineIamHttp.Tests/GenuineIamHttp.Tests.csproj \
+            --configuration Release --no-build --no-restore -p:GITHUB_ACTIONS=false -p:UseLocalMalievDependencies=true \
+            -p:MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" \
+            --logger "trx;LogFileName=genuine-iam-http.trx" --results-directory artifacts/genuine-iam-http
+          GITHUB_ACTIONS=false UseLocalMalievDependencies=true MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" dotnet format acceptance/GenuineIamHttp.Tests/GenuineIamHttp.Tests.csproj \
+            --verify-no-changes --no-restore --include acceptance/GenuineIamHttp.Tests
+          GITHUB_ACTIONS=false UseLocalMalievDependencies=true MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" dotnet format acceptance/GenuineIamHost/GenuineIamHost.csproj \
+            --verify-no-changes --no-restore --include acceptance/GenuineIamHost
       - name: Verify normal IAM composition, workload, delegation and Web currency-grant boundaries
         shell: bash
         run: |
@@ -273,6 +324,11 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: owned-validation-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/coverage-evidence
+          path: |
+            artifacts/coverage-evidence
+            artifacts/genuine-iam-http
+            artifacts/genuine-iam-http-focus
+            artifacts/genuine-iam-resource-ledger
+            .genuine-iam-source/source-manifest.json
           if-no-files-found: error
           retention-days: 3

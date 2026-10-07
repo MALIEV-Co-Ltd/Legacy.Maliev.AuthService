@@ -111,7 +111,8 @@ public sealed class DeliveryContractTests
             "Legacy.Maliev.AuthService.Api.csproj"));
         var workflow = File.ReadAllText(Path.Combine(root, ".github", "workflows", "_build-and-test.yml"));
         var dockerfile = File.ReadAllText(Path.Combine(root, "Legacy.Maliev.AuthService.Api", "Dockerfile"));
-        var combined = string.Join('\n', apiProject, workflow, dockerfile);
+        // Original dependencies belong only to the isolated acceptance copy, never delivery.
+        var combined = string.Join('\n', apiProject, dockerfile);
 
         Assert.Contains("Legacy.Maliev.ServiceDefaults", apiProject, StringComparison.Ordinal);
         Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults", workflow, StringComparison.Ordinal);
