@@ -329,6 +329,48 @@ def reset_failed_terminal_unit(name):
         command(['/usr/bin/systemctl', 'reset-failed', name])
 
 
+def registered_manager_units(names, timeout=5):
+    """Enumerate exact existing units without loading or synthesizing them."""
+    from hosted_owner import command
+    if not names or len(set(names)) != len(names) or any(not re.fullmatch(r'[A-Za-z0-9_.-]+', name) for name in names):
+        raise RuntimeError('Exact manager inventory required')
+    reply = json.loads(command(['/usr/bin/busctl', '--system', '--json=short', 'call',
+                                'org.freedesktop.systemd1', '/org/freedesktop/systemd1',
+                                'org.freedesktop.systemd1.Manager', 'ListUnitsByPatterns',
+                                'asas', '0', str(len(names)), *names], timeout=timeout))
+    if not isinstance(reply, dict) or set(reply) != {'type', 'data'} or reply['type'] != 'a(ssssssouso)' or \
+            not isinstance(reply['data'], list) or len(reply['data']) != 1 or not isinstance(reply['data'][0], list):
+        raise RuntimeError('Complete typed manager enumeration required')
+    rows = []
+    seen = set()
+    for row in reply['data'][0]:
+        if not isinstance(row, list) or len(row) != 10 or \
+                any(not isinstance(value, str) for index, value in enumerate(row) if index != 7) or \
+                type(row[7]) is not int or not 0 <= row[7] <= 4294967295 or row[0] not in names or row[0] in seen:
+            raise RuntimeError('Exact manager enumeration row differs')
+        seen.add(row[0])
+        rows.append(dict(name=row[0], loadState=row[2], activeState=row[3], subState=row[4]))
+    return rows
+
+
+def wait_registered_units_absent(names, receipt, partial):
+    deadline = time.monotonic() + 5
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError('Registered manager units remain loaded')
+        rows = registered_manager_units(names, timeout=remaining)
+        timely = time.monotonic() < deadline
+        partial.update(registeredUnitsAbsent=not rows and timely, observedManagerUnits=rows,
+                       observationDeadlineMet=timely)
+        save(receipt, partial)
+        if not timely:
+            raise RuntimeError('Registered manager units remain loaded')
+        if not rows:
+            return
+        time.sleep(.1)
+
+
 def physical_cleanup(evidence):
     from hosted_owner import members, properties, command
     directory = evidence / 'resources'
@@ -378,14 +420,11 @@ def physical_cleanup(evidence):
     shutil.rmtree(root)  # Exact generation, zero containers/mounts; no persistent database or volume.
     if root.exists() or any(Path(row['fragment']).exists() for row in names.values()):
         raise RuntimeError('Physical cleanup incomplete')
-    deadline = time.monotonic() + 5
-    while True:
-        states = [command(['/usr/bin/systemctl', 'show', name, '--property=LoadState', '--value']).strip() for name in manager_names]
-        if all(state == 'not-found' for state in states):
-            break
-        if time.monotonic() >= deadline:
-            raise RuntimeError('Registered manager units remain loaded')
-        time.sleep(.1)
+    partial = dict(schemaVersion=1, owner=run, runtimeRootAbsent=True,
+                   registeredFragmentsAbsent=True, registeredUnitsAbsent=False)
+    physical_receipt = evidence / 'physical-cleanup.json'
+    save(physical_receipt, partial)
+    wait_registered_units_absent(manager_names, physical_receipt, partial)
     return dict(runtimeRootAbsent=True, registeredFragmentsAbsent=True, registeredUnitsAbsent=True, remainingResources=0)
 
 

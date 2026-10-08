@@ -131,13 +131,13 @@
     },
     {
       "path": "eng/financial-iam/finite_stub_proof.py",
-      "bytes": 23089,
-      "sha256": "2054377b4acaf184db37406682c502b9815ded6efb9978bd634d540b12386472"
+      "bytes": 25274,
+      "sha256": "c89f3054cf3bd64d11112b02258973f78e304359fab7ab3bbf0777ea8edebcc8"
     },
     {
       "path": "eng/financial-iam/test_finite_stub_proof.py",
-      "bytes": 19201,
-      "sha256": "c5e3595d767eae64c365ba67cbb78af430202b12a3b362815f83d280e4e4685f"
+      "bytes": 25401,
+      "sha256": "772ae734ea4238433b9104616fea67eecd8c56d7eab66af77eda9225284df678"
     }
   ],
   "decodedRawInputs": [
@@ -181,8 +181,8 @@
     "pureControls": 69,
     "transportControls": 5,
     "commerceBuildRouteControls": 16,
-    "stubProofControls": 34,
-    "totalControls": 124,
+    "stubProofControls": 44,
+    "totalControls": 134,
     "pythonSources": 10,
     "pythonSourcesCompiled": 12,
     "psSources": 3
@@ -199,5 +199,6 @@
   "coordinatorCommandPredecessorSealSha256": "e5394e05abfdb26b5a666689ac6307896673aa55466dd6fe302d69594ae8b1c2",
   "coordinatorPropertyShapePredecessorSealSha256": "45c5861b72be593ee17ec13fb887be2085e5ac337717424b28f882ebd5793c3b",
   "terminalResetPredecessorSealSha256": "d9cccb8d4cbfea521c50df74294460220111f5d810fd2c9912dbf4cf88ab355e",
-  "countMetadataPredecessorSealSha256": "5ef751e43ee5497acb783935400f9c3cf36ff8e28804a00d2e4a27f87ad37268"
+  "countMetadataPredecessorSealSha256": "5ef751e43ee5497acb783935400f9c3cf36ff8e28804a00d2e4a27f87ad37268",
+  "nonloadingEnumerationPredecessorSealSha256": "7d14c32c96f973f4149b507d0a6bf4f1361bc33b695559c20e2df58ff7e441da"
 }

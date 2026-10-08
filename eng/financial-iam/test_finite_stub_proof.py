@@ -11,6 +11,101 @@ import hosted_owner
 
 
 class StubProofControls(unittest.TestCase):
+    @staticmethod
+    def manager_reply(names):
+        return json.dumps({'type': 'a(ssssssouso)', 'data': [[
+            [name, 'Owned unit', 'loaded', 'inactive', 'dead', '', '/unit/owned', 0, '', '/']
+            for name in names]]})
+
+    def test_nonloading_inventory_does_not_recreate_removed_slice(self):
+        loaded = set()
+        def manager(arguments, **kwargs):
+            if arguments[0] == '/usr/bin/systemctl':
+                loaded.add('owned.slice')
+                return 'loaded'
+            self.assertEqual('ListUnitsByPatterns', arguments[7])
+            self.assertEqual(['asas', '0', '2', 'owned.service', 'owned.slice'], arguments[8:])
+            return self.manager_reply(sorted(loaded))
+        with patch.object(hosted_owner, 'command', side_effect=manager):
+            self.assertEqual([], proof.registered_manager_units(['owned.service', 'owned.slice']))
+        self.assertFalse(loaded)
+
+    def test_incomplete_or_malformed_inventory_cannot_prove_absence(self):
+        invalid = ({}, {'type': 'a(ssssssouso)', 'data': []},
+                   {'type': 'wrong', 'data': [[]]}, {'type': 'a(ssssssouso)', 'data': None},
+                   {'type': 'a(ssssssouso)', 'data': [[]], 'unknown': True},
+                   {'type': 'a(ssssssouso)', 'data': [[['owned.service']]]})
+        for reply in invalid:
+            with self.subTest(reply=reply), patch.object(hosted_owner, 'command', return_value=json.dumps(reply)), self.assertRaises(RuntimeError):
+                proof.registered_manager_units(['owned.service'])
+        for names in ([], ['owned.*'], ['owned.service', 'owned.service']):
+            with self.subTest(names=names), patch.object(hosted_owner, 'command') as manager, self.assertRaises(RuntimeError):
+                proof.registered_manager_units(names)
+            manager.assert_not_called()
+
+    def test_foreign_enumerated_unit_is_rejected(self):
+        with patch.object(hosted_owner, 'command', return_value=self.manager_reply(['foreign.service'])), self.assertRaises(RuntimeError):
+            proof.registered_manager_units(['owned.service'])
+
+    def test_duplicate_enumerated_unit_is_rejected(self):
+        with patch.object(hosted_owner, 'command', return_value=self.manager_reply(['owned.service', 'owned.service'])), self.assertRaises(RuntimeError):
+            proof.registered_manager_units(['owned.service'])
+
+    def test_manager_enumeration_failure_is_preserved(self):
+        first = RuntimeError('Manager enumeration failed')
+        with patch.object(hosted_owner, 'command', side_effect=first), self.assertRaises(RuntimeError) as caught:
+            proof.registered_manager_units(['owned.service'])
+        self.assertIs(first, caught.exception)
+
+    def test_registered_inventory_timeout_retains_partial_physical_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = Path(directory) / 'physical-cleanup.json'
+            partial = dict(runtimeRootAbsent=True, registeredFragmentsAbsent=True, registeredUnitsAbsent=False)
+            rows = [dict(name='owned.slice', loadState='loaded', activeState='inactive', subState='dead')]
+            with patch.object(proof, 'registered_manager_units', return_value=rows), \
+                    patch.object(proof.time, 'monotonic', side_effect=[0, 0, 5]), self.assertRaisesRegex(RuntimeError, 'remain loaded'):
+                proof.wait_registered_units_absent(['owned.slice'], receipt, partial)
+            retained = json.loads(receipt.read_text())
+            self.assertTrue(retained['runtimeRootAbsent'])
+            self.assertTrue(retained['registeredFragmentsAbsent'])
+            self.assertFalse(retained['registeredUnitsAbsent'])
+            self.assertEqual(rows, retained['observedManagerUnits'])
+
+    def test_absence_requires_entire_registered_inventory_to_disappear(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = Path(directory) / 'physical-cleanup.json'
+            # Even a not-found object is still present in the manager inventory.
+            rows = [dict(name='owned.service', loadState='not-found', activeState='inactive', subState='dead')]
+            with patch.object(proof, 'registered_manager_units', side_effect=[rows, []]), \
+                    patch.object(proof.time, 'monotonic', side_effect=[0, 0, 1, 1, 2]), patch.object(proof.time, 'sleep') as pause:
+                proof.wait_registered_units_absent(['owned.service', 'owned.slice'], receipt, {})
+            pause.assert_called_once_with(.1)
+            self.assertTrue(json.loads(receipt.read_text())['registeredUnitsAbsent'])
+
+    def test_absence_receipt_failure_remains_fatal(self):
+        first = OSError('Receipt unavailable')
+        with patch.object(proof, 'registered_manager_units', return_value=[]), \
+                patch.object(proof, 'save', side_effect=first), self.assertRaises(OSError) as caught:
+            proof.wait_registered_units_absent(['owned.service'], Path('unused'), {})
+        self.assertIs(first, caught.exception)
+
+    def test_late_empty_inventory_cannot_qualify_absence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            receipt = Path(directory) / 'physical-cleanup.json'
+            with patch.object(proof, 'registered_manager_units', return_value=[]), \
+                    patch.object(proof.time, 'monotonic', side_effect=[0, 0, 6]), self.assertRaises(RuntimeError):
+                proof.wait_registered_units_absent(['owned.slice'], receipt, {})
+            retained = json.loads(receipt.read_text())
+            self.assertFalse(retained['registeredUnitsAbsent'])
+            self.assertFalse(retained['observationDeadlineMet'])
+
+    def test_enumeration_call_uses_only_remaining_deadline_budget(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(hosted_owner, 'command', return_value=self.manager_reply([])) as manager, \
+                    patch.object(proof.time, 'monotonic', side_effect=[0, 2, 3]):
+                proof.wait_registered_units_absent(['owned.slice'], Path(directory) / 'physical-cleanup.json', {})
+            self.assertEqual(3, manager.call_args.kwargs['timeout'])
+
     def fixture(self, path):
         run = 'auth-financial-123-1-012345abcdef'
         group = '/owned/' + run + '-sdk.service'
