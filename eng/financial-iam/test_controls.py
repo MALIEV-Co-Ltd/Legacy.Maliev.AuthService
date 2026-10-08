@@ -8,9 +8,78 @@ import xml.etree.ElementTree as ET
 from unittest.mock import Mock, patch
 
 from private_docker_proxy import create_plan, rpc
-from hosted_owner import OwnedUnits, stop_expiry_owners
+from hosted_owner import OwnedUnits, properties, stop_expiry_owners
 from recover_owner import coordinator_barrier, recover
 from verify_results import NS, ORDINARY, CASES, exact_cases, read_trx
+
+
+class UnitTypePropertiesControls(unittest.TestCase):
+    def observe(self, name, **extra):
+        state = dict(Id=name, FragmentPath='/synthetic/' + name, InvocationID='generation',
+                     ActiveState='inactive', SubState='dead')
+        state.update(extra)
+        with patch('hosted_owner.command', return_value='\n'.join(key + '=' + value for key, value in state.items())):
+            return properties(name)
+
+    def test_slice_omits_service_pid_but_retains_actual_cgroup(self):
+        state = self.observe('owned.slice', ControlGroup='/actual-slice')
+        self.assertEqual('0', state['MainPID'])
+        self.assertEqual('/actual-slice', state['ControlGroup'])
+        self.assertEqual('false', state['MainProcessApplicable'])
+
+    def test_timer_omits_service_pid_and_cgroup(self):
+        state = self.observe('owned.timer')
+        self.assertEqual('0', state['MainPID'])
+        self.assertEqual('', state['ControlGroup'])
+        self.assertEqual('false', state['ControlGroupApplicable'])
+
+    def test_service_missing_pid_remains_rejected(self):
+        with self.assertRaises(KeyError):
+            self.observe('owned.service', ControlGroup='/actual-service')
+
+    def test_service_or_slice_missing_cgroup_remains_rejected(self):
+        for name in ('owned.service', 'owned.slice'):
+            with self.subTest(name=name), self.assertRaises(KeyError):
+                self.observe(name, MainPID='0')
+
+    def test_non_service_cannot_claim_a_main_process(self):
+        for name in ('owned.slice', 'owned.timer'):
+            with self.subTest(name=name), self.assertRaises(RuntimeError):
+                self.observe(name, MainPID='123', ControlGroup='/foreign')
+
+    def test_timer_cannot_claim_a_process_cgroup(self):
+        with self.assertRaises(RuntimeError):
+            self.observe('owned.timer', ControlGroup='/foreign')
+
+    def lifecycle(self, name, extra):
+        import hashlib
+        with tempfile.TemporaryDirectory() as temporary:
+            fragment = pathlib.Path(temporary) / name
+            fragment.write_text('immutable fixture')
+            owner = OwnedUnits('synthetic-control', pathlib.Path(temporary) / 'units.json')
+            owner.units[name] = dict(fragment=str(fragment), sha256=hashlib.sha256(fragment.read_bytes()).hexdigest(),
+                                     dispatchAttempted=False, invocationId=None, quiescenceVerified=False)
+            state = dict(Id=name, FragmentPath=str(fragment), InvocationID='generation',
+                         ActiveState='inactive', SubState='dead', **extra)
+            commands = []
+            def manager(argv, **kwargs):
+                commands.append(argv)
+                return '\n'.join(key + '=' + value for key, value in state.items()) if argv[1] == 'show' else ''
+            with patch('hosted_owner.command', side_effect=manager), patch('hosted_owner.members', return_value=[]):
+                owner.start(name)
+                owner.stop(name)
+            self.assertTrue(owner.units[name]['dispatchAttempted'])
+            self.assertTrue(owner.units[name]['quiescenceVerified'])
+            self.assertEqual('generation', owner.units[name]['invocationId'])
+            self.assertNotIn('mainProcess', owner.units[name])
+            self.assertEqual(1, sum(argv[1] == 'start' for argv in commands))
+            self.assertEqual(1, sum(argv[1] == 'stop' for argv in commands))
+
+    def test_actual_omission_shape_traverses_slice_start_and_stop(self):
+        self.lifecycle('owned.slice', dict(ControlGroup='/actual-slice'))
+
+    def test_actual_omission_shape_traverses_timer_start_and_stop(self):
+        self.lifecycle('owned.timer', {})
 
 
 class AdmissionControls(unittest.TestCase):
