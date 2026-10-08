@@ -95,3 +95,11 @@ bring the pure total to 112. The earlier run did not retain daemon output or
 version, so this source defect is not presented as its proven runtime cause.
 Primary source: https://github.com/moby/moby/blob/v28.5.0/daemon/daemon_unix.go
 (verifyDaemonSettings and getDefaultBridgeName/getDefaultBridgeIPAMConf).
+
+Coordinator recovery compares typed D-Bus ExecStart executable/argv/ignoreErrors fields, while retaining mutable human-readable timestamps and exit status as diagnostics. Process birth, invocation, source, cgroup and empty-after-stop fences remain required. Native recovery qualification is pending.
+
+The property parser follows systemd v257 busctl get_property/json_transform_variant:
+ExecStart data contains command rows directly; GetUnit method replies retain the
+message argument wrapper. A regression control rejects the extra property wrapper.
+Source: https://github.com/systemd/systemd/blob/v257/src/busctl/busctl.c#L2088
+and #L1649. The 69 owner controls plus 50 other controls are source evidence only.

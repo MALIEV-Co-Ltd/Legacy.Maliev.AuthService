@@ -10,6 +10,25 @@ import sys
 from hosted_owner import OwnedUnits, command, members, properties, recover_containers, stop_expiry_owners, write_coordinator_receipt
 
 
+def coordinator_command(unit):
+    """Read immutable ExecStart command fields, excluding changing execution metadata."""
+    reply = json.loads(command(["/usr/bin/busctl", "--json=short", "call", "org.freedesktop.systemd1",
+        "/org/freedesktop/systemd1", "org.freedesktop.systemd1.Manager", "GetUnit", "s", unit]))
+    if reply.get("type") != "o" or not isinstance(reply.get("data"), list) or len(reply["data"]) != 1 or \
+            not isinstance(reply["data"][0], str) or not re.fullmatch(r"/org/freedesktop/systemd1/unit/[A-Za-z0-9_]+", reply["data"][0]):
+        raise RuntimeError("Ambiguous coordinator manager object")
+    document = json.loads(command(["/usr/bin/busctl", "--json=short", "get-property", "org.freedesktop.systemd1",
+        reply["data"][0], "org.freedesktop.systemd1.Service", "ExecStart"]))
+    if document.get("type") != "a(sasbttttuii)" or not isinstance(document.get("data"), list) or len(document["data"]) != 1:
+        raise RuntimeError("Exactly one typed coordinator command required")
+    row = document["data"][0]
+    if not isinstance(row, list) or len(row) != 10 or not isinstance(row[0], str) or \
+            not isinstance(row[1], list) or not row[1] or any(not isinstance(value, str) for value in row[1]) or \
+            type(row[2]) is not bool or any(type(value) is not int for value in row[3:]):
+        raise RuntimeError("Malformed coordinator command tuple")
+    return {"path": row[0], "arguments": row[1], "ignoreErrors": row[2]}
+
+
 def coordinator_barrier(run, receipt_path):
     """Quiesce the allocating coordinator before opening its mutable ledger."""
     path = pathlib.Path(receipt_path)
@@ -33,8 +52,15 @@ def coordinator_barrier(run, receipt_path):
             if not state.get("InvocationID"):
                 raise RuntimeError("Dispatch has not acquired an actual invocation; retain finite owner")
             owner["invocationId"] = state["InvocationID"]
-        if owner.get("execStart") and owner["execStart"] != state.get("ExecStart"):
+        configured = coordinator_command(unit)
+        if os.path.realpath(configured["path"]) != owner["executable"] or \
+                os.path.realpath(configured["arguments"][0]) != owner["executable"] or \
+                configured["arguments"][1:] != owner["arguments"] or configured["ignoreErrors"] is not False or \
+                owner.get("execStartCommand") and owner["execStartCommand"] != configured:
             raise RuntimeError("Coordinator executable arguments changed")
+        owner["execStartCommand"] = configured
+        # Keep the human-readable execution record only as diagnostic evidence.
+        # Its PID, timestamps and exit status change without changing the command.
         owner["execStart"] = state.get("ExecStart")
         pid = int(state["MainPID"])
         if pid:
