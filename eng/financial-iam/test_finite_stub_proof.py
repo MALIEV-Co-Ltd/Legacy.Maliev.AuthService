@@ -212,6 +212,37 @@ class StubProofControls(unittest.TestCase):
         self.assertIs(first, caught.exception.__cause__)
         self.assertFalse(persist.call_args.args[1]['lifecycleProofAccepted'])
 
+    def test_inactive_collected_unit_never_receives_reset_failed(self):
+        def manager(argv):
+            if argv[1] == 'show': return 'inactive\n'
+            raise RuntimeError('Exact inactive unit already collected')
+        with patch.object(hosted_owner, 'command', side_effect=manager) as call:
+            proof.reset_failed_terminal_unit('owned.slice')
+        call.assert_called_once_with(['/usr/bin/systemctl', 'show', 'owned.slice', '--property=ActiveState', '--value'])
+
+    def test_retained_failed_unit_is_reset_by_exact_name(self):
+        with patch.object(hosted_owner, 'command', side_effect=['failed\n', '']) as call:
+            proof.reset_failed_terminal_unit('owned.service')
+        self.assertEqual(['/usr/bin/systemctl', 'reset-failed', 'owned.service'], call.call_args.args[0])
+
+    def test_failed_unit_reset_error_remains_fatal(self):
+        first = RuntimeError('Manager reset failure')
+        with patch.object(hosted_owner, 'command', side_effect=['failed\n', first]), self.assertRaises(RuntimeError) as caught:
+            proof.reset_failed_terminal_unit('owned.service')
+        self.assertIs(first, caught.exception)
+
+    def test_nonterminal_or_unknown_manager_state_fences_cleanup(self):
+        for state in ('active', 'activating', '', 'foreign'):
+            with self.subTest(state=state), patch.object(hosted_owner, 'command', return_value=state) as call, self.assertRaises(RuntimeError):
+                proof.reset_failed_terminal_unit('owned.service')
+            self.assertEqual(1, call.call_count)
+
+    def test_terminal_state_query_failure_remains_fatal(self):
+        first = RuntimeError('Manager observation failure')
+        with patch.object(hosted_owner, 'command', side_effect=first), self.assertRaises(RuntimeError) as caught:
+            proof.reset_failed_terminal_unit('owned.service')
+        self.assertIs(first, caught.exception)
+
     def test_unknown_child_case_cannot_spawn(self):
         with patch.object(proof.subprocess, 'Popen') as spawn, self.assertRaises(ValueError):
             proof.child_case('sdk', '0::/foreign', Path('unused'))

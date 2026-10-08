@@ -319,6 +319,16 @@ def validate_readback(evidence):
                 cases=len(proof['cases']), expectedRejectionsRetained=4)
 
 
+def reset_failed_terminal_unit(name):
+    """Reset only retained failed units; inactive units may already be collected."""
+    from hosted_owner import command
+    state = command(['/usr/bin/systemctl', 'show', name, '--property=ActiveState', '--value']).strip()
+    if state not in ('inactive', 'failed'):
+        raise RuntimeError('Registered manager unit no longer terminal')
+    if state == 'failed':
+        command(['/usr/bin/systemctl', 'reset-failed', name])
+
+
 def physical_cleanup(evidence):
     from hosted_owner import members, properties, command
     directory = evidence / 'resources'
@@ -361,8 +371,7 @@ def physical_cleanup(evidence):
         raise RuntimeError('Runtime root still has active socket owners')
     manager_names = [*names, launch['controlUnit'], launch['recoveryUnit']]
     for name in manager_names:
-        if command(['/usr/bin/systemctl', 'show', name, '--property=LoadState', '--value']).strip() != 'not-found':
-            command(['/usr/bin/systemctl', 'reset-failed', name])
+        reset_failed_terminal_unit(name)
     for row in names.values():
         Path(row['fragment']).unlink()
     command(['/usr/bin/systemctl', 'daemon-reload'])

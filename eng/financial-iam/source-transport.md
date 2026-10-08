@@ -103,3 +103,12 @@ ExecStart data contains command rows directly; GetUnit method replies retain the
 message argument wrapper. A regression control rejects the extra property wrapper.
 Source: https://github.com/systemd/systemd/blob/v257/src/busctl/busctl.c#L2088
 and #L1649. The 69 owner controls plus 50 other controls are source evidence only.
+
+The f760 one-shot proof 37751806689 completed coordinator recovery and tiny
+workloads, then failed reset-failed before physical root/fragment removal.
+Cleanup now resets only freshly observed failed units; inactive units may be
+collected between show and ResetFailedUnit. Unknown/live state and every manager
+error still fence cleanup. Exact generation and final absence checks remain.
+Primary: https://github.com/systemd/systemd/blob/v257/src/core/dbus-manager.c#L781
+The failing command names were redacted; the collection race is source-reproduced,
+not a proven identification of the actual failed unit. Runtime proof is pending.

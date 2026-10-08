@@ -131,13 +131,13 @@
     },
     {
       "path": "eng/financial-iam/finite_stub_proof.py",
-      "bytes": 22760,
-      "sha256": "89f7290e40aa752c64d6343d57c829bb0e598d5703486854bb945e42334b55d7"
+      "bytes": 23089,
+      "sha256": "2054377b4acaf184db37406682c502b9815ded6efb9978bd634d540b12386472"
     },
     {
       "path": "eng/financial-iam/test_finite_stub_proof.py",
-      "bytes": 17299,
-      "sha256": "67c10281b3a24a266f6c398b7299576fa3576f32a0f0308a58c08e536fd9754b"
+      "bytes": 19201,
+      "sha256": "c5e3595d767eae64c365ba67cbb78af430202b12a3b362815f83d280e4e4685f"
     }
   ],
   "decodedRawInputs": [
@@ -193,5 +193,6 @@
   "reviewRevisionPreviousSealSha256": "41f6ca396b2f777d305edc68a700740ffc8439a4f2b76e28c57f19d7e09addf7",
   "unitTypeCorrectionPredecessorSealSha256": "ce56eac7467a1bab2ca719ea4769a8c6679851fb558f6ed4dc8c74866b69d27f",
   "coordinatorCommandPredecessorSealSha256": "e5394e05abfdb26b5a666689ac6307896673aa55466dd6fe302d69594ae8b1c2",
-  "coordinatorPropertyShapePredecessorSealSha256": "45c5861b72be593ee17ec13fb887be2085e5ac337717424b28f882ebd5793c3b"
+  "coordinatorPropertyShapePredecessorSealSha256": "45c5861b72be593ee17ec13fb887be2085e5ac337717424b28f882ebd5793c3b",
+  "terminalResetPredecessorSealSha256": "d9cccb8d4cbfea521c50df74294460220111f5d810fd2c9912dbf4cf88ab355e"
 }

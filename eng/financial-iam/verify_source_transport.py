@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 import unittest
 
-SEAL_SHA256 = 'd9cccb8d4cbfea521c50df74294460220111f5d810fd2c9912dbf4cf88ab355e'
+SEAL_SHA256 = '5ef751e43ee5497acb783935400f9c3cf36ff8e28804a00d2e4a27f87ad37268'
 PYTHON = ('private_docker_proxy.py', 'hosted_owner.py', 'recover_owner.py',
           'expiry_guard.py', 'verify_results.py', 'test_controls.py',
           'commerce_build_route.py', 'test_commerce_build_route.py',
@@ -98,9 +98,9 @@ def main():
         result['commerceBuildRouteControlsPassed'] = 16
         suite = unittest.defaultTestLoader.loadTestsFromName('test_finite_stub_proof')
         checked = unittest.TextTestRunner(verbosity=2).run(suite)
-        if checked.testsRun != 29 or checked.failures or checked.errors or checked.skipped:
+        if checked.testsRun != 34 or checked.failures or checked.errors or checked.skipped:
             raise ValueError('Exact stub proof failure-fence controls did not pass')
-        result['stubProofControlsPassed'] = 29
+        result['stubProofControlsPassed'] = 34
     # Verify once more after tests. The tests cannot silently mutate a producer
     # input/source and still create successful transport evidence.
     verify(root)
