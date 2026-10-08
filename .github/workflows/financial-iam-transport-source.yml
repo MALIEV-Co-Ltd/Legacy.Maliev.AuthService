@@ -1,0 +1,55 @@
+name: Financial IAM transport source controls
+
+on:
+  pull_request:
+    paths:
+      - '.gitattributes'
+      - '.gitleaks.toml'
+      - '.github/workflows/financial-iam-qualification.yml'
+      - '.github/workflows/financial-iam-transport-source.yml'
+      - 'eng/financial-iam/**'
+  push:
+    branches: [main]
+    paths:
+      - '.gitattributes'
+      - '.gitleaks.toml'
+      - '.github/workflows/financial-iam-qualification.yml'
+      - '.github/workflows/financial-iam-transport-source.yml'
+      - 'eng/financial-iam/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: financial-iam-source-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source-controls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Compile and verify immutable transport; run only pure controls
+        timeout-minutes: 2
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          ulimit -v 524288
+          ulimit -t 30
+          timeout --foreground --signal=TERM --kill-after=5s 60s python3 -B eng/financial-iam/verify_source_transport.py --run-pure-controls
+      - name: Parse reviewed PowerShell sources without executing them
+        timeout-minutes: 1
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          foreach($path in @('Materialize-FinancialIamSource.ps1','Invoke-FinancialIamQualification.ps1','Start-FinancialIamHostedOwner.ps1')){
+            $tokens=$null;$errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile((Join-Path 'eng/financial-iam' $path),[ref]$tokens,[ref]$errors)>$null
+            if(@($errors).Count){throw 'PowerShell source parse failed; diagnostics withheld.'}
+          }
+          Write-Output 'Three PowerShell AST parses passed; no SDK or native helpers started.'

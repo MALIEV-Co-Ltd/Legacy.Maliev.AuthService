@@ -1,0 +1,14 @@
+# Two public immutable source identifiers only; retain every default detector.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Reviewed financial source materializer public patch SHA256 and Auth Git commit"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "secret"
+paths = ['''^eng/financial-iam/Materialize-FinancialIamSource\.ps1$''']
+regexes = [
+    '''^4f46a141a47f7c85fbefbcdf93872f2b80d28a5cbe4e2e1dd16a34e54673e1ce$''',
+    '''^85a00d4bb54cf95199ee67dfd97d2b168233ff68$''',
+]

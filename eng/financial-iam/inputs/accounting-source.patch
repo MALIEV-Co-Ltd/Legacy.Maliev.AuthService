@@ -1,0 +1,1779 @@
+diff --git a/.github/workflows/_build-and-test.yml b/.github/workflows/_build-and-test.yml
+index 5c4e932..fcd9b0b 100644
+--- a/.github/workflows/_build-and-test.yml
++++ b/.github/workflows/_build-and-test.yml
+@@ -25,7 +25,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+@@ -42,13 +42,13 @@ jobs:
+           use-local-maliev-dependencies: 'true'
+       - name: Gate owned production coverage
+         run: python3 scripts/verify-runner-coverage.py runner-results
+-      - name: Verify full 1652 executions and employee inventory
++      - name: Verify full 1671 executions and employee inventory
+         run: python3 -B scripts/verify-employee-completion.py runner-results --full
+-      - name: Verify full 1652 executions and file metadata inventory
++      - name: Verify full 1671 executions and file metadata inventory
+         run: python3 -B scripts/verify-file-metadata.py runner-results --full
+-      - name: Verify full 1652 executions and Payment file metadata inventory
++      - name: Verify full 1671 executions and Payment file metadata inventory
+         run: python3 -B scripts/verify-payment-file-metadata.py runner-results --full
+-      - name: Verify full 1652 executions and actual PaidInvoice wire provenance
++      - name: Verify full 1671 executions and actual PaidInvoice wire provenance
+         run: python3 -B scripts/verify-paid-invoice-wire.py runner-results --full --wire
+       - name: Preserve validation evidence
+         if: always()
+diff --git a/.github/workflows/accounting-child-list-source.yml b/.github/workflows/accounting-child-list-source.yml
+index 1642e3c..69e5acc 100644
+--- a/.github/workflows/accounting-child-list-source.yml
++++ b/.github/workflows/accounting-child-list-source.yml
+@@ -28,7 +28,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/atomic-focused-validation.yml b/.github/workflows/atomic-focused-validation.yml
+index 7e3deea..41696f8 100644
+--- a/.github/workflows/atomic-focused-validation.yml
++++ b/.github/workflows/atomic-focused-validation.yml
+@@ -32,7 +32,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/atomic-protocol-validation.yml b/.github/workflows/atomic-protocol-validation.yml
+index be86e8d..34775a2 100644
+--- a/.github/workflows/atomic-protocol-validation.yml
++++ b/.github/workflows/atomic-protocol-validation.yml
+@@ -79,7 +79,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .joined-public/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/employee-completion.yml b/.github/workflows/employee-completion.yml
+index d9adb4d..c7149d8 100644
+--- a/.github/workflows/employee-completion.yml
++++ b/.github/workflows/employee-completion.yml
+@@ -29,7 +29,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+@@ -44,7 +44,7 @@ jobs:
+         with:
+           solution: Legacy.Maliev.AccountingService.Tests/Legacy.Maliev.AccountingService.Tests.csproj
+           use-local-maliev-dependencies: 'true'
+-      - name: Verify all 168 actual employee cases and raw evidence
++      - name: Verify all 169 actual employee cases and raw evidence
+         run: python3 -B scripts/verify-employee-completion.py employee-results
+       - name: Preserve employee completion evidence
+         if: always()
+diff --git a/.github/workflows/invoice-master-query-source.yml b/.github/workflows/invoice-master-query-source.yml
+index 45e61b1..5dac705 100644
+--- a/.github/workflows/invoice-master-query-source.yml
++++ b/.github/workflows/invoice-master-query-source.yml
+@@ -30,7 +30,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/invoice-notification-focused.yml b/.github/workflows/invoice-notification-focused.yml
+index 1960484..5f97537 100644
+--- a/.github/workflows/invoice-notification-focused.yml
++++ b/.github/workflows/invoice-notification-focused.yml
+@@ -32,7 +32,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/invoice-receipt-file-metadata-source.yml b/.github/workflows/invoice-receipt-file-metadata-source.yml
+index e6f8ccc..bc6c111 100644
+--- a/.github/workflows/invoice-receipt-file-metadata-source.yml
++++ b/.github/workflows/invoice-receipt-file-metadata-source.yml
+@@ -29,7 +29,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/invoice-receipt-file-parent-source.yml b/.github/workflows/invoice-receipt-file-parent-source.yml
+index 3192267..54945d9 100644
+--- a/.github/workflows/invoice-receipt-file-parent-source.yml
++++ b/.github/workflows/invoice-receipt-file-parent-source.yml
+@@ -28,7 +28,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/invoice-receipt-master-date-source.yml b/.github/workflows/invoice-receipt-master-date-source.yml
+index 94f4923..fe8d1e5 100644
+--- a/.github/workflows/invoice-receipt-master-date-source.yml
++++ b/.github/workflows/invoice-receipt-master-date-source.yml
+@@ -28,7 +28,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/invoice-receipt-master-scalar-source.yml b/.github/workflows/invoice-receipt-master-scalar-source.yml
+index 14c98b5..f921669 100644
+--- a/.github/workflows/invoice-receipt-master-scalar-source.yml
++++ b/.github/workflows/invoice-receipt-master-scalar-source.yml
+@@ -28,7 +28,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/invoice-receipt-order-item-source.yml b/.github/workflows/invoice-receipt-order-item-source.yml
+index 8b931c0..b4f5612 100644
+--- a/.github/workflows/invoice-receipt-order-item-source.yml
++++ b/.github/workflows/invoice-receipt-order-item-source.yml
+@@ -29,7 +29,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/master-source-strings.yml b/.github/workflows/master-source-strings.yml
+index 8cc94e0..03470da 100644
+--- a/.github/workflows/master-source-strings.yml
++++ b/.github/workflows/master-source-strings.yml
+@@ -30,7 +30,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/paid-invoice-wire.yml b/.github/workflows/paid-invoice-wire.yml
+index 34ae6d0..d54154f 100644
+--- a/.github/workflows/paid-invoice-wire.yml
++++ b/.github/workflows/paid-invoice-wire.yml
+@@ -30,7 +30,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/payment-date-currency.yml b/.github/workflows/payment-date-currency.yml
+index 5016e56..9426a3c 100644
+--- a/.github/workflows/payment-date-currency.yml
++++ b/.github/workflows/payment-date-currency.yml
+@@ -38,7 +38,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/payment-file-metadata-source.yml b/.github/workflows/payment-file-metadata-source.yml
+index e14e282..db1b59f 100644
+--- a/.github/workflows/payment-file-metadata-source.yml
++++ b/.github/workflows/payment-file-metadata-source.yml
+@@ -29,7 +29,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/payment-master-query-source.yml b/.github/workflows/payment-master-query-source.yml
+index 4b5ebbd..8eabec5 100644
+--- a/.github/workflows/payment-master-query-source.yml
++++ b/.github/workflows/payment-master-query-source.yml
+@@ -30,7 +30,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/payment-read-defaults-source.yml b/.github/workflows/payment-read-defaults-source.yml
+index 379a064..0d83a6e 100644
+--- a/.github/workflows/payment-read-defaults-source.yml
++++ b/.github/workflows/payment-read-defaults-source.yml
+@@ -28,7 +28,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/payment-summary-identity.yml b/.github/workflows/payment-summary-identity.yml
+index ad61dc1..993ecf6 100644
+--- a/.github/workflows/payment-summary-identity.yml
++++ b/.github/workflows/payment-summary-identity.yml
+@@ -29,7 +29,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/receipt-create-retry.yml b/.github/workflows/receipt-create-retry.yml
+index e371972..8e3a685 100644
+--- a/.github/workflows/receipt-create-retry.yml
++++ b/.github/workflows/receipt-create-retry.yml
+@@ -28,7 +28,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/receipt-invoice-cache.yml b/.github/workflows/receipt-invoice-cache.yml
+index 7d7db21..f17fae9 100644
+--- a/.github/workflows/receipt-invoice-cache.yml
++++ b/.github/workflows/receipt-invoice-cache.yml
+@@ -28,7 +28,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/.github/workflows/receipt-master-query-source.yml b/.github/workflows/receipt-master-query-source.yml
+index 71d62d9..2a97afe 100644
+--- a/.github/workflows/receipt-master-query-source.yml
++++ b/.github/workflows/receipt-master-query-source.yml
+@@ -30,7 +30,7 @@ jobs:
+         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+         with:
+           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+-          ref: 7edcd961024868513fd5f373cab3dcb261197f77
++          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+           path: .dependencies/Legacy.Maliev.ServiceDefaults
+           persist-credentials: false
+       - name: Check out Legacy.Maliev.CompatibilityContracts
+diff --git a/Legacy.Maliev.AccountingService.Api/Authorization/AccountingIamComposition.cs b/Legacy.Maliev.AccountingService.Api/Authorization/AccountingIamComposition.cs
+index 67c677f..c4c324f 100644
+--- a/Legacy.Maliev.AccountingService.Api/Authorization/AccountingIamComposition.cs
++++ b/Legacy.Maliev.AccountingService.Api/Authorization/AccountingIamComposition.cs
+@@ -24,8 +24,8 @@ internal static class AccountingIamComposition
+             else throw new InvalidOperationException("Live IAM requires a redirect-disabled primary handler.");
+         })
+         .RedactLoggedHeaders(["X-Maliev-IAM-Live-Check-Key"])
+-        .AddServiceDiscovery()
+-        .AddLegacyServiceAuthentication();
++        .AddLegacyIamServiceAuthentication()
++        .AddServiceDiscovery();
+     }
+ 
+     private static Uri ResolveOrigin(string? configured, IHostEnvironment environment)
+diff --git a/Legacy.Maliev.AccountingService.Api/Controllers/CrudController.cs b/Legacy.Maliev.AccountingService.Api/Controllers/CrudController.cs
+index 78fb474..0f16974 100644
+--- a/Legacy.Maliev.AccountingService.Api/Controllers/CrudController.cs
++++ b/Legacy.Maliev.AccountingService.Api/Controllers/CrudController.cs
+@@ -2,6 +2,9 @@ using Legacy.Maliev.AccountingService.Application.Interfaces;
+ using Legacy.Maliev.AccountingService.Application.Models;
+ using Microsoft.AspNetCore.Mvc;
+ using Microsoft.AspNetCore.Routing;
++using System.Security.Claims;
++using System.Security.Cryptography;
++using System.Text.Json;
+ 
+ namespace Legacy.Maliev.AccountingService.Api.Controllers;
+ 
+@@ -11,6 +14,24 @@ public abstract class CrudController<T>(IAccountingService service, IIdempotency
+ 
+     protected async Task<ActionResult<T>> Create(string scope, T item, string route, object routeValues, string? key, CancellationToken cancellationToken)
+     {
++        if (!string.IsNullOrWhiteSpace(key))
++        {
++            var issuers = User.FindAll("iss").Select(claim => claim.Value).ToArray();
++            var subjects = User.FindAll("sub").Select(claim => claim.Value).ToArray();
++            if (subjects.Length == 0)
++            {
++                subjects = User.FindAll(ClaimTypes.NameIdentifier).Select(claim => claim.Value).ToArray();
++            }
++            if (User.Identity?.IsAuthenticated != true || issuers.Length != 1 || subjects.Length != 1
++                || string.IsNullOrWhiteSpace(issuers[0]) || string.IsNullOrWhiteSpace(subjects[0]))
++            {
++                return Forbid();
++            }
++
++            // Frame both signed identity fields before hashing; never read an unbound legacy memo.
++            var identity = JsonSerializer.SerializeToUtf8Bytes(new[] { issuers[0], subjects[0] });
++            scope = $"{scope}:caller-v1:{Convert.ToHexString(SHA256.HashData(identity))}";
++        }
+         var value = await IdempotentCreates.GetOrCreateAsync(idempotency, scope, key,
+             () => Service.CreateAsync(item, cancellationToken), cancellationToken);
+         var values = new RouteValueDictionary(routeValues);
+diff --git a/Legacy.Maliev.AccountingService.Api/Controllers/InvoiceFinancialOwnershipController.cs b/Legacy.Maliev.AccountingService.Api/Controllers/InvoiceFinancialOwnershipController.cs
+index cbbcd44..f09432d 100644
+--- a/Legacy.Maliev.AccountingService.Api/Controllers/InvoiceFinancialOwnershipController.cs
++++ b/Legacy.Maliev.AccountingService.Api/Controllers/InvoiceFinancialOwnershipController.cs
+@@ -14,7 +14,7 @@ namespace Legacy.Maliev.AccountingService.Api.Controllers.Invoice;
+ public sealed class InvoiceFinancialOwnershipController(InvoiceFinancialOwnershipStore ownership) : ControllerBase
+ {
+     /// <summary>Proposed granular grant; its runtime configuration is independently owned, not installed by this route.</summary>
+-    public const string ReadPermission = "legacy.accounting.invoice-financial-ownership.read";
++    public const string ReadPermission = "legacy.accounting-financial-ownership.read";
+ 
+     [HttpGet("{operationId:guid}/financial-ownership"), RequirePermission(ReadPermission, RequireLiveCheck = true)]
+     public async Task<ActionResult<InvoiceFinancialOwnership>> ReadAsync(Guid operationId, CancellationToken cancellationToken)
+diff --git a/Legacy.Maliev.AccountingService.Tests/AccountingIamProfileCompositionTests.cs b/Legacy.Maliev.AccountingService.Tests/AccountingIamProfileCompositionTests.cs
+new file mode 100644
+index 0000000..cd17adb
+--- /dev/null
++++ b/Legacy.Maliev.AccountingService.Tests/AccountingIamProfileCompositionTests.cs
+@@ -0,0 +1,89 @@
++using System.Net;
++using System.Reflection;
++using Legacy.Maliev.AccountingService.Api.Controllers.Invoice;
++using Maliev.Aspire.ServiceDefaults;
++using Maliev.Aspire.ServiceDefaults.LegacyAuth;
++using Microsoft.Extensions.Configuration;
++using Microsoft.Extensions.DependencyInjection;
++using Microsoft.Extensions.Hosting;
++using Moq;
++
++namespace Legacy.Maliev.AccountingService.Tests;
++
++public sealed class AccountingIamProfileCompositionTests
++{
++    [Fact]
++    public void RegisteredIamClientUsesSeparateIamHandlerAndGeneralClientRetainsLegacyHandler()
++    {
++        var builder = Compose();
++        builder.Services.AddHttpClient("FinancialLegacyProof").AddLegacyServiceAuthentication();
++        using var provider = builder.Services.BuildServiceProvider();
++        var factory = provider.GetRequiredService<IHttpMessageHandlerFactory>();
++        var iam = Chain(factory.CreateHandler("IAMService"));
++        var financial = Chain(factory.CreateHandler("FinancialLegacyProof"));
++        Assert.Single(iam, type => type == typeof(LegacyIamServiceAuthenticationHandler));
++        Assert.DoesNotContain(typeof(LegacyServiceAuthenticationHandler), iam);
++        Assert.Single(financial, type => type == typeof(LegacyServiceAuthenticationHandler));
++        Assert.DoesNotContain(typeof(LegacyIamServiceAuthenticationHandler), financial);
++    }
++
++    [Fact]
++    public async Task MissingIamProfileStopsRegisteredTransportWithoutCallingLegacyProviderOrNetwork()
++    {
++        var builder = Compose();
++        var missing = new Mock<ILegacyIamServiceAccessTokenProvider>(MockBehavior.Strict);
++        missing.Setup(value => value.GetAccessTokenAsync(It.IsAny<CancellationToken>()))
++            .Returns(new ValueTask<string?>((string?)null));
++        var legacy = new Mock<ILegacyServiceAccessTokenProvider>(MockBehavior.Strict);
++        builder.Services.AddSingleton(missing.Object);
++        builder.Services.AddSingleton(legacy.Object);
++        var network = new CountingNetwork();
++        builder.Services.AddHttpClient("IAMService").ConfigurePrimaryHttpMessageHandler(() => network);
++        using var provider = builder.Services.BuildServiceProvider();
++        using var client = provider.GetRequiredService<IHttpClientFactory>().CreateClient("IAMService");
++        using var request = new HttpRequestMessage(HttpMethod.Post, "/iam/v1/auth/check-permission");
++        var failure = await Assert.ThrowsAsync<HttpRequestException>(() => client.SendAsync(request));
++        Assert.Equal(HttpStatusCode.ServiceUnavailable, failure.StatusCode);
++        Assert.Equal(0, network.Calls);
++        missing.Verify(value => value.GetAccessTokenAsync(It.IsAny<CancellationToken>()), Times.Once);
++        legacy.VerifyNoOtherCalls();
++    }
++
++    private static HostApplicationBuilder Compose()
++    {
++        var builder = Host.CreateApplicationBuilder(new HostApplicationBuilderSettings { EnvironmentName = "Testing" });
++        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
++        {
++            ["Services:IAMService:BaseUrl"] = "https://iam-profile-proof.invalid",
++            ["Services:Auth:BaseUrl"] = "https://auth-profile-proof.invalid"
++        });
++        builder.AddServiceDefaults();
++        builder.AddLegacyAuthServiceTokenExchange();
++        var composition = typeof(InvoiceFinancialOwnershipController).Assembly.GetType(
++            "Legacy.Maliev.AccountingService.Api.Authorization.AccountingIamComposition", throwOnError: true)!;
++        var actualRegistration = composition.GetMethod("AddAccountingIamClient", BindingFlags.Static | BindingFlags.NonPublic)!;
++        actualRegistration.Invoke(null, [builder]);
++        return builder;
++    }
++
++    private static IReadOnlyList<Type> Chain(HttpMessageHandler handler)
++    {
++        var types = new List<Type>();
++        while (true)
++        {
++            types.Add(handler.GetType());
++            if (handler is not DelegatingHandler { InnerHandler: { } inner }) return types;
++            handler = inner;
++        }
++    }
++
++    private sealed class CountingNetwork : HttpMessageHandler
++    {
++        public int Calls { get; private set; }
++        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
++        {
++            Calls++;
++            throw new InvalidOperationException("No IAM proof request may reach a physical network.");
++        }
++    }
++}
+diff --git a/Legacy.Maliev.AccountingService.Tests/FinancialCallerReplayIsolationTests.cs b/Legacy.Maliev.AccountingService.Tests/FinancialCallerReplayIsolationTests.cs
+new file mode 100644
+index 0000000..3cdd422
+--- /dev/null
++++ b/Legacy.Maliev.AccountingService.Tests/FinancialCallerReplayIsolationTests.cs
+@@ -0,0 +1,141 @@
++using System.Net;
++using System.Net.Http.Json;
++using System.Security.Claims;
++using System.Text.Json.Nodes;
++using Legacy.Maliev.AccountingService.Api.Authorization;
++using Legacy.Maliev.AccountingService.Api.Controllers.Payment;
++using Legacy.Maliev.AccountingService.Application.Interfaces;
++using Legacy.Maliev.AccountingService.Domain.Payment;
++using Legacy.Maliev.AccountingService.Tests.Fixtures;
++using Microsoft.AspNetCore.Http;
++using Microsoft.AspNetCore.Mvc;
++using Moq;
++
++namespace Legacy.Maliev.AccountingService.Tests;
++
++public sealed class FinancialCallerReplayIsolationTests(AccountingBoundaryHttpFixture fixture)
++    : IClassFixture<AccountingBoundaryHttpFixture>
++{
++    [Theory]
++    [InlineData("Accounts")]
++    [InlineData("Directions")]
++    [InlineData("Methods")]
++    [InlineData("Types")]
++    [InlineData("Payments")]
++    [InlineData("Invoices")]
++    [InlineData("Receipts")]
++    public async Task SameKeySeparatesSignedCallersAndRetainsEachCallersOriginalReplay(string resource)
++    {
++        await fixture.ResetAsync();
++        using var first = await ClientAsync();
++        using var second = await ClientAsync();
++        var key = Guid.NewGuid().ToString("D");
++        first.DefaultRequestHeaders.Add("Idempotency-Key", key);
++        second.DefaultRequestHeaders.Add("Idempotency-Key", key);
++        var before = await fixture.ReceiptSnapshotAsync();
++        var redisBefore = await fixture.ReceiptRedisSnapshotAsync();
++        var left = await PostAsync(first, resource, "caller-one");
++        var right = await PostAsync(second, resource, "caller-two");
++        Assert.NotEqual(left["Id"]!.GetValue<int>(), right["Id"]!.GetValue<int>());
++        Assert.Equal("caller-one", left[Field(resource)]!.GetValue<string>());
++        Assert.Equal("caller-two", right[Field(resource)]!.GetValue<string>());
++        Assert.Equal(left.ToJsonString(), (await PostAsync(first, resource, "replacement-one")).ToJsonString());
++        Assert.Equal(right.ToJsonString(), (await PostAsync(second, resource, "replacement-two")).ToJsonString());
++        var expected = SourceMutationProof.RedisKeys(first, "unused", Scope(resource))
++            .Where(pair => pair.Key != "unused").ToDictionary(pair => pair.Key, pair => pair.Value);
++        foreach (var pair in SourceMutationProof.RedisKeys(second, "unused", Scope(resource)).Where(pair => pair.Key != "unused"))
++            expected.Add(pair.Key, pair.Value);
++        Assert.Equal(2, expected.Count);
++        await fixture.AssertReceiptRedisChangesAsync(redisBefore, expected, false);
++        var after = await fixture.ReceiptSnapshotAsync();
++        if (resource != "Invoices") Assert.Equal(before.Invoice, after.Invoice);
++        if (resource != "Receipts") Assert.Equal(before.Receipt, after.Receipt);
++        Assert.Equal(before.Journal, after.Journal);
++        using var leftRead = await first.GetAsync($"{Route(resource)}/{left["Id"]!.GetValue<int>()}");
++        using var rightRead = await second.GetAsync($"{Route(resource)}/{right["Id"]!.GetValue<int>()}");
++        await fixture.AssertStatusAsync(leftRead, HttpStatusCode.OK);
++        await fixture.AssertStatusAsync(rightRead, HttpStatusCode.OK);
++        Assert.Equal("caller-one", (await leftRead.Content.ReadFromJsonAsync<JsonObject>())![Field(resource)]!.GetValue<string>());
++        Assert.Equal("caller-two", (await rightRead.Content.ReadFromJsonAsync<JsonObject>())![Field(resource)]!.GetValue<string>());
++    }
++
++    [Theory]
++    [InlineData("Accounts")]
++    [InlineData("Directions")]
++    [InlineData("Methods")]
++    [InlineData("Types")]
++    [InlineData("Payments")]
++    [InlineData("Invoices")]
++    [InlineData("Receipts")]
++    public async Task LegacyUnboundMemoNeverBecomesAnAuthenticatedCallersResponse(string resource)
++    {
++        await fixture.ResetAsync();
++        using var client = await ClientAsync();
++        var key = Guid.NewGuid().ToString("D");
++        client.DefaultRequestHeaders.Add("Idempotency-Key", key);
++        var poison = Body(resource, "legacy-unbound");
++        poison["Id"] = 987654;
++        await fixture.SeedLegacyCreateMemoAsync(Scope(resource), key, poison);
++        var before = await fixture.ReceiptRedisSnapshotAsync();
++        var response = await PostAsync(client, resource, "new-bound");
++        Assert.NotEqual(987654, response["Id"]!.GetValue<int>());
++        Assert.Equal("new-bound", response[Field(resource)]!.GetValue<string>());
++        var expected = SourceMutationProof.RedisKeys(client, "unused", Scope(resource))
++            .Where(pair => pair.Key != "unused").ToDictionary(pair => pair.Key, pair => pair.Value);
++        await fixture.AssertReceiptRedisChangesAsync(before, expected, false);
++    }
++
++    [Theory]
++    [InlineData(false)]
++    [InlineData(true)]
++    public async Task KeyedCreateWithoutOneSignedIdentityRefusesBeforeStoreOrRepository(bool duplicateSubject)
++    {
++        var service = new Mock<IAccountingService>(MockBehavior.Strict);
++        var memo = new Mock<IIdempotencyStore>(MockBehavior.Strict);
++        var claims = new List<Claim> { new("iss", "https://synthetic.invalid") };
++        if (duplicateSubject)
++        {
++            claims.Add(new("sub", "caller-one"));
++            claims.Add(new("sub", "caller-two"));
++        }
++        var controller = new AccountsController(service.Object, memo.Object)
++        {
++            ControllerContext = new ControllerContext
++            {
++                HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(claims, "controlled-proof")) }
++            }
++        };
++        var result = await controller.CreateAccountAsync(new Account(), "same-key", CancellationToken.None);
++        Assert.IsType<ForbidResult>(result.Result);
++        service.VerifyNoOtherCalls();
++        memo.VerifyNoOtherCalls();
++    }
++
++    private Task<HttpClient> ClientAsync() => fixture.ReceiptClientAsync([AccountingPermissions.Create, AccountingPermissions.Read]);
++    private static string Scope(string resource) => resource.ToLowerInvariant();
++    private static string Route(string resource) => resource is "Payments" or "Invoices" or "Receipts"
++        ? $"/{resource.ToLowerInvariant()}" : $"/payments/{resource}";
++    private static string Field(string resource) => resource switch
++    {
++        "Accounts" => "Bank",
++        "Invoices" => "Number",
++        "Receipts" => "Comment",
++        "Payments" => "Description",
++        _ => "Name"
++    };
++    private static JsonObject Body(string resource, string value) => resource switch
++    {
++        "Accounts" => new JsonObject { ["Bank"] = value, ["AccountNumber"] = "SYNTHETIC", ["Branch"] = "test", ["Swift"] = "test" },
++        "Invoices" => new JsonObject { ["Number"] = value, ["Currency"] = "THB" },
++        "Receipts" => new JsonObject { ["Comment"] = value, ["Currency"] = "THB" },
++        "Payments" => new JsonObject { ["Description"] = value },
++        _ => new JsonObject { ["Name"] = value, ["Description"] = "synthetic" }
++    };
++
++    private async Task<JsonObject> PostAsync(HttpClient client, string resource, string value)
++    {
++        using var response = await client.PostAsJsonAsync(Route(resource), Body(resource, value));
++        await fixture.AssertStatusAsync(response, HttpStatusCode.Created);
++        return (await response.Content.ReadFromJsonAsync<JsonObject>())!;
++    }
++}
+diff --git a/Legacy.Maliev.AccountingService.Tests/Fixtures/AccountingBoundaryHttpFixture.cs b/Legacy.Maliev.AccountingService.Tests/Fixtures/AccountingBoundaryHttpFixture.cs
+index d14b131..6951d25 100644
+--- a/Legacy.Maliev.AccountingService.Tests/Fixtures/AccountingBoundaryHttpFixture.cs
++++ b/Legacy.Maliev.AccountingService.Tests/Fixtures/AccountingBoundaryHttpFixture.cs
+@@ -226,6 +226,14 @@ public sealed class AccountingBoundaryHttpFixture : IAsyncLifetime
+         }
+     }
+ 
++    public async Task SeedLegacyCreateMemoAsync<T>(string scope, string key, T response) where T : class
++    {
++        var host = await (receiptHost ??= ReceiptHost.StartAsync(this));
++        using var services = host.Factory.Services.CreateScope();
++        var store = services.ServiceProvider.GetRequiredService<Legacy.Maliev.AccountingService.Application.Interfaces.IIdempotencyStore>();
++        await store.SetAsync(scope, key, response, CancellationToken.None);
++    }
++
+     public async Task AssertReceiptRedisPayloadAsync(string logicalKey, byte[] expectedPayload, TimeSpan lifetime)
+     {
+         var host = await (receiptHost ??= ReceiptHost.StartAsync(this));
+diff --git a/Legacy.Maliev.AccountingService.Tests/InvoiceFinancialOwnershipHttpTests.cs b/Legacy.Maliev.AccountingService.Tests/InvoiceFinancialOwnershipHttpTests.cs
+index e1fc8cf..f36d065 100644
+--- a/Legacy.Maliev.AccountingService.Tests/InvoiceFinancialOwnershipHttpTests.cs
++++ b/Legacy.Maliev.AccountingService.Tests/InvoiceFinancialOwnershipHttpTests.cs
+@@ -57,6 +57,7 @@ public sealed class InvoiceFinancialOwnershipHttpTests(AccountingBoundaryHttpFix
+     [InlineData("executor")]
+     [InlineData("wildcard")]
+     [InlineData("wrong-grant")]
++    [InlineData("old-four-segment-grant")]
+     public async Task GranularGrantNeverSubstitutesForExactReaderIdentity(string scenario)
+     {
+         await fixture.ResetAsync();
+@@ -74,6 +75,7 @@ public sealed class InvoiceFinancialOwnershipHttpTests(AccountingBoundaryHttpFix
+         {
+             "missing-grant" => [],
+             "wrong-grant" => ["legacy-accounting.read"],
++            "old-four-segment-grant" => ["legacy.accounting.invoice-financial-ownership.read"],
+             "wildcard" => [Permission, "legacy.accounting.*"],
+             _ => [Permission]
+         };
+diff --git a/Legacy.Maliev.AccountingService.Tests/SourceMutationProof.cs b/Legacy.Maliev.AccountingService.Tests/SourceMutationProof.cs
+index 98ab642..1893a51 100644
+--- a/Legacy.Maliev.AccountingService.Tests/SourceMutationProof.cs
++++ b/Legacy.Maliev.AccountingService.Tests/SourceMutationProof.cs
+@@ -2,6 +2,7 @@ using System.Security.Cryptography;
+ using System.Text;
+ using System.Text.Json;
+ using System.Text.Json.Nodes;
++using System.IdentityModel.Tokens.Jwt;
+ using Legacy.Maliev.AccountingService.Tests.Fixtures;
+ 
+ namespace Legacy.Maliev.AccountingService.Tests;
+@@ -15,7 +16,10 @@ internal static class SourceMutationProof
+         {
+             var key = Assert.Single(values);
+             var digest = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
+-            keys.Add($"idempotency:{createScope}:{digest}", true);
++            var token = new JwtSecurityTokenHandler().ReadJwtToken(client.DefaultRequestHeaders.Authorization!.Parameter);
++            var identity = JsonSerializer.SerializeToUtf8Bytes(new[] { token.Issuer, token.Subject });
++            var caller = Convert.ToHexString(SHA256.HashData(identity));
++            keys.Add($"idempotency:{createScope}:caller-v1:{caller}:{digest}", true);
+         }
+         return keys;
+     }
+diff --git a/Legacy.Maliev.AccountingService.Tests/Workflows/WorkflowContractTests.cs b/Legacy.Maliev.AccountingService.Tests/Workflows/WorkflowContractTests.cs
+index 898db4c..6d76b54 100644
+--- a/Legacy.Maliev.AccountingService.Tests/Workflows/WorkflowContractTests.cs
++++ b/Legacy.Maliev.AccountingService.Tests/Workflows/WorkflowContractTests.cs
+@@ -156,8 +156,8 @@ public sealed class WorkflowContractTests
+     public void BuildAndTest_RejectsCommentedDependencySha()
+     {
+         AssertMutationRejected(
+-            "ref: 7edcd961024868513fd5f373cab3dcb261197f77",
+-            "ref: main # 7edcd961024868513fd5f373cab3dcb261197f77");
++            "ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2",
++            "ref: main # 7b3099bf67d0f17e56cfdb3dcf36541304abaac2");
+     }
+ 
+     [Fact]
+@@ -341,28 +341,28 @@ internal static partial class WorkflowContractValidator
+         {
+             throw new InvalidOperationException("Employee gate must contain only name and run.");
+         }
+-        RequireScalarValue(employeeGate, "name", "Verify full 1652 executions and employee inventory");
++        RequireScalarValue(employeeGate, "name", "Verify full 1671 executions and employee inventory");
+         RequireScalarValue(employeeGate, "run", "python3 -B scripts/verify-employee-completion.py runner-results --full");
+         var fileGate = RequireMapping(steps.Children[6], "file metadata execution gate");
+         if (fileGate.Children.Count != 2)
+         {
+             throw new InvalidOperationException("File metadata gate must contain only name and run.");
+         }
+-        RequireScalarValue(fileGate, "name", "Verify full 1652 executions and file metadata inventory");
++        RequireScalarValue(fileGate, "name", "Verify full 1671 executions and file metadata inventory");
+         RequireScalarValue(fileGate, "run", "python3 -B scripts/verify-file-metadata.py runner-results --full");
+         var paymentFileGate = RequireMapping(steps.Children[7], "Payment file metadata execution gate");
+         if (paymentFileGate.Children.Count != 2)
+         {
+             throw new InvalidDataException("Payment file metadata execution gate has unexpected fields.");
+         }
+-        RequireScalarValue(paymentFileGate, "name", "Verify full 1652 executions and Payment file metadata inventory");
++        RequireScalarValue(paymentFileGate, "name", "Verify full 1671 executions and Payment file metadata inventory");
+         RequireScalarValue(paymentFileGate, "run", "python3 -B scripts/verify-payment-file-metadata.py runner-results --full");
+         var wireGate = RequireMapping(steps.Children[8], "PaidInvoice actual wire execution/provenance gate");
+         if (wireGate.Children.Count != 2)
+         {
+             throw new InvalidDataException("PaidInvoice wire gate has unexpected fields.");
+         }
+-        RequireScalarValue(wireGate, "name", "Verify full 1652 executions and actual PaidInvoice wire provenance");
++        RequireScalarValue(wireGate, "name", "Verify full 1671 executions and actual PaidInvoice wire provenance");
+         RequireScalarValue(wireGate, "run", "python3 -B scripts/verify-paid-invoice-wire.py runner-results --full --wire");
+         var evidence = RequireMapping(steps.Children[9], "evidence upload");
+         if (evidence.Children.Count != 4)
+@@ -397,7 +397,7 @@ internal static partial class WorkflowContractValidator
+             new Dictionary<string, string>(StringComparer.Ordinal)
+             {
+                 ["repository"] = "MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults",
+-                ["ref"] = "7edcd961024868513fd5f373cab3dcb261197f77",
++                ["ref"] = "7b3099bf67d0f17e56cfdb3dcf36541304abaac2",
+                 ["path"] = ".dependencies/Legacy.Maliev.ServiceDefaults",
+                 ["persist-credentials"] = "false",
+             });
+diff --git a/docs/accounting-iam-profile-consumer.md b/docs/accounting-iam-profile-consumer.md
+new file mode 100644
+index 0000000..1939da4
+--- /dev/null
++++ b/docs/accounting-iam-profile-consumer.md
+@@ -0,0 +1,7 @@
++The named `IAMService` HTTP client uses the accepted Defaults `AddLegacyIamServiceAuthentication` handler and its separate IAM-profile token provider. Accounting's outgoing live-check request requires that profile; an unavailable profile fails with 503 before network access, without trying the general legacy token provider. Its origin validation, redirect prohibition, credential-header redaction and ten-second timeout remain intact.
++
++General downstream Accounting clients and financial-ownership read requests retain their legacy-audience token composition. This change supplies Accounting's own outbound IAM admission token; it does not add a GUID claim to a financial reader token, resolve a managed workload principal, register a catalogue entry or create a binding.
++
++All 22 Accounting workflow Defaults checkouts and the structural pin assertions now target independently accepted `7b3099bf67d0f17e56cfdb3dcf36541304abaac2`. Two source-authored tests inspect the actual Accounting registered handler chain and exercise missing IAM-profile admission with zero physical network calls and no general-provider fallback. Their execution is pending; main Accounting forecast is 1655, employee subset remains 169 and the separate ordinary-principal project remains 23. Existing full native coverage and static gates are retained.
++
++Required server configuration and actual normal Auth enrollment are separate owner inputs. This source slice does not supply credentials, invent principal mappings, apply grants, or establish the complete live financial join. Build, two focused composition tests, the full affected Accounting suite, all four generated-inclusive coverage gates, formatting, vulnerability/secret checks and protected hosted validation are mandatory before publication.
+diff --git a/docs/financial-caller-replay-isolation.md b/docs/financial-caller-replay-isolation.md
+new file mode 100644
+index 0000000..caa7600
+--- /dev/null
++++ b/docs/financial-caller-replay-isolation.md
+@@ -0,0 +1,9 @@
++# Financial create replay identity isolation
++
++The normal generic create route previously looked up a replay memo by resource scope and SHA256(Idempotency-Key) only. Separate authenticated callers using the same key could therefore receive the same invoice, receipt, payment or catalogue response. The source135e financial controllers did not define this replay feature; this correction repairs isolation of the target adaptation while preserving their scalar and route contracts.
++
++CrudController now binds keyed creates to exactly one authenticated issuer and subject (with the standard mapped NameIdentifier fallback). It hashes a JSON-framed issuer/subject pair into a versioned resource scope. The existing Redis adapter continues to hash the caller's key and retain the 24-hour response. Raw identity fields are not stored in the key, and old unbound memo keys are never read or migrated. Missing/ambiguous identity refuses the keyed write before the memo or repository is called. Same-caller replay remains response-stable even when a later body differs; missing/blank idempotency keys retain ordinary create behavior.
++
++Sixteen authored regression cases cover normal HTTP/JWT/live-permission/owned Redis creates across seven resources (Accounts, Directions, Methods, Types, Payments, Invoices, Receipts), each caller's stable replay, old unbound memo decoys and missing/ambiguous identity before store access. The retained source mutation oracle computes expected keys independently from the fixture JWT. These cases are forecasts, not native passes. This combined successor retains all16 replay cases plus the source-cleared IAM44/ordinary-principal inputs. Main forecast is1671 and employee169; separately built ordinary-principal/catalogue/cleanup forecast remains23. Both predecessor packets are preserved. Source integration is not native acceptance.
++
++Build, focused/full native tests, raw coverage, format/analyzer/audit checks and owned runtime cleanup verification remain pending admission. No live data/schema, grant, provider or deployment change is authorized by this draft. This slice does not add concurrent same-caller exclusion or durable response recovery after a Redis outage; those remain separate behavior limits.
+diff --git a/provisioning/iam/README.md b/provisioning/iam/README.md
+new file mode 100644
+index 0000000..17722f6
+--- /dev/null
++++ b/provisioning/iam/README.md
+@@ -0,0 +1,9 @@
++The Accounting financial ownership reader owns `legacy.accounting-financial-ownership.read` with catalogue service `legacy`, resource `accounting-financial-ownership` and action `read`. The old four-segment permission is rejected by ordinary IAM registration and by the Accounting HTTP controls.
++
++`scripts/Register-AccountingFinancialOwnershipPermission.ps1` explicitly provisions the checked-in request through the existing IAM `POST /iam/v1/permissions/register` endpoint. A separately authorized operator supplies the HTTPS IAM origin and a secure token with the endpoint's existing `iam.permissions.create` authority. The script refuses redirects, uses a 30-second timeout, verifies the returned catalogue tuple and releases HTTP resources. It is never invoked by application startup. No message-bus publisher is registered.
++
++Catalogue registration does not create roles, principals or bindings. Auth and Quotation token composition and ordinary resource-scoped binding to actual persisted GUID IAM principals are separate owner boundaries. Unknown opaque subjects must fail closed. No live provisioning or grants were executed for this draft.
++
++`tooling/Accounting.PermissionRegistration.Tests` references the actual IAM Application project using an explicit `IamServiceSourceRoot`; it calls `PermissionService.RegisterPermissionsAsync` with the same JSON request and asserts catalogue fields, mismatched service rejection and rejection of the predecessor permission. Repository and event transport are mocked: these tests do not prove persisted principal binding or live permission checks. Reviewed IAM source head: `4fe6642e5674013de9a3672505aec898fdcae0ed`.
++
++Native build and tests remain on hold. Required qualification is a zero-warning Release build, this four-case catalogue boundary suite, the existing Accounting HTTP regression and full suite, formatting, vulnerability and secret checks, followed by real enrolled-principal/scoped-binding end-to-end verification coordinated with Auth, IAM and AppHost. No commit or publication precedes those applicable gates.
+diff --git a/provisioning/iam/accounting-financial-ownership.json b/provisioning/iam/accounting-financial-ownership.json
+new file mode 100644
+index 0000000..2d660ac
+--- /dev/null
++++ b/provisioning/iam/accounting-financial-ownership.json
+@@ -0,0 +1,9 @@
++{
++  "ServiceName": "legacy",
++  "Permissions": [
++    {
++      "PermissionId": "legacy.accounting-financial-ownership.read",
++      "Description": "Read immutable invoice creation financial ownership for authorized service callers."
++    }
++  ]
++}
+diff --git a/provisioning/iam/ordinary-principal-boundary.md b/provisioning/iam/ordinary-principal-boundary.md
+new file mode 100644
+index 0000000..e2e0b95
+--- /dev/null
++++ b/provisioning/iam/ordinary-principal-boundary.md
+@@ -0,0 +1,11 @@
++This separate successor preserves the sealed v3 producer and its intentional live `global` operation-read check. It adds a genuine persisted ordinary service-account regression, not managed-workload or complete Accounting/Auth/IAM HTTP join acceptance.
++
++Actual Auth `RsaAccessTokenIssuer.IssueService` emits `sub=service:{clientId}`, service kind and permissions, without a GUID `user_id` or NameIdentifier. Pinned Defaults selects `user_id`, then `sub`, then NameIdentifier. Actual IAM `PrincipalService.ResolvePrincipalIdAsync` accepts a GUID or looks up a persisted principal by exact subject email, then `{lowercaseSubject}@serviceaccount.maliev.local`. Ordinary `CreateAsync` creates the real GUID and persists it. The fixture uses that exact supported email enrollment convention for `legacy-auth` and `legacy-quotation`; it does not rewrite a JWT, supply a test-only GUID claim, install a mocked principal resolver or create an alias map.
++
++The owned PostgreSQL fixture applies actual IAM EF migrations. Actual catalogue registration, role registration, ordinary principal creation, global role grant and revocation run through the respective IAM services and PostgreSQL repositories. Twelve source-authored cases use signature-validated tokens from the actual Auth issuer: global access, missing grant, nonmatching scoped grant, revocation, inactive principal and unresolved subject, for each workload. The cache, audit sink and event transport are mocked; principal, permission and binding storage and resolver are real. Every case rolls back its enrollment and bindings. No native execution has occurred.
++
++The current managed workload provisioner uses `{workloadId}@workload.maliev.local` and its default profiles do not include this financial permission. That email is not the existing legacy opaque-subject fallback. The supported deployed enrollment/composition path for these ordinary accounts remains an owner obligation: this fixture establishes source behavior only. It does not prove a managed-workload enrolment, token-exchange profile, genuine live-check HTTP transport, or Accounting financial response. Those are mandatory before full migration acceptance; no live enrollment or binding was applied.
++
++Cleanup supervision first waits for the original outer disposal task to settle. A separately bounded 120-second recovery then waits for the retained original context tasks, requires physical context closure, verifies the exact container ID/image/creation evidence/run labels/disposable mounts/loopback binding and absence of local database clients, and awaits the original container disposal task. It verifies actual Docker 404 absence. Original context and backend disposal calls are not duplicated; a failed recovery may be retried separately after settlement. Even successful physical recovery preserves the first qualification timeout/fault. If context closure or backend absence cannot be verified, qualification remains failed and exact owned container evidence remains available for the enclosing supervisor. Seven controlled source-authored regression cases cover late completion, in-flight timeout, incomplete physical closure, ownership/idle failure, repeated original-one-call cleanup and sticky failure.
++
++Source inputs: Accounting `668f2cb63c64b911db776329b983dd91944b3b8c`; pinned Defaults `7edcd961024868513fd5f373cab3dcb261197f77`; actual IAM `4fe6642e5674013de9a3672505aec898fdcae0ed`; actual Auth `88e430946465a1df6238e10b815d495d43453411`. The standalone project requires explicit reviewed IAM and Auth source roots and their dependency graphs. Its forecast is 23 cases (four catalogue, twelve persisted ordinary-principal and seven cleanup controls); the Accounting suite remains 1653. All builds, tests, raw evidence, static gates and container cleanup verification remain mandatory under the existing memory and sole-phase admission guard.
+diff --git a/scripts/Register-AccountingFinancialOwnershipPermission.ps1 b/scripts/Register-AccountingFinancialOwnershipPermission.ps1
+new file mode 100644
+index 0000000..b801543
+--- /dev/null
++++ b/scripts/Register-AccountingFinancialOwnershipPermission.ps1
+@@ -0,0 +1,53 @@
++[CmdletBinding()]
++param(
++    [Parameter(Mandatory)][uri] $IamOrigin,
++    [Parameter(Mandatory)][securestring] $AccessToken
++)
++
++$ErrorActionPreference = 'Stop'
++if ($IamOrigin.Scheme -ne 'https' -or !$IamOrigin.Host -or $IamOrigin.UserInfo -or
++    $IamOrigin.AbsolutePath -ne '/' -or $IamOrigin.Query -or $IamOrigin.Fragment) {
++    throw 'An explicit HTTPS IAM origin without credentials, path, query or fragment is required.'
++}
++$path = Join-Path $PSScriptRoot '../provisioning/iam/accounting-financial-ownership.json'
++$body = [IO.File]::ReadAllText($path)
++$catalogue = $body | ConvertFrom-Json
++if ($catalogue.ServiceName -cne 'legacy' -or @($catalogue.Permissions).Count -ne 1 -or
++    $catalogue.Permissions[0].PermissionId -cne 'legacy.accounting-financial-ownership.read' -or
++    $catalogue.Permissions[0].Description -cne 'Read immutable invoice creation financial ownership for authorized service callers.' -or
++    @($catalogue.PSObject.Properties.Name).Count -ne 2 -or
++    @($catalogue.Permissions[0].PSObject.Properties.Name).Count -ne 2) {
++    throw 'The owned catalogue registration request does not match the approved contract.'
++}
++
++# Explicit administrative provisioning only. Never called from application startup.
++# The existing IAM endpoint enforces iam.permissions.create; this script adds no bindings or roles.
++$handler = [Net.Http.HttpClientHandler]::new()
++$handler.AllowAutoRedirect = $false
++$client = [Net.Http.HttpClient]::new($handler)
++$client.Timeout = [TimeSpan]::FromSeconds(30)
++$request = [Net.Http.HttpRequestMessage]::new([Net.Http.HttpMethod]::Post,
++    [uri]::new($IamOrigin, 'iam/v1/permissions/register'))
++$response = $null
++$pointer = [IntPtr]::Zero
++try {
++    $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($AccessToken)
++    $request.Headers.Authorization = [Net.Http.Headers.AuthenticationHeaderValue]::new('Bearer',
++        [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer))
++    $request.Content = [Net.Http.StringContent]::new($body, [Text.Encoding]::UTF8, 'application/json')
++    $response = $client.SendAsync($request).GetAwaiter().GetResult()
++    if ([int]$response.StatusCode -ne 200) { throw "IAM catalogue registration failed with HTTP $([int]$response.StatusCode)." }
++    $rows = $response.Content.ReadAsStringAsync().GetAwaiter().GetResult() | ConvertFrom-Json
++    $owned = @($rows | Where-Object { $_.PermissionId -ceq 'legacy.accounting-financial-ownership.read' })
++    if ($owned.Count -ne 1 -or $owned[0].ServiceName -cne 'legacy' -or
++        $owned[0].ResourceType -cne 'accounting-financial-ownership' -or $owned[0].Action -cne 'read') {
++        throw 'IAM did not return the exact owned catalogue row; no permission grant is inferred.'
++    }
++    [pscustomobject]@{ PermissionId = $owned[0].PermissionId; CatalogueRegistered = $true; PrincipalGrantsCreated = $false }
++}
++finally {
++    if ($pointer -ne [IntPtr]::Zero) { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer) }
++    if ($null -ne $response) { $response.Dispose() }
++    $request.Dispose()
++    $client.Dispose()
++}
+diff --git a/scripts/employee-completion-expected.json b/scripts/employee-completion-expected.json
+index d038681..b68da26 100644
+--- a/scripts/employee-completion-expected.json
++++ b/scripts/employee-completion-expected.json
+@@ -1,7 +1,7 @@
+ {
+-  "forecast": 168,
++  "forecast": 169,
+   "baseline": 889,
+-  "fullForecast": 1652,
++  "fullForecast": 1671,
+   "methods": {
+     "Legacy.Maliev.AccountingService.Tests.InvoiceFinancialOwnershipPostgresTests.CommitRetainsActualComputedItemsWithoutNotificationCompletion": 1,
+     "Legacy.Maliev.AccountingService.Tests.InvoiceFinancialOwnershipPostgresTests.InvalidRetainedAuthorityLeavesNoInvoiceItemsOrOwnership": 7,
+@@ -20,7 +20,7 @@
+     "Legacy.Maliev.AccountingService.Tests.InvoiceFinancialOwnershipRegisteredOptionsTests.RegisteredProviderReadRetryRecoversOrReturnsGeneric503WithoutFinancialMutation": 2,
+     "Legacy.Maliev.AccountingService.Tests.InvoiceFinancialPreparationOwnershipTests.CancelledDuplicateCannotMarkFirstWriterUncertainOrPreventItsFinancialCommit": 1,
+     "Legacy.Maliev.AccountingService.Tests.InvoiceFinancialOwnershipHttpTests.ExactReaderReturnsNineFieldOwnershipWithoutMutatingAnyBoundary": 2,
+-    "Legacy.Maliev.AccountingService.Tests.InvoiceFinancialOwnershipHttpTests.GranularGrantNeverSubstitutesForExactReaderIdentity": 16,
++    "Legacy.Maliev.AccountingService.Tests.InvoiceFinancialOwnershipHttpTests.GranularGrantNeverSubstitutesForExactReaderIdentity": 17,
+     "Legacy.Maliev.AccountingService.Tests.InvoiceEmployeeQuotationCompletionClientTests.InternalCapabilityMustBeRawCompactWithoutPrefixOrWhitespace": 5,
+     "Legacy.Maliev.AccountingService.Tests.InvoiceEmployeeQuotationCompletionClientTests.PartialReadbackCannotChangeFrozenOrderVersionOrMembership": 3,
+     "Legacy.Maliev.AccountingService.Tests.InvoiceEmployeeQuotationCompletionClientTests.ExactCompletedReplayReadsOwningReceiptOnly": 1,
+diff --git a/scripts/file-metadata-expected.json b/scripts/file-metadata-expected.json
+index 9bb1d5c..6532737 100644
+--- a/scripts/file-metadata-expected.json
++++ b/scripts/file-metadata-expected.json
+@@ -1,7 +1,7 @@
+ {
+   "forecast": 46,
+   "acceptedBaseline": 1057,
+-  "fullForecast": 1652,
++  "fullForecast": 1671,
+   "base": "85e4d574c079f25e0834c7c92b27a6d5bdd7f828",
+   "methods": {
+     "Legacy.Maliev.AccountingService.Tests.InvoiceReceiptFileMetadataMigrationTests.RuntimeModelMatchesSnapshotAndExactSourceFileMetadata": 2,
+diff --git a/scripts/paid-invoice-wire-expected.json b/scripts/paid-invoice-wire-expected.json
+index 6e3f08e..f1706e1 100644
+--- a/scripts/paid-invoice-wire-expected.json
++++ b/scripts/paid-invoice-wire-expected.json
+@@ -1,6 +1,6 @@
+ {
+   "forecast": 6,
+-  "fullForecast": 1652,
++  "fullForecast": 1671,
+   "priorPaymentFullForecast": 1126,
+   "sourceBase": "e36217751d620aaf98c0179c4c73885278c48c92",
+   "methods": {
+diff --git a/scripts/payment-file-metadata-expected.json b/scripts/payment-file-metadata-expected.json
+index 91ccebb..a3fcbdc 100644
+--- a/scripts/payment-file-metadata-expected.json
++++ b/scripts/payment-file-metadata-expected.json
+@@ -1,6 +1,6 @@
+ {
+   "forecast": 23,
+-  "fullForecast": 1652,
++  "fullForecast": 1671,
+   "priorMetadataFullForecast": 1103,
+   "sourceBase": "9f6abb70508c9c58e3a6cc6a43f69c94f503cc85",
+   "methods": {
+diff --git a/scripts/tests/test_employee_completion_inventory.py b/scripts/tests/test_employee_completion_inventory.py
+new file mode 100644
+index 0000000..02364fa
+--- /dev/null
++++ b/scripts/tests/test_employee_completion_inventory.py
+@@ -0,0 +1,99 @@
++"""Synthetic parser controls only; never native employee or database acceptance."""
++import contextlib
++import copy
++import io
++import json
++from pathlib import Path
++import runpy
++import sys
++import tempfile
++import unittest
++import uuid
++import xml.etree.ElementTree as ET
++
++ROOT = Path(__file__).resolve().parents[1]
++MANIFEST = json.loads((ROOT / 'employee-completion-expected.json').read_text())
++METHOD = 'Legacy.Maliev.AccountingService.Tests.InvoiceFinancialOwnershipHttpTests.GranularGrantNeverSubstitutesForExactReaderIdentity'
++NS = 'http://microsoft.com/schemas/VisualStudio/TeamTest/2010'
++
++
++class EmployeeInventoryControls(unittest.TestCase):
++    def invoke(self, full=False, predecessor=False, skip=False):
++        with tempfile.TemporaryDirectory(prefix='accounting-employee-parser-') as temporary:
++            root = Path(temporary)
++            inventory = copy.deepcopy(MANIFEST['methods'])
++            if predecessor:
++                inventory[METHOD] -= 1
++            count = sum(inventory.values())
++            if full:
++                inventory['Synthetic.Other.FullSuite'] = MANIFEST['fullForecast'] - count
++            count = sum(inventory.values())
++            tag = lambda name: '{' + NS + '}' + name
++            run = ET.Element(tag('TestRun'))
++            definitions = ET.SubElement(run, tag('TestDefinitions'))
++            results = ET.SubElement(run, tag('Results'))
++            for method, cases in inventory.items():
++                class_name, name = method.rsplit('.', 1)
++                for case in range(cases):
++                    test_id, execution_id = str(uuid.uuid4()), str(uuid.uuid4())
++                    display = method + '(' + str(case) + ')'
++                    unit = ET.SubElement(definitions, tag('UnitTest'), id=test_id, name=display)
++                    ET.SubElement(unit, tag('TestMethod'), className=class_name, name=name)
++                    ET.SubElement(unit, tag('Execution'), id=execution_id)
++                    ET.SubElement(results, tag('UnitTestResult'), testId=test_id, executionId=execution_id,
++                                  testName=display, outcome='NotExecuted' if skip else 'Passed')
++            summary = ET.SubElement(run, tag('ResultSummary'), outcome='Completed')
++            counters = {key: str(count) for key in ['total', 'executed', 'passed']}
++            counters.update({key: '0' for key in ['failed', 'error', 'timeout', 'aborted', 'inconclusive',
++                            'passedButRunAborted', 'notRunnable', 'notExecuted', 'disconnected', 'warning',
++                            'completed', 'inProgress', 'pending']})
++            ET.SubElement(summary, tag('Counters'), counters)
++            ET.ElementTree(run).write(root / 'synthetic.trx', encoding='utf-8')
++            coverage = '<coverage><packages>' + ''.join(
++                '<package name="Legacy.Maliev.AccountingService.' + name + '"><classes><class><lines>'
++                '<line number="1" hits="1" /></lines></class></classes></package>'
++                for name in ['Api', 'Application', 'Data', 'Domain']) + '</packages></coverage>'
++            for directory in ['raw1', 'raw2']:
++                (root / directory).mkdir()
++                (root / directory / 'coverage.cobertura.xml').write_text(coverage)
++            previous = sys.argv
++            try:
++                sys.argv = [str(ROOT / 'verify-employee-completion.py'), str(root)] + (['--full'] if full else [])
++                with contextlib.redirect_stdout(io.StringIO()):
++                    runpy.run_path(str(ROOT / 'verify-employee-completion.py'), run_name='__main__')
++                return json.loads((root / 'employee-completion-proof.json').read_text())
++            finally:
++                sys.argv = previous
++
++    def test_exact_manifest_tracks_seventeen_denials_and_169_cases(self):
++        self.assertEqual(17, MANIFEST['methods'][METHOD])
++        self.assertEqual(169, sum(MANIFEST['methods'].values()))
++        self.assertEqual(169, MANIFEST['forecast'])
++        self.assertEqual(1671, MANIFEST['fullForecast'])
++
++    def test_actual_verifier_accepts_synthetic_169_and_reports_169_employee(self):
++        proof = self.invoke()
++        self.assertEqual(169, proof['actualPassed'])
++        self.assertEqual(169, proof['employeeActualPassed'])
++        self.assertFalse(proof['actualProducerJoinProven'])
++
++    def test_actual_verifier_accepts_synthetic_1671_with_exact_employee_subset(self):
++        proof = self.invoke(full=True)
++        self.assertEqual(1671, proof['actualPassed'])
++        self.assertEqual(169, proof['employeeActualPassed'])
++
++    def test_predecessor_168_inventory_is_rejected(self):
++        with self.assertRaises(SystemExit):
++            self.invoke(predecessor=True)
++
++    def test_full_count_cannot_hide_missing_seventeenth_case(self):
++        with self.assertRaises(SystemExit):
++            self.invoke(full=True, predecessor=True)
++
++    def test_nonpassing_results_remain_rejected(self):
++        with self.assertRaises(SystemExit):
++            self.invoke(skip=True)
++
++
++if __name__ == '__main__':
++    unittest.main()
+diff --git a/scripts/verify-employee-completion.py b/scripts/verify-employee-completion.py
+index 8542038..c8a6e16 100644
+--- a/scripts/verify-employee-completion.py
++++ b/scripts/verify-employee-completion.py
+@@ -13,7 +13,7 @@ full = '--full' in sys.argv[2:]
+ manifest = json.loads((Path(__file__).parent / 'employee-completion-expected.json').read_text())
+ expected = manifest['methods']
+ total = manifest['fullForecast'] if full else manifest['forecast']
+-assert sum(expected.values()) == manifest['forecast'] == 168
++assert sum(expected.values()) == manifest['forecast'] == 169
+ reports = list(root.rglob('*.trx'))
+ if len(reports) != 1:
+     raise SystemExit('Require one actual TRX')
+@@ -115,7 +115,7 @@ packages = coverage.findall('./packages/package')
+ for assembly in ['Api', 'Application', 'Data', 'Domain']:
+     if not any(p.get('name') == 'Legacy.Maliev.AccountingService.' + assembly and p.findall('.//line') for p in packages):
+         raise SystemExit('Missing owned executable coverage inventory: ' + assembly)
+-proof = {'actualPassed': total, 'employeeActualPassed': 168, 'failed': 0, 'skipped': 0,
++proof = {'actualPassed': total, 'employeeActualPassed': 169, 'failed': 0, 'skipped': 0,
+  'methods': dict(actual), 'trxSha256': hashlib.sha256(bounded_bytes(reports[0], 32 * 1024 * 1024)).hexdigest(),
+  'rawSha256': next(iter(digests)), 'rawCopies': len(raw), 'exclusions': [],
+  'actualProducerJoinProven': False, 'fullSuiteCoverageFloor': 'separate existing coverage gate' if full else False}
+diff --git a/tooling/Accounting.PermissionRegistration.Tests/Accounting.PermissionRegistration.Tests.csproj b/tooling/Accounting.PermissionRegistration.Tests/Accounting.PermissionRegistration.Tests.csproj
+new file mode 100644
+index 0000000..0752cf1
+--- /dev/null
++++ b/tooling/Accounting.PermissionRegistration.Tests/Accounting.PermissionRegistration.Tests.csproj
+@@ -0,0 +1,24 @@
++<Project Sdk="Microsoft.NET.Sdk">
++  <PropertyGroup>
++    <TargetFramework>net10.0</TargetFramework>
++    <ImplicitUsings>enable</ImplicitUsings>
++    <Nullable>enable</Nullable>
++    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
++    <IsPackable>false</IsPackable>
++  </PropertyGroup>
++  <ItemGroup>
++    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
++    <PackageReference Include="Moq" Version="4.20.72" />
++    <PackageReference Include="xunit" Version="2.9.3" />
++    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
++    <PackageReference Include="Testcontainers.PostgreSql" Version="4.14.0" />
++    <Using Include="Xunit" />
++    <ProjectReference Include="$(IamServiceSourceRoot)/Maliev.IAMService.Infrastructure/Maliev.IAMService.Infrastructure.csproj" />
++    <ProjectReference Include="$(AuthServiceSourceRoot)/Legacy.Maliev.AuthService.Infrastructure/Legacy.Maliev.AuthService.Infrastructure.csproj" />
++    <None Include="../../provisioning/iam/accounting-financial-ownership.json" Link="accounting-financial-ownership.json" CopyToOutputDirectory="PreserveNewest" />
++  </ItemGroup>
++  <Target Name="RequireActualIamSource" BeforeTargets="PrepareForBuild">
++    <Error Condition="'$(IamServiceSourceRoot)' == ''" Text="Explicit reviewed IamServiceSourceRoot is required; this boundary test calls the actual IAM PermissionService." />
++    <Error Condition="'$(AuthServiceSourceRoot)' == ''" Text="Explicit reviewed AuthServiceSourceRoot is required; fixture tokens must come from the actual legacy issuer." />
++  </Target>
++</Project>
+diff --git a/tooling/Accounting.PermissionRegistration.Tests/FinancialOwnershipRegistrationTests.cs b/tooling/Accounting.PermissionRegistration.Tests/FinancialOwnershipRegistrationTests.cs
+new file mode 100644
+index 0000000..b08b7cb
+--- /dev/null
++++ b/tooling/Accounting.PermissionRegistration.Tests/FinancialOwnershipRegistrationTests.cs
+@@ -0,0 +1,71 @@
++using System.Text.Json;
++using Maliev.IAMService.Application.DTOs.Requests;
++using Maliev.IAMService.Application.Interfaces;
++using Maliev.IAMService.Application.Services;
++using Maliev.IAMService.Domain.Entities;
++using MassTransit;
++using Microsoft.Extensions.Logging.Abstractions;
++using Moq;
++
++namespace Accounting.PermissionRegistration.Tests;
++
++public sealed class FinancialOwnershipRegistrationTests
++{
++    [Fact]
++    public async Task OwnedRequestRegistersExactServiceResourceActionThroughActualIamService()
++    {
++        var request = ReadRequest();
++        Assert.Equal("legacy", request.ServiceName);
++        Assert.Equal("legacy.accounting-financial-ownership.read", Assert.Single(request.Permissions).PermissionId);
++        var (service, repository, captured) = Create();
++        var result = Assert.Single(await service.RegisterPermissionsAsync(request));
++        var row = Assert.Single(captured);
++        Assert.Equal(request.Permissions[0].PermissionId, row.PermissionId);
++        Assert.Equal("legacy", row.ServiceName);
++        Assert.Equal("accounting-financial-ownership", row.ResourceType);
++        Assert.Equal("read", row.Action);
++        Assert.Equal(request.Permissions[0].Description, row.Description);
++        Assert.Equal(row.PermissionId, result.PermissionId);
++        repository.Verify(value => value.CreateManyAsync(It.IsAny<IEnumerable<Permission>>(), It.IsAny<CancellationToken>()), Times.Once);
++    }
++
++    [Theory]
++    [InlineData("legacy-accounting")]
++    [InlineData("accounting")]
++    public async Task MismatchedServiceNameCannotCreateCatalogueRow(string serviceName)
++    {
++        var (service, repository, captured) = Create();
++        Assert.Empty(await service.RegisterPermissionsAsync(ReadRequest() with { ServiceName = serviceName }));
++        Assert.Empty(captured);
++        repository.Verify(value => value.CreateManyAsync(It.IsAny<IEnumerable<Permission>>(), It.IsAny<CancellationToken>()), Times.Never);
++        repository.Verify(value => value.UpdateManyAsync(It.IsAny<IEnumerable<Permission>>(), It.IsAny<CancellationToken>()), Times.Never);
++    }
++
++    [Fact]
++    public async Task OldFourSegmentPermissionCannotEnterOrdinaryCatalogue()
++    {
++        var (service, repository, captured) = Create();
++        var request = ReadRequest() with
++        {
++            Permissions = [new() { PermissionId = "legacy.accounting.invoice-financial-ownership.read", Description = "Rejected predecessor" }]
++        };
++        Assert.Empty(await service.RegisterPermissionsAsync(request));
++        Assert.Empty(captured);
++        repository.Verify(value => value.CreateManyAsync(It.IsAny<IEnumerable<Permission>>(), It.IsAny<CancellationToken>()), Times.Never);
++    }
++
++    private static RegisterPermissionsRequest ReadRequest() =>
++        JsonSerializer.Deserialize<RegisterPermissionsRequest>(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "accounting-financial-ownership.json")))
++        ?? throw new InvalidOperationException("Owned request missing.");
++
++    private static (PermissionService Service, Mock<IPermissionRepository> Repository, List<Permission> Captured) Create()
++    {
++        var repository = new Mock<IPermissionRepository>(MockBehavior.Strict);
++        var captured = new List<Permission>();
++        repository.Setup(value => value.GetByServiceAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
++            .ReturnsAsync(Array.Empty<Permission>());
++        repository.Setup(value => value.CreateManyAsync(It.IsAny<IEnumerable<Permission>>(), It.IsAny<CancellationToken>()))
++            .Callback<IEnumerable<Permission>, CancellationToken>((rows, _) => captured.AddRange(rows)).Returns(Task.CompletedTask);
++        return (new PermissionService(repository.Object, Mock.Of<IPublishEndpoint>(), NullLogger<PermissionService>.Instance), repository, captured);
++    }
++}
+diff --git a/tooling/Accounting.PermissionRegistration.Tests/OrdinaryFinancialPrincipalTests.cs b/tooling/Accounting.PermissionRegistration.Tests/OrdinaryFinancialPrincipalTests.cs
+new file mode 100644
+index 0000000..7ba12d2
+--- /dev/null
++++ b/tooling/Accounting.PermissionRegistration.Tests/OrdinaryFinancialPrincipalTests.cs
+@@ -0,0 +1,360 @@
++using System.IdentityModel.Tokens.Jwt;
++using System.Security.Cryptography;
++using System.Text.Json;
++using Legacy.Maliev.AuthService.Infrastructure;
++using Maliev.IAMService.Application.DTOs.Requests;
++using Maliev.IAMService.Application.Interfaces;
++using Maliev.IAMService.Application.Services;
++using Maliev.IAMService.Domain.Entities;
++using Maliev.IAMService.Infrastructure.Persistence;
++using Maliev.IAMService.Infrastructure.Repositories;
++using MassTransit;
++using Microsoft.EntityFrameworkCore;
++using Microsoft.Extensions.Configuration;
++using Microsoft.Extensions.Logging.Abstractions;
++using Microsoft.Extensions.Options;
++using Microsoft.IdentityModel.Tokens;
++using Moq;
++using Npgsql;
++using Testcontainers.PostgreSql;
++using Docker.DotNet;
++using System.Runtime.ExceptionServices;
++
++[assembly: CollectionBehavior(DisableTestParallelization = true)]
++
++namespace Accounting.PermissionRegistration.Tests;
++
++// Real source issuer, persisted IAM catalogue/principal/role/binding and actual resolver.
++// This is the ordinary service-account email enrollment path, not managed-workload or HTTP join acceptance.
++public sealed class OrdinaryFinancialPrincipalTests : IClassFixture<OrdinaryFinancialPrincipalFixture>
++{
++    private const string Permission = "legacy.accounting-financial-ownership.read";
++    private readonly OrdinaryFinancialPrincipalFixture fixture;
++    public OrdinaryFinancialPrincipalTests(OrdinaryFinancialPrincipalFixture fixture) => this.fixture = fixture;
++
++    [Theory]
++    [InlineData("legacy-auth")]
++    [InlineData("legacy-quotation")]
++    public async Task OrdinaryEmailEnrollmentResolvesActualOpaqueJwtToPersistedGuidAndGlobalRead(string client)
++    {
++        await using var boundary = fixture.Open();
++        var account = await boundary.EnrollAsync(client);
++        await boundary.GrantAsync(account, null);
++        var subject = fixture.IssueAndValidateSubject(client, Permission);
++        Assert.Equal(account.PrincipalId, await boundary.Principals.ResolvePrincipalIdAsync(subject));
++        var response = await boundary.CheckAsync(subject);
++        Assert.True(response.Allowed);
++        Assert.Equal(account.PrincipalId, response.PrincipalId);
++        Assert.Equal("global", response.ResourcePath);
++        Assert.False(response.FromCache);
++        Assert.Null(account.WorkloadId);
++        Assert.True(await boundary.Database.Principals.AsNoTracking().AnyAsync(row => row.PrincipalId == account.PrincipalId));
++    }
++
++    [Theory]
++    [InlineData("legacy-auth")]
++    [InlineData("legacy-quotation")]
++    public async Task TokenPermissionWithoutPersistedGrantIsDenied(string client)
++    {
++        await using var boundary = fixture.Open();
++        await boundary.EnrollAsync(client);
++        Assert.False((await boundary.CheckAsync(fixture.IssueAndValidateSubject(client, Permission))).Allowed);
++    }
++
++    [Theory]
++    [InlineData("legacy-auth")]
++    [InlineData("legacy-quotation")]
++    public async Task NonmatchingScopedBindingDoesNotAuthorizeIntentionalGlobalOperationRead(string client)
++    {
++        await using var boundary = fixture.Open();
++        var account = await boundary.EnrollAsync(client);
++        await boundary.GrantAsync(account, "operations/unrelated-fixture-operation");
++        Assert.False((await boundary.CheckAsync(fixture.IssueAndValidateSubject(client, Permission))).Allowed);
++    }
++
++    [Theory]
++    [InlineData("legacy-auth")]
++    [InlineData("legacy-quotation")]
++    public async Task OrdinaryRevocationRemovesRealBindingAndNextBypassCacheReadIsDenied(string client)
++    {
++        await using var boundary = fixture.Open();
++        var account = await boundary.EnrollAsync(client);
++        var binding = await boundary.GrantAsync(account, null);
++        var subject = fixture.IssueAndValidateSubject(client, Permission);
++        Assert.True((await boundary.CheckAsync(subject)).Allowed);
++        await boundary.Bindings.RevokeRoleAsync(account.PrincipalId, binding.BindingId, account.PrincipalId);
++        Assert.False(await boundary.Database.PrincipalRoleBindings.AsNoTracking().AnyAsync(row => row.BindingId == binding.BindingId));
++        Assert.False((await boundary.CheckAsync(subject)).Allowed);
++    }
++
++    [Theory]
++    [InlineData("legacy-auth")]
++    [InlineData("legacy-quotation")]
++    public async Task InactivePersistedOrdinaryPrincipalCannotUseItsExistingGlobalGrant(string client)
++    {
++        await using var boundary = fixture.Open();
++        var account = await boundary.EnrollAsync(client);
++        await boundary.GrantAsync(account, null);
++        account.IsActive = false;
++        await boundary.Principals.UpdateAsync(account);
++        Assert.False((await boundary.CheckAsync(fixture.IssueAndValidateSubject(client, Permission))).Allowed);
++    }
++
++    [Theory]
++    [InlineData("legacy-auth")]
++    [InlineData("legacy-quotation")]
++    public async Task UnenrolledOpaqueServiceSubjectFailsClosedWithoutAliasOrInventedGuid(string client)
++    {
++        await using var boundary = fixture.Open();
++        var subject = fixture.IssueAndValidateSubject(client, Permission);
++        await Assert.ThrowsAsync<InvalidOperationException>(() => boundary.Principals.ResolvePrincipalIdAsync(subject));
++        var response = await boundary.CheckAsync(subject);
++        Assert.False(response.Allowed);
++        Assert.Equal(Guid.Empty, response.PrincipalId);
++    }
++}
++
++public sealed class OrdinaryFinancialPrincipalFixture : IAsyncLifetime
++{
++    private const string Issuer = "https://ordinary-financial-principal.invalid";
++    private const string Audience = "ordinary-financial-principal";
++    private readonly PostgreSqlContainer postgres = OwnedFinancialPrincipalTestContainers.Postgres("postgres:18-alpine").Build();
++    private readonly RSA key = RSA.Create(2048);
++    private RsaAccessTokenIssuer? issuer;
++    private string? connection;
++    private readonly List<OrdinaryFinancialBoundary> boundaries = [];
++    private readonly object disposalGate = new();
++    private Task? disposal;
++    private Task? qualification;
++    private Task? backendDisposal;
++    private OwnedCleanupRecovery? recovery;
++    private string? originalBackendId;
++    private string? originalImageId;
++    private string? originalCreated;
++
++    public Task InitializeAsync() => OwnedFinancialPrincipalTestContainers.SetupAsync(async cancellation =>
++    {
++        await postgres.StartAsync(cancellation);
++        originalBackendId = postgres.Id;
++        using (var docker = Docker())
++        {
++            var inspect = await docker.Containers.InspectContainerAsync(originalBackendId, cancellation);
++            originalImageId = inspect.Image;
++            originalCreated = inspect.Created.ToString();
++        }
++        Console.WriteLine($"Owned financial principal PostgreSQL started: {postgres.Id}; parent run: {OwnedFinancialPrincipalTestContainers.ParentRun}");
++        var actual = new NpgsqlConnectionStringBuilder(postgres.GetConnectionString()) { Pooling = false };
++        if (actual.Host is not ("localhost" or "127.0.0.1") || actual.Port != postgres.GetMappedPublicPort(5432)
++            || string.IsNullOrEmpty(postgres.Id)) throw new InvalidOperationException("Fixture requires its owned loopback PostgreSQL.");
++        connection = actual.ConnectionString;
++        await using var database = Context();
++        await database.Database.MigrateAsync(cancellation);
++        issuer = new RsaAccessTokenIssuer(Options.Create(new JwtOptions
++        {
++            Issuer = Issuer, Audience = Audience, PrivateKeyPem = key.ExportPkcs8PrivateKeyPem(), KeyId = "owned-fixture"
++        }));
++    }, DisposeAsync);
++
++    private IAMDbContext Context() => new(new DbContextOptionsBuilder<IAMDbContext>()
++        .UseNpgsql(connection ?? throw new InvalidOperationException("Fixture not initialized."), options => options.CommandTimeout(30))
++        .Options);
++
++    public OrdinaryFinancialBoundary Open()
++    {
++        var context = Context();
++        try
++        {
++            var boundary = new OrdinaryFinancialBoundary(context);
++            boundaries.Add(boundary);
++            return boundary;
++        }
++        catch { context.Dispose(); throw; }
++    }
++
++    public string IssueAndValidateSubject(string client, string permission)
++    {
++        var issued = (issuer ?? throw new InvalidOperationException("Issuer not initialized."))
++            .IssueService(client, [permission], DateTimeOffset.UtcNow);
++        var handler = new JwtSecurityTokenHandler { MapInboundClaims = false };
++        var principal = handler.ValidateToken(issued.Value, new TokenValidationParameters
++        {
++            ValidateIssuer = true, ValidIssuer = Issuer, ValidateAudience = true, ValidAudience = Audience,
++            ValidateIssuerSigningKey = true, IssuerSigningKey = new RsaSecurityKey(key), ValidateLifetime = true,
++            ValidAlgorithms = [SecurityAlgorithms.RsaSha256], ClockSkew = TimeSpan.Zero
++        }, out _);
++        Assert.Empty(principal.FindAll("user_id"));
++        Assert.Empty(principal.FindAll(System.Security.Claims.ClaimTypes.NameIdentifier));
++        Assert.Equal("service", Assert.Single(principal.FindAll("identity_kind")).Value);
++        var subject = Assert.Single(principal.FindAll("sub")).Value;
++        Assert.Equal("service:" + client, subject);
++        return subject;
++    }
++
++    public Task DisposeAsync()
++    {
++        lock (disposalGate)
++        {
++            qualification ??= DisposeCoreAsync();
++            return disposal ??= SuperviseAsync(qualification);
++        }
++    }
++
++    private async Task DisposeCoreAsync()
++    {
++        issuer?.Dispose();
++        key.Dispose();
++        // All actual contexts must finish cleanup before backend removal; cached disposal faults remain faults.
++        await OwnedFinancialPrincipalTestContainers.CleanupAsync(boundaries.Select<OrdinaryFinancialBoundary, Func<Task>>(
++            boundary => () => boundary.DisposeAsync().AsTask()).ToArray());
++        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(30));
++        await VerifyExactOwnerAndIdleAsync(lifetime.Token);
++        backendDisposal ??= postgres.DisposeAsync().AsTask();
++        await backendDisposal.WaitAsync(lifetime.Token);
++        if (!await BackendAbsentAsync(lifetime.Token)) throw new InvalidOperationException("Owned PostgreSQL absence is unverified.");
++    }
++
++    private async Task SuperviseAsync(Task originalQualification)
++    {
++        try { await originalQualification; }
++        catch (Exception failure)
++        {
++            // The original outer task has now settled. Recover physical cleanup separately, then preserve FAIL.
++            try { await RecoverBackendAsync(); }
++            catch (Exception recoveryFailure) { throw new AggregateException(failure, recoveryFailure); }
++            ExceptionDispatchInfo.Capture(failure).Throw();
++        }
++    }
++
++    public Task RecoverBackendAsync(CancellationToken cancellation = default)
++    {
++        lock (disposalGate)
++        {
++            if (qualification is null || !qualification.IsCompleted)
++                throw new InvalidOperationException("Physical recovery requires the original outer disposal task to settle.");
++            recovery ??= new OwnedCleanupRecovery(
++                Task.WhenAll(boundaries.Select(boundary => boundary.DisposeAsync().AsTask())),
++                () => boundaries.All(boundary => boundary.PhysicalContextClosed),
++                VerifyExactOwnerAndIdleAsync,
++                _ => backendDisposal ??= postgres.DisposeAsync().AsTask(),
++                BackendAbsentAsync);
++            return recovery.RecoverAsync(TimeSpan.FromSeconds(120), cancellation);
++        }
++    }
++
++    private static DockerClient Docker() => new DockerClientBuilder()
++        .WithEndpoint(new Uri(OwnedFinancialPrincipalTestContainers.DockerEndpoint))
++        .WithTimeout(TimeSpan.FromSeconds(15)).Build();
++
++    private async Task<bool> BackendAbsentAsync(CancellationToken cancellation)
++    {
++        var id = originalBackendId ?? postgres.Id;
++        if (string.IsNullOrEmpty(id)) return true;
++        using var docker = Docker();
++        try { _ = await docker.Containers.InspectContainerAsync(id, cancellation); return false; }
++        catch (DockerContainerNotFoundException) { return true; }
++    }
++
++    private async Task VerifyExactOwnerAndIdleAsync(CancellationToken cancellation)
++    {
++        var id = originalBackendId ?? postgres.Id;
++        if (string.IsNullOrEmpty(id)) return;
++        using var docker = Docker();
++        Docker.DotNet.Models.ContainerInspectResponse inspect;
++        try { inspect = await docker.Containers.InspectContainerAsync(id, cancellation); }
++        catch (DockerContainerNotFoundException) { return; }
++        var labels = inspect.Config.Labels;
++        bool Label(string name, string expected) => labels.TryGetValue(name, out var value) && value == expected;
++        if (inspect.ID != id || inspect.Config.Image != "postgres:18-alpine"
++            || !Label("maliev.codex.owner", "commerce-accounting-financial-principal-20261007")
++            || !Label("maliev.codex.parent-run", OwnedFinancialPrincipalTestContainers.ParentRun)
++            || !Label("maliev.codex.run", OwnedFinancialPrincipalTestContainers.Run)
++            || !Label("maliev.codex.persistent-data", "false")
++            || (originalImageId is not null && inspect.Image != originalImageId)
++            || (originalCreated is not null && inspect.Created.ToString() != originalCreated)
++            || !inspect.HostConfig.Tmpfs.ContainsKey("/var/lib/postgresql")
++            || inspect.Mounts.Any(mount => !string.Equals(mount.Type.ToString(), "tmpfs", StringComparison.OrdinalIgnoreCase))
++            || inspect.HostConfig.PortBindings.Values.SelectMany(bindings => bindings).Any(binding => binding.HostIP != "127.0.0.1"))
++            throw new InvalidOperationException("Exact owned disposable PostgreSQL identity or isolation is unverified.");
++        if (inspect.State.Running)
++        {
++            var ownedConnection = connection ?? new NpgsqlConnectionStringBuilder(postgres.GetConnectionString()) { Pooling = false }.ConnectionString;
++            await using var control = new NpgsqlConnection(ownedConnection);
++            await control.OpenAsync(cancellation);
++            await using var command = new NpgsqlCommand("SELECT count(*) FROM pg_stat_activity WHERE backend_type = 'client backend' AND pid <> pg_backend_pid()", control);
++            if (Convert.ToInt64(await command.ExecuteScalarAsync(cancellation)) != 0)
++                throw new InvalidOperationException("Owned PostgreSQL still has active local clients.");
++        }
++    }
++}
++
++public sealed class OrdinaryFinancialBoundary : IAsyncDisposable
++{
++    private const string Role = "roles.legacy.accounting-financial-reader";
++    private const string Permission = "legacy.accounting-financial-ownership.read";
++    private readonly PermissionService permissions;
++    private readonly RoleService roles;
++    private readonly PermissionResolver resolver;
++    private readonly Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction transaction;
++    private readonly object disposalGate = new();
++    private Task? disposal;
++    public bool PhysicalContextClosed { get; private set; }
++    public IAMDbContext Database { get; }
++    public PrincipalService Principals { get; }
++    public BindingService Bindings { get; }
++
++    public OrdinaryFinancialBoundary(IAMDbContext database)
++    {
++        Database = database;
++        // Every case rolls back its ordinary enrollment and grants; none escapes the owned fixture.
++        transaction = database.Database.BeginTransaction();
++        var principalRepository = new PrincipalRepository(database);
++        var permissionRepository = new PermissionRepository(database);
++        var roleRepository = new RoleRepository(database);
++        var bindingRepository = new BindingRepository(database);
++        var cache = Mock.Of<ICacheService>();
++        var audit = Mock.Of<IAuditService>();
++        var events = Mock.Of<IPublishEndpoint>();
++        Principals = new PrincipalService(principalRepository, Mock.Of<IServiceAccountApiKeyRepository>(), bindingRepository,
++            roleRepository, permissionRepository, cache, audit, new ConfigurationBuilder().Build(), NullLogger<PrincipalService>.Instance);
++        permissions = new PermissionService(permissionRepository, events, NullLogger<PermissionService>.Instance);
++        roles = new RoleService(roleRepository, permissionRepository, cache, audit, events, NullLogger<RoleService>.Instance);
++        Bindings = new BindingService(bindingRepository, roleRepository, principalRepository, cache, audit, events,
++            NullLogger<BindingService>.Instance);
++        resolver = new PermissionResolver(bindingRepository, Principals, cache, NullLogger<PermissionResolver>.Instance);
++    }
++
++    public async Task<Principal> EnrollAsync(string client)
++    {
++        var request = JsonSerializer.Deserialize<RegisterPermissionsRequest>(File.ReadAllText(
++            Path.Combine(AppContext.BaseDirectory, "accounting-financial-ownership.json")))!;
++        await permissions.RegisterPermissionsAsync(request);
++        await roles.RegisterRolesAsync(new RegisterRolesRequest
++        {
++            ServiceName = "legacy", Roles = [new() { RoleId = Role, Description = "Ordinary financial reader fixture", PermissionIds = [Permission] }]
++        });
++        // Exactly the existing resolver's derived email convention, never an in-memory alias map.
++        return await Principals.CreateAsync("service_account", "service:" + client + "@serviceaccount.maliev.local", null, null);
++    }
++
++    public Task<Maliev.IAMService.Application.DTOs.Responses.RoleBindingResponse> GrantAsync(Principal account, string? scope) =>
++        Bindings.GrantRoleAsync(account.PrincipalId, new GrantRoleRequest { RoleId = Role, ResourcePath = scope }, account.PrincipalId);
++
++    public Task<Maliev.IAMService.Application.DTOs.Responses.CheckPermissionResponse> CheckAsync(string subject) =>
++        resolver.CheckPermissionAsync(new CheckPermissionRequest { PrincipalId = subject, PermissionId = Permission, ResourcePath = "global", BypassCache = true });
++
++    public ValueTask DisposeAsync()
++    {
++        lock (disposalGate) return new(disposal ??= DisposeCoreAsync());
++    }
++
++    private async Task DisposeCoreAsync()
++    {
++        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(30));
++        try { await transaction.RollbackAsync(cleanup.Token); }
++        finally
++        {
++            try { await transaction.DisposeAsync(); }
++            finally { await Database.DisposeAsync(); PhysicalContextClosed = true; }
++        }
++    }
++}
+diff --git a/tooling/Accounting.PermissionRegistration.Tests/OwnedCleanupRecovery.cs b/tooling/Accounting.PermissionRegistration.Tests/OwnedCleanupRecovery.cs
+new file mode 100644
+index 0000000..12408f7
+--- /dev/null
++++ b/tooling/Accounting.PermissionRegistration.Tests/OwnedCleanupRecovery.cs
+@@ -0,0 +1,51 @@
++namespace Accounting.PermissionRegistration.Tests;
++
++// Physical cleanup recovery is separate from (and never changes) the original qualification task.
++internal sealed class OwnedCleanupRecovery(
++    Task originalCleanup,
++    Func<bool> contextsClosed,
++    Func<CancellationToken, Task> verifyExactOwnerAndIdle,
++    Func<CancellationToken, Task> removeExactBackend,
++    Func<CancellationToken, Task<bool>> verifyBackendAbsent)
++{
++    private readonly object gate = new();
++    private Task? recovery;
++    private Task? backendDisposal;
++
++    internal Task RecoverAsync(TimeSpan timeout, CancellationToken cancellation = default)
++    {
++        lock (gate)
++        {
++            // Retry a failed physical recovery; never run removal attempts concurrently.
++            if (recovery is null || recovery.IsFaulted || recovery.IsCanceled)
++                recovery = RecoverCoreAsync(timeout, cancellation);
++            return recovery;
++        }
++    }
++
++    private async Task RecoverCoreAsync(TimeSpan timeout, CancellationToken cancellation)
++    {
++        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
++        lifetime.CancelAfter(timeout);
++        try { await originalCleanup.WaitAsync(lifetime.Token); }
++        catch (Exception) when (originalCleanup.IsCompleted)
++        {
++            // Settlement is not qualification success. A separate physical-close/idle gate remains mandatory.
++        }
++        lifetime.Token.ThrowIfCancellationRequested();
++        if (!originalCleanup.IsCompleted || !contextsClosed())
++            throw new InvalidOperationException("Original context cleanup has not established physical closure.");
++        await verifyExactOwnerAndIdle(lifetime.Token);
++        // Retain the original backend disposal task too. A retry checks its completion/physical result,
++        // rather than starting a second concurrent or repeated container disposal.
++        backendDisposal ??= removeExactBackend(lifetime.Token);
++        try { await backendDisposal.WaitAsync(lifetime.Token); }
++        catch (Exception) when (backendDisposal.IsCompleted)
++        {
++            // An acknowledgement failure is not absence; the mandatory physical check decides cleanup only.
++        }
++        lifetime.Token.ThrowIfCancellationRequested();
++        if (!await verifyBackendAbsent(lifetime.Token))
++            throw new InvalidOperationException("Owned backend physical absence is unverified.");
++    }
++}
+diff --git a/tooling/Accounting.PermissionRegistration.Tests/OwnedCleanupRecoveryTests.cs b/tooling/Accounting.PermissionRegistration.Tests/OwnedCleanupRecoveryTests.cs
+new file mode 100644
+index 0000000..c4b8323
+--- /dev/null
++++ b/tooling/Accounting.PermissionRegistration.Tests/OwnedCleanupRecoveryTests.cs
+@@ -0,0 +1,106 @@
++namespace Accounting.PermissionRegistration.Tests;
++
++public sealed class OwnedCleanupRecoveryTests
++{
++    [Fact]
++    public async Task LateOriginalDisposalCanRemoveBackendWhileOriginalQualificationFailureStaysFailed()
++    {
++        var original = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
++        var closed = false;
++        var removed = false;
++        var qualification = original.Task.WaitAsync(TimeSpan.FromMilliseconds(1));
++        await Assert.ThrowsAsync<TimeoutException>(() => qualification);
++        var recovery = new OwnedCleanupRecovery(original.Task, () => closed,
++            _ => { Assert.True(closed); return Task.CompletedTask; },
++            _ => { Assert.True(closed); removed = true; return Task.CompletedTask; },
++            _ => Task.FromResult(removed));
++        var physical = recovery.RecoverAsync(TimeSpan.FromSeconds(1));
++        Assert.False(removed);
++        closed = true;
++        original.SetResult();
++        await physical;
++        Assert.True(removed);
++        await Assert.ThrowsAsync<TimeoutException>(() => qualification);
++    }
++
++    [Fact]
++    public async Task PendingOriginalTaskCannotRemoveBackendAfterRecoveryDeadline()
++    {
++        var original = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
++        var removed = false;
++        var recovery = new OwnedCleanupRecovery(original.Task, () => true, _ => Task.CompletedTask,
++            _ => { removed = true; return Task.CompletedTask; }, _ => Task.FromResult(true));
++        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => recovery.RecoverAsync(TimeSpan.FromMilliseconds(1)));
++        Assert.False(removed);
++        original.SetResult();
++        await recovery.RecoverAsync(TimeSpan.FromSeconds(1));
++        Assert.True(removed);
++    }
++
++    [Fact]
++    public async Task SettledTaskWithoutPhysicalContextClosureCannotDeleteBackend()
++    {
++        var removed = false;
++        var recovery = new OwnedCleanupRecovery(Task.CompletedTask, () => false, _ => Task.CompletedTask,
++            _ => { removed = true; return Task.CompletedTask; }, _ => Task.FromResult(true));
++        await Assert.ThrowsAsync<InvalidOperationException>(() => recovery.RecoverAsync(TimeSpan.FromSeconds(1)));
++        Assert.False(removed);
++    }
++
++    [Fact]
++    public async Task ExactOwnerOrIdleCheckFailureCannotDeleteBackend()
++    {
++        var removed = false;
++        var recovery = new OwnedCleanupRecovery(Task.CompletedTask, () => true,
++            _ => Task.FromException(new InvalidOperationException("Owner or active-client mismatch")),
++            _ => { removed = true; return Task.CompletedTask; }, _ => Task.FromResult(true));
++        await Assert.ThrowsAsync<InvalidOperationException>(() => recovery.RecoverAsync(TimeSpan.FromSeconds(1)));
++        Assert.False(removed);
++    }
++
++    [Fact]
++    public async Task UnverifiedBackendAbsenceRemainsFailureAndCanBeRetriedSeparately()
++    {
++        var absent = false;
++        var attempts = 0;
++        var recovery = new OwnedCleanupRecovery(Task.CompletedTask, () => true, _ => Task.CompletedTask,
++            _ => { attempts++; return Task.CompletedTask; }, _ => Task.FromResult(absent));
++        await Assert.ThrowsAsync<InvalidOperationException>(() => recovery.RecoverAsync(TimeSpan.FromSeconds(1)));
++        absent = true;
++        await recovery.RecoverAsync(TimeSpan.FromSeconds(1));
++        Assert.Equal(1, attempts);
++    }
++
++    [Fact]
++    public async Task LateOriginalBackendDisposalIsAwaitedWithoutStartingASecondDisposalCall()
++    {
++        var backend = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
++        var calls = 0;
++        var absent = false;
++        var recovery = new OwnedCleanupRecovery(Task.CompletedTask, () => true, _ => Task.CompletedTask,
++            _ => { calls++; return backend.Task; }, _ => Task.FromResult(absent));
++        var first = recovery.RecoverAsync(TimeSpan.FromMilliseconds(1));
++        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
++        var second = recovery.RecoverAsync(TimeSpan.FromSeconds(1));
++        Assert.Equal(1, calls);
++        Assert.False(second.IsCompleted);
++        absent = true;
++        backend.SetResult();
++        await second;
++        Assert.Equal(1, calls);
++        Assert.True(first.IsCanceled);
++    }
++
++    [Fact]
++    public async Task SettledOriginalFaultRequiresPhysicalClosureAndDoesNotTurnQualificationGreen()
++    {
++        var original = Task.FromException(new InvalidOperationException("Original rollback failed"));
++        var removed = false;
++        var recovery = new OwnedCleanupRecovery(original, () => true, _ => Task.CompletedTask,
++            _ => { removed = true; return Task.CompletedTask; }, _ => Task.FromResult(removed));
++        await recovery.RecoverAsync(TimeSpan.FromSeconds(1));
++        Assert.True(removed);
++        Assert.True(original.IsFaulted);
++        await Assert.ThrowsAsync<InvalidOperationException>(() => original);
++    }
++}
+diff --git a/tooling/Accounting.PermissionRegistration.Tests/OwnedFinancialPrincipalTestContainers.cs b/tooling/Accounting.PermissionRegistration.Tests/OwnedFinancialPrincipalTestContainers.cs
+new file mode 100644
+index 0000000..efb7d9c
+--- /dev/null
++++ b/tooling/Accounting.PermissionRegistration.Tests/OwnedFinancialPrincipalTestContainers.cs
+@@ -0,0 +1,68 @@
++using DotNet.Testcontainers.Containers;
++using Testcontainers.PostgreSql;
++
++namespace Accounting.PermissionRegistration.Tests;
++
++internal static class OwnedFinancialPrincipalTestContainers
++{
++    internal static string DockerEndpoint => OperatingSystem.IsWindows() ? "npipe://./pipe/docker_engine"
++        : OperatingSystem.IsLinux() ? "unix:///var/run/docker.sock"
++        : throw new PlatformNotSupportedException("Owned Financial principal tests require the reviewed local Docker endpoint.");
++    internal static readonly string Run = Guid.NewGuid().ToString("N");
++    internal static readonly string ParentRun = Environment.GetEnvironmentVariable("MALIEV_TEST_RESOURCE_RUN_ID") ?? Guid.NewGuid().ToString("N");
++    private static string Expiry => DateTime.UtcNow.AddMinutes(32).ToString("O");
++
++    internal static PostgreSqlBuilder Postgres(string image) => new PostgreSqlBuilder(image)
++        .WithDockerEndpoint(DockerEndpoint)
++        .WithLabel("maliev.codex.owner", "commerce-accounting-financial-principal-20261007")
++        .WithLabel("maliev.codex.parent-run", ParentRun)
++        .WithLabel("maliev.codex.run", Run).WithLabel("maliev.codex.expires-utc", Expiry)
++        .WithLabel("maliev.codex.persistent-data", "false")
++        .WithCreateParameterModifier(parameters =>
++        {
++            parameters.Entrypoint = ["sh", "-c"];
++            parameters.Cmd = ["exec timeout 1800 docker-entrypoint.sh postgres -c fsync=off -c full_page_writes=off -c synchronous_commit=off"];
++            parameters.HostConfig!.Memory = 1024 * 1024 * 1024;
++            parameters.HostConfig.MemorySwap = 1024 * 1024 * 1024;
++            parameters.HostConfig.NanoCPUs = 750000000;
++            parameters.HostConfig.Tmpfs = new Dictionary<string, string> { ["/var/lib/postgresql"] = "rw,size=512m" };
++            foreach (var bindings in parameters.HostConfig.PortBindings.Values)
++                foreach (var binding in bindings) binding.HostIP = "127.0.0.1";
++        });
++
++    internal static async Task SetupAsync(Func<CancellationToken, Task> setup, Func<Task> cleanup)
++    {
++        using var lifetime = new CancellationTokenSource(TimeSpan.FromSeconds(120));
++        try { await setup(lifetime.Token); }
++        catch (Exception setupFailure)
++        {
++            try { await cleanup(); }
++            catch (Exception cleanupFailure) { throw new AggregateException(setupFailure, cleanupFailure); }
++            throw;
++        }
++    }
++
++    internal static async Task CleanupAsync(params Func<Task>[] cleanup)
++    {
++        var failures = new List<Exception>();
++        foreach (var dispose in cleanup)
++        {
++            try { await WaitForCleanupAsync(dispose()); }
++            catch (Exception failure) { failures.Add(failure); }
++        }
++        if (failures.Count > 0) throw new AggregateException("Owned Financial principal test resource cleanup failed.", failures);
++    }
++
++    internal static Task DisposeAsync(params IContainer[] containers) =>
++        CleanupAsync(containers.Select<IContainer, Func<Task>>(container => () => container.DisposeAsync().AsTask()).ToArray());
++
++    internal static Task WaitForCleanupAsync(Task disposal)
++    {
++        _ = disposal.ContinueWith(task =>
++        {
++            var failure = task.Exception;
++            Console.Error.WriteLine($"Owned cleanup fault observed: {failure?.GetType().Name}.");
++        }, CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
++        return disposal.WaitAsync(TimeSpan.FromSeconds(30));
++    }
++}

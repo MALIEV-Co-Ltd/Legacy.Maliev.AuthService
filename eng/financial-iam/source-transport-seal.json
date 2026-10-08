@@ -1,0 +1,174 @@
+{
+  "schemaVersion": 1,
+  "repository": "MALIEV-Co-Ltd/Legacy.Maliev.AuthService",
+  "sourcePacket": "auth-financial-hosted-qualification-source-v3-writer-receipt-fence-20261008",
+  "sourcePacketManifestSha256": "028618cd5ce71eb6a38a29d39c7238e7d8d58aeee62538df5a1ce8eaba43cdbe",
+  "files": [
+    {
+      "path": ".github/workflows/financial-iam-qualification.yml",
+      "sha256": "97adfb507284ba143c0dd0939287f054b81fb96ea05f04c0607c32d8dd6a634c",
+      "bytes": 5107
+    },
+    {
+      "path": "eng/financial-iam/expiry_guard.py",
+      "sha256": "dcc6c1d639060a419bf5e034b02e83e4d9a1326fcac7977f427aec28e2907368",
+      "bytes": 4745
+    },
+    {
+      "path": "eng/financial-iam/hosted_owner.py",
+      "sha256": "9b01bec190d50626f9b4a67f03267eb87e10a4612f6776caf19a38c0f0ec172f",
+      "bytes": 35365
+    },
+    {
+      "path": "eng/financial-iam/Invoke-FinancialIamQualification.ps1",
+      "sha256": "5f3c427dc2d82bb292c847a0d0e9838dc49824e4f1f3e67ff9bad1589d4bdf25",
+      "bytes": 7363
+    },
+    {
+      "path": "eng/financial-iam/Materialize-FinancialIamSource.ps1",
+      "sha256": "b4e1de6fd20d505d3c13d8019bd40e4651233e42f62cbae1ac624f55e83ba1bd",
+      "bytes": 11396
+    },
+    {
+      "path": "eng/financial-iam/private_docker_proxy.py",
+      "sha256": "7f660f55e3a1420b44c4894a8ee50b4a9f6c89ae4b7c0f8349e4d41e93b3afda",
+      "bytes": 22869
+    },
+    {
+      "path": "eng/financial-iam/README.md",
+      "sha256": "9ed0d55e4bcb26af4bf65cd7ce575c260c167f897b3fbc1561d2489d29d8f72b",
+      "bytes": 8091
+    },
+    {
+      "path": "eng/financial-iam/recover_owner.py",
+      "sha256": "40a71da6c93a04bba9900106f4253f512b29175fff76364538c5af7fe04b6174",
+      "bytes": 11722
+    },
+    {
+      "path": "eng/financial-iam/Start-FinancialIamHostedOwner.ps1",
+      "sha256": "9c896dfb852abae39259c1190458b1a74b1c0d64fdb878a293f324d1c02820ec",
+      "bytes": 11291
+    },
+    {
+      "path": "eng/financial-iam/test_controls.py",
+      "sha256": "fe90bcc085846028168fe62d950e91138756d0748766b2fd5b31cd82d2eff8e0",
+      "bytes": 17295
+    },
+    {
+      "path": "eng/financial-iam/verify_results.py",
+      "sha256": "701b480044c970c6d07572e87d85c329818413d7f037f9527063d04e6fb65686",
+      "bytes": 8737
+    },
+    {
+      "path": "eng/financial-iam/inputs/accounting-catalogue.bytes.b64",
+      "sha256": "e1dd5fd632668fa6eaf7071efc9d99b590480fce21a040b93f59c1458d8db9c8",
+      "bytes": 337
+    },
+    {
+      "path": "eng/financial-iam/inputs/accounting-container-control.bytes.b64",
+      "sha256": "d0957afa2ca08a14702e8cd6c3b21e6b4b5c6cdd789f78084f01366d8ff7d43f",
+      "bytes": 4833
+    },
+    {
+      "path": "eng/financial-iam/inputs/accounting-hosted-controls.bytes.b64",
+      "sha256": "d9b057adac07fa4329a51613d07365888d2b3cbd65f7465ff2cfff68ff2a0056",
+      "bytes": 30041
+    },
+    {
+      "path": "eng/financial-iam/inputs/accounting-hosted-manifest.bytes.b64",
+      "sha256": "817c579064b531c88db16c7dd8009fe8d69129ff3632d4aab5ba3a45d933f614",
+      "bytes": 35705
+    },
+    {
+      "path": "eng/financial-iam/inputs/accounting-hosted-run.bytes.b64",
+      "sha256": "d2366196cd3dc86c644738ffedecdb78f532646b61113441e6666ebfc5c023b3",
+      "bytes": 4361
+    },
+    {
+      "path": "eng/financial-iam/inputs/accounting-hosted-verify.bytes.b64",
+      "sha256": "a876633b13af71fd299537e4a8b1459e1b4293a446559df01003ac217feb2abc",
+      "bytes": 29701
+    },
+    {
+      "path": "eng/financial-iam/inputs/accounting-source-manifest.bytes.b64",
+      "sha256": "6fc510fdb1bbe9eb2683ab9be4972437c2c77821418178239ed3cf217458f157",
+      "bytes": 49241
+    },
+    {
+      "path": "eng/financial-iam/inputs/accounting-source.patch",
+      "sha256": "fd8abaca9cc21be74546a7880f8421a2f22cbf1873ee3c44fb5ef3047fb5fc50",
+      "bytes": 104163
+    },
+    {
+      "path": "eng/financial-iam/inputs/auth-source-manifest.json",
+      "sha256": "6541dcdbba89175b556e50004902c681361f21cbae003fe909f5e60ace8dd81a",
+      "bytes": 19588
+    },
+    {
+      "path": "eng/financial-iam/inputs/auth-source.patch",
+      "sha256": "4f46a141a47f7c85fbefbcdf93872f2b80d28a5cbe4e2e1dd16a34e54673e1ce",
+      "bytes": 173074
+    },
+    {
+      "path": "eng/financial-iam/inputs/quotation-catalogue.json",
+      "sha256": "7a7ff1e9122be3ff8f914390d63b447a50e25f5f03f41e75e7609eed499ed34d",
+      "bytes": 2464
+    },
+    {
+      "path": "eng/financial-iam/commerce_build_route.py",
+      "bytes": 9937,
+      "sha256": "038d5e66a88477a0fdf919a71e7f5bc31d97dbc99de1d3c2c07886eae7306bdb"
+    },
+    {
+      "path": "eng/financial-iam/test_commerce_build_route.py",
+      "bytes": 5907,
+      "sha256": "81f117d80c957a4c343fd40fcd6b23b093ca7e41db5216e7331c482e9f2d0f47"
+    }
+  ],
+  "decodedRawInputs": [
+    {
+      "name": "accounting-catalogue.bytes.b64",
+      "decodedSha256": "7ef027009178f40ec7d21645d4fb15dea39e779c4a5929edb8cde10a46074ef7",
+      "decodedBytes": 250
+    },
+    {
+      "name": "accounting-container-control.bytes.b64",
+      "decodedSha256": "e50457fc02634024ec5b9fb37328f008139a06dd806c08dbbf0a63ed8f1ac129",
+      "decodedBytes": 3622
+    },
+    {
+      "name": "accounting-hosted-controls.bytes.b64",
+      "decodedSha256": "41436ec506045155a1103e0adb8ee591e43a21f358fbab957dad46d54f9618d6",
+      "decodedBytes": 22528
+    },
+    {
+      "name": "accounting-hosted-manifest.bytes.b64",
+      "decodedSha256": "d007f0981514a895cd7bf490cce4c2293d3c032720180cfd984adf1f9d654eac",
+      "decodedBytes": 26776
+    },
+    {
+      "name": "accounting-hosted-run.bytes.b64",
+      "decodedSha256": "09813ade8642e0c00dc8feed850fb1996911d0230b1b49c18f28cc224572e23d",
+      "decodedBytes": 3269
+    },
+    {
+      "name": "accounting-hosted-verify.bytes.b64",
+      "decodedSha256": "3e48f50cadabf216020f10f426d7b837c1f1946500a643470e3d7ca71c5da4cd",
+      "decodedBytes": 22273
+    },
+    {
+      "name": "accounting-source-manifest.bytes.b64",
+      "decodedSha256": "cc314f03b3cee337ddd2ea40609a7c40d664a8e8177eae82b6a87b353590d0a2",
+      "decodedBytes": 36928
+    }
+  ],
+  "counts": {
+    "pureControls": 38,
+    "pythonSources": 6,
+    "psSources": 3
+  },
+  "candidateNativeAccepted": false,
+  "previousTransportSealSha256": "58dff7cdc2b086e0d6c8f7936d29ec638675dad980e4df57e51ed92d0e5996c7",
+  "successorSourcePacket": "commerce-build-outer-route-source-v1-20261008",
+  "successorSourcePacketManifestSha256": "47d3d08594e833a9bd32ae6d3681360b543621b4939a595cf63d7dc00a5c3f26"
+}
