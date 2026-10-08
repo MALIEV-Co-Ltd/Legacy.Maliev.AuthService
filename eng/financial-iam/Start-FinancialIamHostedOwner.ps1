@@ -2,9 +2,12 @@
 param([Parameter(Mandatory)][string]$SourceCheckouts,
       [Parameter(Mandatory)][string]$EvidenceRoot,
       [Parameter(Mandatory)][ValidateSet('auth','accounting','procurement','order')][string]$Lane,
-      [ValidateSet('full','build')][string]$Stage = 'full',
+      [ValidateSet('full','build','proof')][string]$Stage = 'full',
       [string]$CommerceTransport, [string]$CommerceDriver, [string]$AdmissionVerifier)
 $ErrorActionPreference = 'Stop'
+if ($Stage -eq 'proof' -and ($Lane -cne 'auth' -or $CommerceTransport -or $CommerceDriver -or $AdmissionVerifier)) {
+    throw 'Stub proof accepts Auth without producer or SDK inputs.'
+}
 if ($Stage -eq 'full' -and ($Lane -notin @('auth','accounting') -or $CommerceTransport -or $CommerceDriver -or $AdmissionVerifier)) {
     throw 'Existing full routes accept only Auth/Accounting without BUILD inputs.'
 }

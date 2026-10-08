@@ -291,10 +291,12 @@ def main():
     parser.add_argument("--receipt", required=True)
     parser.add_argument("--coordinator-unit", required=True)
     parser.add_argument("--lane", choices=("auth", "accounting", "procurement", "order"), required=True)
-    parser.add_argument("--stage", choices=("full", "build"), default="full")
+    parser.add_argument("--stage", choices=("full", "build", "proof"), default="full")
     for option in ("commerce-transport", "commerce-driver", "admission-verifier"):
         parser.add_argument("--" + option)
     args = parser.parse_args()
+    if args.stage == "proof" and (args.lane != "auth" or any((args.commerce_transport, args.commerce_driver, args.admission_verifier))):
+        raise ValueError("Stub proof accepts Auth without producer or SDK inputs")
     if args.stage == "full" and (args.lane not in ("auth", "accounting") or any((args.commerce_transport, args.commerce_driver, args.admission_verifier))):
         raise ValueError("Full route must preserve existing Auth/Accounting inputs")
     if args.stage == "build":
@@ -325,6 +327,9 @@ def main():
     root.mkdir(mode=0o700)
     receipts = pathlib.Path(args.receipt).resolve()
     receipts.mkdir(parents=True, exist_ok=False)
+    if args.stage == "proof":
+        birth = root.stat()
+        (receipts / "stub-root.json").write_text(json.dumps({"run": run, "device": birth.st_dev, "inode": birth.st_ino}))
     owned = OwnedUnits(run, receipts / "units.json")
     # A slice name without dashes is a direct root child, not an implicitly
     # nested systemd slice hierarchy. Still read the actual manager cgroup.
@@ -485,6 +490,12 @@ def main():
             dockerProxySocket={"device": proxy_identity["filesystemDevice"], "inode": proxy_identity["filesystemInode"], "kernelInode": proxy_identity["kernelSocketInode"]},
             dockerDaemonSocket={"device": daemon_identity["filesystemDevice"], "inode": daemon_identity["filesystemInode"], "kernelInode": daemon_identity["kernelSocketInode"]})
         (receipts / "native-context.json").write_text(json.dumps(context), encoding="utf-8")
+        if args.stage == "proof":
+            status, body = rpc(proxy_socket, "GET", "/info")
+            if status != 503 or body != {"message": "Owned Docker admission failed"}:
+                raise RuntimeError("Foreign coordinator peer was not rejected")
+            (receipts / "stub-foreign-peer.json").write_text(json.dumps({"run": run, "rejected": True,
+                "coordinatorPid": os.getpid(), "coordinatorCgroup": current, "status": status}))
         environment = {"DOCKER_HOST": "unix://" + proxy_socket, "DOCKER_CONTEXT": "",
             "DOCKER_TLS_VERIFY": "", "DOCKER_CERT_PATH": "", "TESTCONTAINERS_RYUK_DISABLED": "true",
             "GITHUB_ACTIONS": "false", "FINANCIAL_OWNED_CGROUP": cgroup,
@@ -504,8 +515,13 @@ def main():
                 "--driver", args.commerce_driver, "--admission-verifier", args.admission_verifier,
                 "--context", str(receipts / "native-context.json"), "--checkouts", str(pathlib.Path(args.checkouts).resolve(strict=True)),
                 "--destination", str(root / "commerce-materialized"), "--receipts", str(receipts)]
+        if args.stage == "proof":
+            sdk_command = ["/usr/bin/python3", "-B", str(source / "finite_stub_proof.py"),
+                "--role", "workload", "--context", str(receipts / "native-context.json"),
+                "--receipt", str(receipts / "stub-proof.json")]
         owned.register(sdk, service("Exact isolated native qualification", sdk_command, parent=parent,
-            memory="3G", runtime=2100, environment=environment, log=receipts / "sdk.log"))
+            memory="128M" if args.stage == "proof" else "3G",
+            runtime=180 if args.stage == "proof" else 2100, environment=environment, log=receipts / "sdk.log"))
         owned.start(sdk)
         owned.settle(sdk, 2130)
     except Exception as error:

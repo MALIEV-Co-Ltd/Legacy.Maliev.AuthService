@@ -16,8 +16,8 @@
     },
     {
       "path": "eng/financial-iam/hosted_owner.py",
-      "sha256": "9b01bec190d50626f9b4a67f03267eb87e10a4612f6776caf19a38c0f0ec172f",
-      "bytes": 35365
+      "sha256": "e4345025a0f6d0ab5ff21da753b7bde1e59f89d006ab6a4492249124ed1d147d",
+      "bytes": 36597
     },
     {
       "path": "eng/financial-iam/Invoke-FinancialIamQualification.ps1",
@@ -46,8 +46,8 @@
     },
     {
       "path": "eng/financial-iam/Start-FinancialIamHostedOwner.ps1",
-      "sha256": "9c896dfb852abae39259c1190458b1a74b1c0d64fdb878a293f324d1c02820ec",
-      "bytes": 11291
+      "sha256": "2ef1ef7685271b93c0ee28076393bede83f017e9b263380bb3b6ec47a5e7f3af",
+      "bytes": 11486
     },
     {
       "path": "eng/financial-iam/test_controls.py",
@@ -123,6 +123,21 @@
       "path": "eng/financial-iam/test_commerce_build_route.py",
       "bytes": 5907,
       "sha256": "81f117d80c957a4c343fd40fcd6b23b093ca7e41db5216e7331c482e9f2d0f47"
+    },
+    {
+      "path": ".github/workflows/financial-no-sdk-lifecycle-proof.yml",
+      "bytes": 2092,
+      "sha256": "2b97b76b87fbe2927004f98a361250594912a09eb79f63de98b9eb58d326c488"
+    },
+    {
+      "path": "eng/financial-iam/finite_stub_proof.py",
+      "bytes": 22760,
+      "sha256": "89f7290e40aa752c64d6343d57c829bb0e598d5703486854bb945e42334b55d7"
+    },
+    {
+      "path": "eng/financial-iam/test_finite_stub_proof.py",
+      "bytes": 17299,
+      "sha256": "67c10281b3a24a266f6c398b7299576fa3576f32a0f0308a58c08e536fd9754b"
     }
   ],
   "decodedRawInputs": [
@@ -164,11 +179,16 @@
   ],
   "counts": {
     "pureControls": 38,
-    "pythonSources": 6,
-    "psSources": 3
+    "pythonSources": 10,
+    "psSources": 3,
+    "stubProofControls": 29
   },
   "candidateNativeAccepted": false,
-  "previousTransportSealSha256": "58dff7cdc2b086e0d6c8f7936d29ec638675dad980e4df57e51ed92d0e5996c7",
-  "successorSourcePacket": "commerce-build-outer-route-source-v1-20261008",
-  "successorSourcePacketManifestSha256": "47d3d08594e833a9bd32ae6d3681360b543621b4939a595cf63d7dc00a5c3f26"
+  "previousTransportSealSha256": "314e7b061a25680611f7cddf72ed8a5784e23c13a4739b9f39d306363101f1d7",
+  "proofSourcePacket": "financial-no-sdk-lifecycle-proof-source-v1-20261008",
+  "commerceRoutePredecessorSourcePacket": "commerce-build-outer-route-source-v1-20261008",
+  "commerceRoutePredecessorSourcePacketManifestSha256": "47d3d08594e833a9bd32ae6d3681360b543621b4939a595cf63d7dc00a5c3f26",
+  "successorSourcePacket": "financial-no-sdk-lifecycle-core-v2-20261008",
+  "successorSourcePacketManifestSha256": "a610f4699ee878b3803367de7df97f11f76da2fdad919746538e120a7bf01940",
+  "reviewRevisionPreviousSealSha256": "41f6ca396b2f777d305edc68a700740ffc8439a4f2b76e28c57f19d7e09addf7"
 }

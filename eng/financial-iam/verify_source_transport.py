@@ -8,10 +8,11 @@ from pathlib import Path
 import sys
 import unittest
 
-SEAL_SHA256 = '314e7b061a25680611f7cddf72ed8a5784e23c13a4739b9f39d306363101f1d7'
+SEAL_SHA256 = 'ce56eac7467a1bab2ca719ea4769a8c6679851fb558f6ed4dc8c74866b69d27f'
 PYTHON = ('private_docker_proxy.py', 'hosted_owner.py', 'recover_owner.py',
           'expiry_guard.py', 'verify_results.py', 'test_controls.py',
-          'commerce_build_route.py', 'test_commerce_build_route.py')
+          'commerce_build_route.py', 'test_commerce_build_route.py',
+          'finite_stub_proof.py', 'test_finite_stub_proof.py')
 
 
 def sha(data):
@@ -37,7 +38,7 @@ def verify(root):
     if sha(raw) != SEAL_SHA256:
         raise ValueError('Immutable source transport seal changed')
     seal = json.loads(raw)
-    if seal['schemaVersion'] != 1 or len(seal['files']) != 24 or seal['candidateNativeAccepted'] is not False:
+    if seal['schemaVersion'] != 1 or len(seal['files']) != 27 or seal['candidateNativeAccepted'] is not False:
         raise ValueError('Reviewed transport inventory differs')
     seen = set()
     for row in seal['files']:
@@ -59,8 +60,8 @@ def verify(root):
         compile(bounded_file(directory / name, 131072).decode('utf-8'), str(directory / name), 'exec')
     compile(bounded_file(Path(__file__), 131072).decode('utf-8'), __file__, 'exec')
     compile(bounded_file(directory / 'test_source_transport.py', 131072).decode('utf-8'), str(directory / 'test_source_transport.py'), 'exec')
-    return {'sealedFiles': 24, 'decodedRawInputs': len(seal['decodedRawInputs']),
-            'pythonSourcesCompiled': 10, 'candidateNativeAccepted': False,
+    return {'sealedFiles': 27, 'decodedRawInputs': len(seal['decodedRawInputs']),
+            'pythonSourcesCompiled': 12, 'candidateNativeAccepted': False,
             'sdkStarted': False, 'nativeResourcesCreated': 0}
 
 
@@ -95,6 +96,11 @@ def main():
         if checked.testsRun != 16 or checked.failures or checked.errors or checked.skipped:
             raise ValueError('Exact BUILD route rejection suite did not pass')
         result['commerceBuildRouteControlsPassed'] = 16
+        suite = unittest.defaultTestLoader.loadTestsFromName('test_finite_stub_proof')
+        checked = unittest.TextTestRunner(verbosity=2).run(suite)
+        if checked.testsRun != 29 or checked.failures or checked.errors or checked.skipped:
+            raise ValueError('Exact stub proof failure-fence controls did not pass')
+        result['stubProofControlsPassed'] = 29
     # Verify once more after tests. The tests cannot silently mutate a producer
     # input/source and still create successful transport evidence.
     verify(root)

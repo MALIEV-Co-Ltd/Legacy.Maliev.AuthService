@@ -6,6 +6,7 @@ on:
       - '.gitattributes'
       - '.gitleaks.toml'
       - '.github/workflows/financial-iam-qualification.yml'
+      - '.github/workflows/financial-no-sdk-lifecycle-proof.yml'
       - '.github/workflows/financial-iam-transport-source.yml'
       - 'eng/financial-iam/**'
   push:
@@ -14,6 +15,7 @@ on:
       - '.gitattributes'
       - '.gitleaks.toml'
       - '.github/workflows/financial-iam-qualification.yml'
+      - '.github/workflows/financial-no-sdk-lifecycle-proof.yml'
       - '.github/workflows/financial-iam-transport-source.yml'
       - 'eng/financial-iam/**'
   workflow_dispatch:
