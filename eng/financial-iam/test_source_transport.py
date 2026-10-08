@@ -1,5 +1,7 @@
 """Offline transport-envelope regressions; no candidate/native acceptance."""
 from pathlib import Path
+import json
+import hashlib
 import unittest
 from unittest.mock import patch
 
@@ -24,6 +26,25 @@ class TransportControls(unittest.TestCase):
             return content + b' ' if path.name == 'source-transport-seal.json' else content
         with patch('verify_source_transport.bounded_file', side_effect=read), self.assertRaises(ValueError):
             transport.verify(self.root)
+
+        original = json.loads((self.root / 'eng/financial-iam/source-transport-seal.json').read_text())
+        variants = []
+        for key in transport.EXPECTED_COUNTS:
+            for value in (transport.EXPECTED_COUNTS[key] + 1, True, float(transport.EXPECTED_COUNTS[key])):
+                counts = dict(transport.EXPECTED_COUNTS); counts[key] = value
+                variants.append((key, counts))
+        variants.extend([('missing', {}), ('unknown', dict(transport.EXPECTED_COUNTS, foreign=1))])
+        for case, counts in variants:
+            with self.subTest(case=case, counts=counts):
+                changed = dict(original, counts=counts)
+                raw = (json.dumps(changed, indent=2) + '\n').encode('utf-8')
+                # Model a reviewed/resealed envelope, so only semantic count
+                # enforcement can reject it; a hash mismatch cannot hide the bug.
+                with patch.object(transport, 'SEAL_SHA256', hashlib.sha256(raw).hexdigest()), \
+                        patch.object(transport, 'bounded_file', return_value=raw) as read, \
+                        self.assertRaisesRegex(ValueError, 'count metadata'):
+                    transport.verify(self.root)
+                self.assertEqual(1, read.call_count)
 
     def test_checkout_line_ending_repaint_is_rejected(self):
         def read(path, maximum):

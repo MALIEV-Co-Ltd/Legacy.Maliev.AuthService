@@ -8,11 +8,18 @@ from pathlib import Path
 import sys
 import unittest
 
-SEAL_SHA256 = '5ef751e43ee5497acb783935400f9c3cf36ff8e28804a00d2e4a27f87ad37268'
+SEAL_SHA256 = '7d14c32c96f973f4149b507d0a6bf4f1361bc33b695559c20e2df58ff7e441da'
 PYTHON = ('private_docker_proxy.py', 'hosted_owner.py', 'recover_owner.py',
           'expiry_guard.py', 'verify_results.py', 'test_controls.py',
           'commerce_build_route.py', 'test_commerce_build_route.py',
           'finite_stub_proof.py', 'test_finite_stub_proof.py')
+
+EXPECTED_COUNTS = {
+    'pureControls': 69, 'transportControls': 5, 'commerceBuildRouteControls': 16,
+    'stubProofControls': 34, 'totalControls': 124,
+    'pythonSources': len(PYTHON), 'pythonSourcesCompiled': len(PYTHON) + 2,
+    'psSources': 3,
+}
 
 
 def sha(data):
@@ -40,6 +47,9 @@ def verify(root):
     seal = json.loads(raw)
     if seal['schemaVersion'] != 1 or len(seal['files']) != 27 or seal['candidateNativeAccepted'] is not False:
         raise ValueError('Reviewed transport inventory differs')
+    counts = seal.get('counts')
+    if not isinstance(counts, dict) or counts != EXPECTED_COUNTS or any(type(value) is not int for value in counts.values()):
+        raise ValueError('Reviewed transport count metadata differs')
     seen = set()
     for row in seal['files']:
         name = row['path']
@@ -83,24 +93,24 @@ def main():
     if args.run_pure_controls:
         suite = unittest.defaultTestLoader.loadTestsFromName('test_controls')
         checked = unittest.TextTestRunner(verbosity=2).run(suite)
-        if checked.testsRun != 69 or checked.failures or checked.errors or checked.skipped:
+        if checked.testsRun != EXPECTED_COUNTS['pureControls'] or checked.failures or checked.errors or checked.skipped:
             raise ValueError('Exact pure control suite did not pass')
-        result.update(pureControlsPassed=69, nativeLifecycleQualified=False)
+        result.update(pureControlsPassed=EXPECTED_COUNTS['pureControls'], nativeLifecycleQualified=False)
         suite = unittest.defaultTestLoader.loadTestsFromName('test_source_transport')
         checked = unittest.TextTestRunner(verbosity=2).run(suite)
-        if checked.testsRun != 5 or checked.failures or checked.errors or checked.skipped:
+        if checked.testsRun != EXPECTED_COUNTS['transportControls'] or checked.failures or checked.errors or checked.skipped:
             raise ValueError('Exact transport regression suite did not pass')
-        result['transportControlsPassed'] = 5
+        result['transportControlsPassed'] = EXPECTED_COUNTS['transportControls']
         suite = unittest.defaultTestLoader.loadTestsFromName('test_commerce_build_route')
         checked = unittest.TextTestRunner(verbosity=2).run(suite)
-        if checked.testsRun != 16 or checked.failures or checked.errors or checked.skipped:
+        if checked.testsRun != EXPECTED_COUNTS['commerceBuildRouteControls'] or checked.failures or checked.errors or checked.skipped:
             raise ValueError('Exact BUILD route rejection suite did not pass')
-        result['commerceBuildRouteControlsPassed'] = 16
+        result['commerceBuildRouteControlsPassed'] = EXPECTED_COUNTS['commerceBuildRouteControls']
         suite = unittest.defaultTestLoader.loadTestsFromName('test_finite_stub_proof')
         checked = unittest.TextTestRunner(verbosity=2).run(suite)
-        if checked.testsRun != 34 or checked.failures or checked.errors or checked.skipped:
+        if checked.testsRun != EXPECTED_COUNTS['stubProofControls'] or checked.failures or checked.errors or checked.skipped:
             raise ValueError('Exact stub proof failure-fence controls did not pass')
-        result['stubProofControlsPassed'] = 34
+        result['stubProofControlsPassed'] = EXPECTED_COUNTS['stubProofControls']
     # Verify once more after tests. The tests cannot silently mutate a producer
     # input/source and still create successful transport evidence.
     verify(root)
