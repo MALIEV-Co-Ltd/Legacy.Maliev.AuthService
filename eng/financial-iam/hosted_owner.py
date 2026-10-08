@@ -10,6 +10,7 @@ import json
 import os
 import pathlib
 import re
+import signal
 import subprocess
 import time
 import uuid
@@ -202,6 +203,57 @@ def service(description, argv, *, parent=None, memory="768M", runtime=2400, envi
     if log:
         text += "StandardOutput=append:" + str(log) + "\nStandardError=append:" + str(log) + "\n"
     return text
+
+
+def private_daemon_arguments(root, config_path, daemon_socket, bridge):
+    # This exact user-managed bridge already has its address assigned by ip.
+    # Docker rejects --bridge together with --bip; it discovers that address.
+    return ["/usr/bin/dockerd", "--config-file=" + str(config_path),
+            "--host=unix://" + daemon_socket, "--data-root=" + str(root / "docker-data"),
+            "--exec-root=" + str(root / "docker-exec"), "--pidfile=" + str(root / "daemon.pid"),
+            "--exec-opt=native.cgroupdriver=systemd", "--bridge=" + bridge,
+            "--iptables=false", "--ip6tables=false", "--ip-forward=false", "--ip-masq=false",
+            "--userland-proxy=true", "--ip=127.0.0.1"]
+
+
+def await_daemon_ready(owner, unit, endpoint):
+    """Retry only pre-listen socket races within the existing startup lease."""
+    def expired(signum, frame):
+        raise TimeoutError("Private daemon startup")
+    previous = signal.getsignal(signal.SIGALRM)
+    previous_timer = signal.getitimer(signal.ITIMER_REAL)
+    if previous_timer != (0.0, 0.0):
+        raise RuntimeError("Private daemon readiness timer already owned")
+    signal.signal(signal.SIGALRM, expired)
+    try:
+        signal.setitimer(signal.ITIMER_REAL, 60)
+        return _await_daemon_ready(owner, unit, endpoint)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def _await_daemon_ready(owner, unit, endpoint):
+    deadline = time.monotonic() + 60
+    while True:
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Private daemon startup")
+        state = owner.identity(unit)
+        if state["ActiveState"] not in ("active", "activating") or int(state["MainPID"]) <= 0:
+            raise RuntimeError("Private daemon exited before readiness")
+        retained = owner.units[unit]["mainProcess"]
+        pid = int(state["MainPID"])
+        birth = pathlib.Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19]
+        if pid != retained["pid"] or birth != retained["startTicks"]:
+            raise RuntimeError("Private daemon generation changed during startup")
+        try:
+            result = rpc(endpoint, "GET", "/info")
+        except (ConnectionRefusedError, FileNotFoundError):
+            time.sleep(min(0.25, max(0, deadline - time.monotonic())))
+            continue
+        if time.monotonic() >= deadline:
+            raise TimeoutError("Private daemon startup")
+        return result
 
 
 def recover_containers(daemon, ledger_path, run, parent, cgroup):
@@ -417,21 +469,11 @@ def main():
             json.dump({"cgroup-parent": parent}, stream, sort_keys=True)
             stream.write("\n")
         os.chmod(config_path, 0o600)
-        owned.register(daemon, service("Private financial qualification daemon", ["/usr/bin/dockerd",
-            "--config-file=" + str(config_path),
-            "--host=unix://" + daemon_socket, "--data-root=" + str(root / "docker-data"),
-            "--exec-root=" + str(root / "docker-exec"), "--pidfile=" + str(root / "daemon.pid"),
-            "--exec-opt=native.cgroupdriver=systemd",
-            "--bridge=" + bridge, "--bip=" + address, "--iptables=false", "--ip6tables=false",
-            "--ip-forward=false", "--ip-masq=false", "--userland-proxy=true", "--ip=127.0.0.1"],
+        owned.register(daemon, service("Private financial qualification daemon",
+            private_daemon_arguments(root, config_path, daemon_socket, bridge),
             parent=parent, memory="1G", runtime=2400, log=receipts / "daemon.log"))
         owned.start(daemon)
-        deadline = time.monotonic() + 60
-        while not pathlib.Path(daemon_socket).exists():
-            if time.monotonic() >= deadline:
-                raise TimeoutError("Private daemon startup")
-            time.sleep(0.25)
-        status, info = rpc(daemon_socket, "GET", "/info")
+        status, info = await_daemon_ready(owned, daemon, daemon_socket)
         if status != 200 or info.get("DockerRootDir") != str(root / "docker-data") or info.get("CgroupDriver") != "systemd" or info.get("CgroupVersion") != "2":
             raise RuntimeError("Private daemon identity/cgroup admission failed")
         if not info.get("MemoryLimit") or not info.get("CpuCfsQuota"):

@@ -5,6 +5,7 @@ import json
 import os
 import pathlib
 import re
+import sys
 
 from hosted_owner import OwnedUnits, command, members, properties, recover_containers, stop_expiry_owners, write_coordinator_receipt
 
@@ -179,6 +180,27 @@ def recover(run, directory, coordinator_receipt):
         raise RuntimeError("Unresolved owned recovery; preserve exact handles and receipts")
 
 
+def recover_with_failure_receipt(run, directory, coordinator_receipt):
+    try:
+        recover(run, directory, coordinator_receipt)
+    except BaseException as error:
+        # Diagnostic evidence cannot grant cleanup authority or replace the
+        # original error or any independently retained cleanup receipt.
+        try:
+            kind = type(error)
+            result = {"schemaVersion": 1, "run": run, "stage": "independentRecovery",
+                      "errorType": kind.__name__ if kind.__module__ == "builtins" else "OtherError",
+                      "containersAbsent": None, "bridgeAbsent": None, "runtimeRootAbsent": None,
+                      "registeredFragmentsAbsent": None, "remainingResources": None,
+                      "nativeAccepted": False, "diagnosticOnly": True}
+            target = pathlib.Path(directory) / "recovery-failure.json"
+            with target.open("x", encoding="utf-8") as stream:
+                json.dump(result, stream, sort_keys=True)
+        except BaseException:
+            print("Independent recovery failure receipt unavailable", file=sys.stderr)
+        raise
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", required=True)
@@ -193,7 +215,7 @@ def main():
         raise RuntimeError("Pre-registered finite recovery unit required")
     if observed["MemoryMax"] != str(512 * 1024 ** 2) or observed["MemorySwapMax"] != "0" or observed["RuntimeMaxUSec"] not in ("10min", "600s") or observed["CPUQuotaPerSecUSec"] != "1s":
         raise RuntimeError("Actual recovery capacity/lifetime differs")
-    recover(args.run, args.receipt, args.coordinator_receipt)
+    recover_with_failure_receipt(args.run, args.receipt, args.coordinator_receipt)
 
 
 if __name__ == "__main__":

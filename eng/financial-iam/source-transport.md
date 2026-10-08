@@ -72,3 +72,26 @@ PID and service/slice cgroup omissions remain rejected, as do non-service proces
 claims or timer cgroup claims. Eight added controls replay omission-shaped slice
 and timer start/stop paths using synthetic manager responses. They bring the pure
 total to 96, create no native resources, and do not qualify the actual retry.
+
+The next actual proof (37729678110, main bbca1ab) registered the private daemon
+but failed its first /info connection after the socket path appeared. It never
+dispatched the proxy or workload. Units were quiescent; container, bridge, root
+and fragment absence was not proved. The startup successor retries only refused
+or missing sockets, checks the retained unit/PID/birth before every attempt,
+and applies the original 60-second deadline to the entire synchronous readiness
+operation using a Linux absolute timer. Exit, changed generation, other errors,
+and failed admission remain fatal. An already-owned timer is never replaced.
+Independent recovery failures now retain a separate diagnostic receipt with
+unknown cleanup fields; neither this receipt nor quiescence proves absence.
+The original exception and any cleanup receipt remain intact. Fourteen added
+pure controls bring the total to 110; actual Linux lifecycle proof is pending.
+
+Further source inspection found that the daemon arguments combined --bridge
+with --bip. Moby's daemon configuration validator rejects that combination;
+its user-managed bridge path reads the address already assigned to the bridge.
+The correction removes --bip while retaining the exact owned bridge, address
+assignment, private paths and network isolation flags. Two argument controls
+bring the pure total to 112. The earlier run did not retain daemon output or
+version, so this source defect is not presented as its proven runtime cause.
+Primary source: https://github.com/moby/moby/blob/v28.5.0/daemon/daemon_unix.go
+(verifyDaemonSettings and getDefaultBridgeName/getDefaultBridgeIPAMConf).
