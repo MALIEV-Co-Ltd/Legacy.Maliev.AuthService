@@ -10,7 +10,7 @@ their exact producer hashes, including the two CRLF postimages. The path-specifi
 PowerShell Git attributes and scanner classification remain unchanged.
 
 Source validation compiles twelve Python files before 69 retained owner controls,
-five transport controls, 16 BUILD route rejection controls and 34 stub proof failure-fence controls (124 total). Three PowerShell
+five transport controls, 16 BUILD route rejection controls and 44 stub proof failure-fence controls (134 total). Three PowerShell
 files are parsed without execution. A Windows import alias permits pure mock
 controls only; Linux CI does not use it. These checks establish source provenance
 and rejection behavior, not Linux lifecycle or application acceptance.
@@ -102,7 +102,7 @@ The property parser follows systemd v257 busctl get_property/json_transform_vari
 ExecStart data contains command rows directly; GetUnit method replies retain the
 message argument wrapper. A regression control rejects the extra property wrapper.
 Source: https://github.com/systemd/systemd/blob/v257/src/busctl/busctl.c#L2088
-and #L1649. The 69 owner controls plus 55 other controls are source evidence only.
+and #L1649. The 69 owner controls plus 65 other controls are source evidence only.
 
 The f760 one-shot proof 37751806689 completed coordinator recovery and tiny
 workloads, then failed reset-failed before physical root/fragment removal.
@@ -114,7 +114,25 @@ The failing command names were redacted; the collection race is source-reproduce
 not a proven identification of the actual failed unit. Runtime proof is pending.
 
 The immutable count metadata is enforced before source loading: 69 owner, five
-transport, 16 Commerce and 34 proof controls, total 124; ten sealed Python
+transport, 16 Commerce and 44 proof controls, total 134; ten sealed Python
 sources plus two verifier/control sources are compiled, and three PowerShell
 sources remain in the inventory. Resealed wrong, boolean, missing or unknown
 count metadata is rejected; these checks do not qualify native lifecycle.
+
+The dd3f one-shot proof 37765661900 completed five tiny workloads and independent
+recovery, then failed the final registered-manager-unit absence check. Per-unit
+property lookup loads absent units, and slices can be synthesized without a
+fragment; the predecessor observer can recreate the object it is checking. The
+source successor uses exact ListUnitsByPatterns enumeration, which only inspects
+the existing manager inventory. Every registered service, timer, and slice must
+disappear within the unchanged five-second deadline. Manager calls receive only
+the remaining budget; late empty responses cannot qualify absence. Malformed, incomplete,
+foreign, duplicate, or failing enumeration remains fatal. A separate physical
+cleanup receipt retains verified root/fragment absence and the observed manager
+inventory even if this final fence fails. The earlier run has no explicit
+root/fragment absence flags; its source trace is not upgraded into such receipts.
+Ten added pure controls bring the total to 134; native proof remains pending.
+Primary sources: https://github.com/systemd/systemd/blob/v257/src/core/dbus.c#L251
+https://github.com/systemd/systemd/blob/v257/src/core/slice.c#L138
+https://github.com/systemd/systemd/blob/v257/src/core/unit.c#L1265
+https://github.com/systemd/systemd/blob/v257/src/core/dbus-manager.c#L1105
