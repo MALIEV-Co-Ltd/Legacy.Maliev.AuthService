@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 import unittest
 
-SEAL_SHA256 = '351ab7d871103dbf63b6819af1ce2f7922ab33a6f710efbafd4701688eac068b'
+SEAL_SHA256 = 'e5394e05abfdb26b5a666689ac6307896673aa55466dd6fe302d69594ae8b1c2'
 PYTHON = ('private_docker_proxy.py', 'hosted_owner.py', 'recover_owner.py',
           'expiry_guard.py', 'verify_results.py', 'test_controls.py',
           'commerce_build_route.py', 'test_commerce_build_route.py',
@@ -83,9 +83,9 @@ def main():
     if args.run_pure_controls:
         suite = unittest.defaultTestLoader.loadTestsFromName('test_controls')
         checked = unittest.TextTestRunner(verbosity=2).run(suite)
-        if checked.testsRun != 60 or checked.failures or checked.errors or checked.skipped:
+        if checked.testsRun != 62 or checked.failures or checked.errors or checked.skipped:
             raise ValueError('Exact pure control suite did not pass')
-        result.update(pureControlsPassed=60, nativeLifecycleQualified=False)
+        result.update(pureControlsPassed=62, nativeLifecycleQualified=False)
         suite = unittest.defaultTestLoader.loadTestsFromName('test_source_transport')
         checked = unittest.TextTestRunner(verbosity=2).run(suite)
         if checked.testsRun != 5 or checked.failures or checked.errors or checked.skipped:

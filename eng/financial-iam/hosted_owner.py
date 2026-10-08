@@ -205,6 +205,17 @@ def service(description, argv, *, parent=None, memory="768M", runtime=2400, envi
     return text
 
 
+def private_daemon_arguments(root, config_path, daemon_socket, bridge):
+    # This exact user-managed bridge already has its address assigned by ip.
+    # Docker rejects --bridge together with --bip; it discovers that address.
+    return ["/usr/bin/dockerd", "--config-file=" + str(config_path),
+            "--host=unix://" + daemon_socket, "--data-root=" + str(root / "docker-data"),
+            "--exec-root=" + str(root / "docker-exec"), "--pidfile=" + str(root / "daemon.pid"),
+            "--exec-opt=native.cgroupdriver=systemd", "--bridge=" + bridge,
+            "--iptables=false", "--ip6tables=false", "--ip-forward=false", "--ip-masq=false",
+            "--userland-proxy=true", "--ip=127.0.0.1"]
+
+
 def await_daemon_ready(owner, unit, endpoint):
     """Retry only pre-listen socket races within the existing startup lease."""
     def expired(signum, frame):
@@ -458,13 +469,8 @@ def main():
             json.dump({"cgroup-parent": parent}, stream, sort_keys=True)
             stream.write("\n")
         os.chmod(config_path, 0o600)
-        owned.register(daemon, service("Private financial qualification daemon", ["/usr/bin/dockerd",
-            "--config-file=" + str(config_path),
-            "--host=unix://" + daemon_socket, "--data-root=" + str(root / "docker-data"),
-            "--exec-root=" + str(root / "docker-exec"), "--pidfile=" + str(root / "daemon.pid"),
-            "--exec-opt=native.cgroupdriver=systemd",
-            "--bridge=" + bridge, "--bip=" + address, "--iptables=false", "--ip6tables=false",
-            "--ip-forward=false", "--ip-masq=false", "--userland-proxy=true", "--ip=127.0.0.1"],
+        owned.register(daemon, service("Private financial qualification daemon",
+            private_daemon_arguments(root, config_path, daemon_socket, bridge),
             parent=parent, memory="1G", runtime=2400, log=receipts / "daemon.log"))
         owned.start(daemon)
         status, info = await_daemon_ready(owned, daemon, daemon_socket)

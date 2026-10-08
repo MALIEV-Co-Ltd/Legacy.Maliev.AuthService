@@ -85,3 +85,13 @@ Independent recovery failures now retain a separate diagnostic receipt with
 unknown cleanup fields; neither this receipt nor quiescence proves absence.
 The original exception and any cleanup receipt remain intact. Fourteen added
 pure controls bring the total to 110; actual Linux lifecycle proof is pending.
+
+Further source inspection found that the daemon arguments combined --bridge
+with --bip. Moby's daemon configuration validator rejects that combination;
+its user-managed bridge path reads the address already assigned to the bridge.
+The correction removes --bip while retaining the exact owned bridge, address
+assignment, private paths and network isolation flags. Two argument controls
+bring the pure total to 112. The earlier run did not retain daemon output or
+version, so this source defect is not presented as its proven runtime cause.
+Primary source: https://github.com/moby/moby/blob/v28.5.0/daemon/daemon_unix.go
+(verifyDaemonSettings and getDefaultBridgeName/getDefaultBridgeIPAMConf).

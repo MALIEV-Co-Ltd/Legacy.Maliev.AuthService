@@ -8,9 +8,30 @@ import xml.etree.ElementTree as ET
 from unittest.mock import Mock, patch
 
 from private_docker_proxy import create_plan, rpc
-from hosted_owner import OwnedUnits, properties, stop_expiry_owners, await_daemon_ready
+from hosted_owner import OwnedUnits, properties, stop_expiry_owners, await_daemon_ready, private_daemon_arguments
 from recover_owner import coordinator_barrier, recover, recover_with_failure_receipt
 from verify_results import NS, ORDINARY, CASES, exact_cases, read_trx
+
+
+class PrivateDaemonArgumentsControls(unittest.TestCase):
+    def arguments(self):
+        root = pathlib.Path('/owned-private-root')
+        return private_daemon_arguments(root, root / 'daemon.json', '/owned/daemon.sock', 'af123456789abc')
+
+    def test_user_managed_bridge_does_not_conflict_with_bip(self):
+        arguments = self.arguments()
+        self.assertEqual(['--bridge=af123456789abc'], [arg for arg in arguments if arg.startswith('--bridge=')])
+        self.assertFalse(any(arg.startswith(('--bip=', '--bip6=')) for arg in arguments))
+
+    def test_private_daemon_paths_and_network_isolation_remain_required(self):
+        arguments = self.arguments()
+        self.assertEqual('/usr/bin/dockerd', arguments[0])
+        for required in ('--config-file=', '--data-root=', '--exec-root=', '--pidfile='):
+            self.assertEqual(1, sum(arg.startswith(required) for arg in arguments))
+        self.assertIn('--host=unix:///owned/daemon.sock', arguments)
+        for required in ('--exec-opt=native.cgroupdriver=systemd', '--iptables=false', '--ip6tables=false',
+                         '--ip-forward=false', '--ip-masq=false', '--userland-proxy=true', '--ip=127.0.0.1'):
+            self.assertIn(required, arguments)
 
 
 class RecoveryFailureReceiptControls(unittest.TestCase):
