@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 from private_docker_proxy import create_plan, rpc
 from hosted_owner import OwnedUnits, properties, stop_expiry_owners, await_daemon_ready, private_daemon_arguments
-from recover_owner import coordinator_barrier, recover, recover_with_failure_receipt
+from recover_owner import coordinator_barrier, coordinator_command, recover, recover_with_failure_receipt
 from verify_results import NS, ORDINARY, CASES, exact_cases, read_trx
 
 
@@ -335,6 +335,28 @@ class TrxControls(unittest.TestCase):
         with self.assertRaises(ValueError): exact_cases([], {ORDINARY})
 
 
+class CoordinatorCommandControls(unittest.TestCase):
+    def reply(self, metadata=None):
+        return json.dumps({"type": "a(sasbttttuii)", "data": [[["/usr/bin/python3", ["/usr/bin/python3", "-B", "owned.py"], False] + (metadata or [1, 2, 3, 4, 2416, 1, 7])]]})
+    def object_reply(self):
+        return json.dumps({"type": "o", "data": ["/org/freedesktop/systemd1/unit/owned_2eservice"]})
+    def test_typed_command_is_independent_of_runtime_metadata(self):
+        values=[]
+        for metadata in ([1, 0, 0, 0, 2416, 0, 0], [1, 2, 3, 4, 2416, 1, 7]):
+            with patch("recover_owner.command", side_effect=[self.object_reply(), self.reply(metadata)]): values.append(coordinator_command("owned.service"))
+        self.assertEqual(values[0], values[1])
+    def test_wrong_manager_object_type_is_rejected(self):
+        with patch("recover_owner.command", return_value=json.dumps({"type":"s","data":["foreign"]})):
+            with self.assertRaises(RuntimeError): coordinator_command("owned.service")
+    def test_multiple_execstart_commands_are_rejected(self):
+        value=json.loads(self.reply()); value["data"][0].append(value["data"][0][0])
+        with patch("recover_owner.command", side_effect=[self.object_reply(), json.dumps(value)]):
+            with self.assertRaises(RuntimeError): coordinator_command("owned.service")
+    def test_malformed_argv_is_rejected(self):
+        value=json.loads(self.reply()); value["data"][0][0][1]=[123]
+        with patch("recover_owner.command", side_effect=[self.object_reply(), json.dumps(value)]):
+            with self.assertRaises(RuntimeError): coordinator_command("owned.service")
+
 class OwnerFaultControls(unittest.TestCase):
     def coordinator_receipt(self, directory):
         run = "auth-financial-1-1-123456789abc"
@@ -345,6 +367,12 @@ class OwnerFaultControls(unittest.TestCase):
                  "description": "synthetic unpredictable fence", "cgroup": "/system.slice/" + run + "-control.service",
                  "dispatchAttempted": True, "invocationId": "retained-invocation", "script": str(script),
                  "scriptSha256": hashlib.sha256(script.read_bytes()).hexdigest(), "execStart": "exact retained command"}
+        import sys, os
+        owner.update(executable=os.path.realpath(sys.executable), arguments=["-B", str(script)])
+        configured = {"path": owner["executable"], "arguments": [owner["executable"]] + owner["arguments"], "ignoreErrors": False}
+        patcher = patch("recover_owner.coordinator_command", return_value=configured)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         receipt = pathlib.Path(directory) / "coordinator.json"
         receipt.write_text(json.dumps(owner))
         state = {"Id": owner["unit"], "Transient": "yes", "Description": owner["description"],
@@ -352,6 +380,25 @@ class OwnerFaultControls(unittest.TestCase):
                  "ExecStart": owner["execStart"], "MainPID": "0", "ActiveState": "inactive",
                  "ExecMainStartTimestampMonotonic": "1", "ExecMainExitTimestampMonotonic": "2"}
         return run, receipt, state
+
+    def test_changing_execstart_execution_metadata_does_not_reject_same_command(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, receipt, state = self.coordinator_receipt(directory)
+            before = dict(state, ExecStart="{ unchanged argv ; stop_time=[n/a] ; pid=2416 ; code=(null) ; status=0/0 }")
+            after = dict(state, ExecStart="{ unchanged argv ; stop_time=[Thu 2026-10-08 06:42:28 UTC] ; pid=2416 ; code=exited ; status=1/FAILURE }")
+            with patch("recover_owner.properties", side_effect=[before, after]), patch("recover_owner.command") as stop, patch("recover_owner.members", return_value=[]):
+                result = coordinator_barrier(run, receipt)
+            self.assertTrue(result["quiescenceVerified"])
+            stop.assert_called_once()
+
+    def test_changed_configured_argument_still_prevents_stop(self):
+        with tempfile.TemporaryDirectory() as directory:
+            run, receipt, state = self.coordinator_receipt(directory)
+            owner = json.loads(receipt.read_text())
+            changed = {"path": owner["executable"], "arguments": [owner["executable"], "--foreign"], "ignoreErrors": False}
+            with patch("recover_owner.properties", return_value=state), patch("recover_owner.coordinator_command", return_value=changed), patch("recover_owner.command") as stop:
+                with self.assertRaises(RuntimeError): coordinator_barrier(run, receipt)
+            stop.assert_not_called()
 
     def test_coordinator_barrier_failure_prevents_reading_resource_ledger(self):
         with patch("recover_owner.coordinator_barrier", side_effect=RuntimeError("synthetic live coordinator")), \

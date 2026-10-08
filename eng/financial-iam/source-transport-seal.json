@@ -41,8 +41,8 @@
     },
     {
       "path": "eng/financial-iam/recover_owner.py",
-      "sha256": "8bbef6e97d7dc8fb443c268921f9537683b07a4ca1e3d5aa012b4ddb99a94ebf",
-      "bytes": 12879
+      "sha256": "700dabf0fc6bbeb4975e842dc27323c975f8e9eabcf85c86cd8ab35b2d6f0d47",
+      "bytes": 15006
     },
     {
       "path": "eng/financial-iam/Start-FinancialIamHostedOwner.ps1",
@@ -51,8 +51,8 @@
     },
     {
       "path": "eng/financial-iam/test_controls.py",
-      "sha256": "537e7216dbadf4a5f4889866c08229c0c2fb6bcd862487903ba1806c4814dbe8",
-      "bytes": 28042
+      "sha256": "31667ed42b22650057fd5ad57344cf2786c96e037c486bd58380141c5365335d",
+      "bytes": 31595
     },
     {
       "path": "eng/financial-iam/verify_results.py",
@@ -191,5 +191,6 @@
   "successorSourcePacket": "financial-no-sdk-lifecycle-core-v2-20261008",
   "successorSourcePacketManifestSha256": "a610f4699ee878b3803367de7df97f11f76da2fdad919746538e120a7bf01940",
   "reviewRevisionPreviousSealSha256": "41f6ca396b2f777d305edc68a700740ffc8439a4f2b76e28c57f19d7e09addf7",
-  "unitTypeCorrectionPredecessorSealSha256": "ce56eac7467a1bab2ca719ea4769a8c6679851fb558f6ed4dc8c74866b69d27f"
+  "unitTypeCorrectionPredecessorSealSha256": "ce56eac7467a1bab2ca719ea4769a8c6679851fb558f6ed4dc8c74866b69d27f",
+  "coordinatorCommandPredecessorSealSha256": "e5394e05abfdb26b5a666689ac6307896673aa55466dd6fe302d69594ae8b1c2"
 }

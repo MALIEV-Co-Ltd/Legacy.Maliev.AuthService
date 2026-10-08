@@ -95,3 +95,5 @@ bring the pure total to 112. The earlier run did not retain daemon output or
 version, so this source defect is not presented as its proven runtime cause.
 Primary source: https://github.com/moby/moby/blob/v28.5.0/daemon/daemon_unix.go
 (verifyDaemonSettings and getDefaultBridgeName/getDefaultBridgeIPAMConf).
+
+Coordinator recovery compares typed D-Bus ExecStart executable/argv/ignoreErrors fields, while retaining mutable human-readable timestamps and exit status as diagnostics. Process birth, invocation, source, cgroup and empty-after-stop fences remain required. Native recovery qualification is pending.
