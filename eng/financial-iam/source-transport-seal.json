@@ -16,8 +16,8 @@
     },
     {
       "path": "eng/financial-iam/hosted_owner.py",
-      "sha256": "8a6fbb892a08f1614d69c3b0445ed36ac7ffe288021aeca123725cbb12fdc82f",
-      "bytes": 37416
+      "sha256": "e34750031efb77ed4bb00ea4845dac6c2f5d796ffca47f982ed4d0492643751a",
+      "bytes": 38987
     },
     {
       "path": "eng/financial-iam/Invoke-FinancialIamQualification.ps1",
@@ -41,8 +41,8 @@
     },
     {
       "path": "eng/financial-iam/recover_owner.py",
-      "sha256": "40a71da6c93a04bba9900106f4253f512b29175fff76364538c5af7fe04b6174",
-      "bytes": 11722
+      "sha256": "8bbef6e97d7dc8fb443c268921f9537683b07a4ca1e3d5aa012b4ddb99a94ebf",
+      "bytes": 12879
     },
     {
       "path": "eng/financial-iam/Start-FinancialIamHostedOwner.ps1",
@@ -51,8 +51,8 @@
     },
     {
       "path": "eng/financial-iam/test_controls.py",
-      "sha256": "dbefdb367402c4904470b326f339e0e484a630ff432383c331dd4f1d624bc182",
-      "bytes": 20983
+      "sha256": "f93692a7c2bde88a675d3162ceaf990ac1bace428f3e5c0f7d65b7444761e920",
+      "bytes": 26781
     },
     {
       "path": "eng/financial-iam/verify_results.py",

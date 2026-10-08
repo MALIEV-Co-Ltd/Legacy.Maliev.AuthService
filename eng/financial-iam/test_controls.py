@@ -8,9 +8,114 @@ import xml.etree.ElementTree as ET
 from unittest.mock import Mock, patch
 
 from private_docker_proxy import create_plan, rpc
-from hosted_owner import OwnedUnits, properties, stop_expiry_owners
-from recover_owner import coordinator_barrier, recover
+from hosted_owner import OwnedUnits, properties, stop_expiry_owners, await_daemon_ready
+from recover_owner import coordinator_barrier, recover, recover_with_failure_receipt
 from verify_results import NS, ORDINARY, CASES, exact_cases, read_trx
+
+
+class RecoveryFailureReceiptControls(unittest.TestCase):
+    def test_failure_retains_unknown_cleanup_without_sensitive_message(self):
+        with tempfile.TemporaryDirectory() as directory:
+            existing = pathlib.Path(directory) / 'external-cleanup.json'
+            existing.write_text('existing evidence')
+            failure = RuntimeError('sensitive value')
+            with patch('recover_owner.recover', side_effect=failure), self.assertRaises(RuntimeError) as caught:
+                recover_with_failure_receipt('owned-run', directory, 'coordinator.json')
+            self.assertIs(failure, caught.exception)
+            raw = (pathlib.Path(directory) / 'recovery-failure.json').read_text()
+            self.assertNotIn('sensitive', raw)
+            self.assertLess(len(raw), 2048)
+            row = json.loads(raw)
+            self.assertIsNone(row['containersAbsent'])
+            self.assertIsNone(row['remainingResources'])
+            self.assertFalse(row['nativeAccepted'])
+            self.assertEqual('existing evidence', existing.read_text())
+
+    def test_receipt_failure_preserves_original_exception(self):
+        failure = PermissionError('first')
+        with patch('recover_owner.recover', side_effect=failure), \
+                patch('recover_owner.pathlib.Path.open', side_effect=OSError('second')), \
+                patch('recover_owner.sys.stderr'), self.assertRaises(PermissionError) as caught:
+            recover_with_failure_receipt('owned-run', '/missing', 'coordinator.json')
+        self.assertIs(failure, caught.exception)
+
+    def test_success_does_not_create_failure_receipt(self):
+        with tempfile.TemporaryDirectory() as directory, patch('recover_owner.recover'):
+            recover_with_failure_receipt('owned-run', directory, 'coordinator.json')
+            self.assertEqual([], list(pathlib.Path(directory).iterdir()))
+
+
+class DaemonReadinessControls(unittest.TestCase):
+    def setUp(self):
+        for name, value in [('SIGALRM', 14), ('ITIMER_REAL', 0)]:
+            self.enterContext(patch('hosted_owner.signal.' + name, value, create=True))
+        self.enterContext(patch('hosted_owner.signal.getsignal', return_value='prior-handler'))
+        self.enterContext(patch('hosted_owner.signal.getitimer', return_value=(0.0, 0.0), create=True))
+        self.handler = self.enterContext(patch('hosted_owner.signal.signal'))
+        self.timer = self.enterContext(patch('hosted_owner.signal.setitimer', create=True))
+
+    def exercise(self, replies, states=None, times=None):
+        owner = Mock()
+        owner.units = {'daemon.service': {'mainProcess': {'pid': 123, 'startTicks': '7'}}}
+        owner.identity.side_effect = states
+        owner.identity.return_value = {'ActiveState': 'active', 'MainPID': '123'}
+        stat = ') ' + ' '.join(['0'] * 19 + ['7'])
+        with patch('hosted_owner.pathlib.Path.read_text', return_value=stat), \
+                patch('hosted_owner.rpc', side_effect=replies) as request, \
+                patch('hosted_owner.time.sleep') as sleep, \
+                patch('hosted_owner.time.monotonic', side_effect=times or [0, 1, 2, 3, 4, 5, 6]):
+            result = await_daemon_ready(owner, 'daemon.service', '/private/daemon.sock')
+            return result, request.call_count, sleep.call_count
+
+    def test_refused_socket_then_ready(self):
+        self.assertEqual(((200, {'ready': True}), 2, 1),
+                         self.exercise([ConnectionRefusedError(), (200, {'ready': True})]))
+
+    def test_missing_socket_then_ready(self):
+        self.assertEqual(((200, {}), 2, 1), self.exercise([FileNotFoundError(), (200, {})]))
+
+    def test_persistent_refusal_expires_existing_deadline(self):
+        with self.assertRaises(TimeoutError):
+            self.exercise([ConnectionRefusedError()], times=[0, 1, 2, 60])
+
+    def test_daemon_exit_does_not_retry(self):
+        with self.assertRaisesRegex(RuntimeError, 'exited'):
+            self.exercise([], states=[{'ActiveState': 'failed', 'MainPID': '0'}])
+
+    def test_generation_change_does_not_retry(self):
+        with self.assertRaisesRegex(RuntimeError, 'generation'):
+            self.exercise([], states=[{'ActiveState': 'active', 'MainPID': '124'}])
+
+    def test_non_startup_error_is_not_retried(self):
+        with self.assertRaises(PermissionError):
+            self.exercise([PermissionError()])
+
+    def test_non_success_response_is_returned_for_existing_admission_rejection(self):
+        self.assertEqual(((503, {}), 1, 0), self.exercise([(503, {})]))
+
+    def test_late_response_is_rejected(self):
+        with self.assertRaises(TimeoutError):
+            self.exercise([(200, {})], times=[0, 1, 60])
+
+    def test_absolute_timer_covers_blocking_operation_and_restores_handler(self):
+        def blocked(*args):
+            self.assertEqual((0, 60), self.timer.call_args.args)
+            self.handler.call_args.args[1](14, None)
+        with patch('hosted_owner._await_daemon_ready', side_effect=blocked), self.assertRaises(TimeoutError):
+            await_daemon_ready(None, None, None)
+        self.assertEqual((0, 0), self.timer.call_args.args)
+        self.assertEqual((14, 'prior-handler'), self.handler.call_args.args)
+
+    def test_success_disarms_and_restores(self):
+        self.exercise([(200, {})])
+        self.assertEqual([(0, 60), (0, 0)], [row.args for row in self.timer.call_args_list])
+        self.assertEqual((14, 'prior-handler'), self.handler.call_args.args)
+
+    def test_existing_timer_is_never_replaced(self):
+        with patch('hosted_owner.signal.getitimer', return_value=(10.0, 0.0)), self.assertRaises(RuntimeError):
+            await_daemon_ready(None, None, None)
+        self.timer.assert_not_called()
+        self.handler.assert_not_called()
 
 
 class UnitTypePropertiesControls(unittest.TestCase):
