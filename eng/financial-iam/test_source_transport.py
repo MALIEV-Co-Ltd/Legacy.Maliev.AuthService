@@ -13,7 +13,7 @@ class TransportControls(unittest.TestCase):
 
     def test_exact_reviewed_transport_and_raw_producers_are_preserved(self):
         result = transport.verify(self.root)
-        self.assertEqual(24, result['sealedFiles'])
+        self.assertEqual(27, result['sealedFiles'])
         self.assertEqual(7, result['decodedRawInputs'])
         self.assertFalse(result['candidateNativeAccepted'])
         self.assertEqual(0, result['nativeResourcesCreated'])

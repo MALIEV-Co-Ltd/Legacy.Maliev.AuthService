@@ -1,0 +1,47 @@
+name: Financial owner no-SDK lifecycle proof
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: auth-financial-iam-qualification
+  cancel-in-progress: false
+
+jobs:
+  stub-proof:
+    if: github.repository == 'MALIEV-Co-Ltd/Legacy.Maliev.AuthService' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify immutable source and pure controls before allocation
+        timeout-minutes: 2
+        run: python3 -B eng/financial-iam/verify_source_transport.py --run-pure-controls
+      - name: Existing finite owner with tiny stub workloads and independent recovery
+        timeout-minutes: 12
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $evidence=Join-Path $env:RUNNER_TEMP "financial-stub-$($env:GITHUB_RUN_ID)-$($env:GITHUB_RUN_ATTEMPT)"
+          # Expected admission rejections remain a failed ordinary qualification.
+          # Readback below accepts only their exact history and actual cleanup proof.
+          try {
+            & ./eng/financial-iam/Start-FinancialIamHostedOwner.ps1 -SourceCheckouts $PWD.Path -EvidenceRoot $evidence -Lane auth -Stage proof
+          } catch {
+            if (-not (Test-Path -LiteralPath (Join-Path $evidence 'launcher.json'))) { throw }
+          }
+          & sudo -n /usr/bin/python3 -B ./eng/financial-iam/finite_stub_proof.py --role readback --evidence $evidence
+          if ($LASTEXITCODE -ne 0) { throw 'Actual lifecycle readback or physical cleanup failed.' }
+      - name: Retain bounded synthetic lifecycle receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: financial-stub-lifecycle-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/financial-stub-${{ github.run_id }}-${{ github.run_attempt }}/**/*.json
+          if-no-files-found: error
+          retention-days: 3
