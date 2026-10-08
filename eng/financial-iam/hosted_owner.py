@@ -36,7 +36,24 @@ def command(arguments, timeout=30, *, capture=True):
 def properties(unit):
     result = command(["/usr/bin/systemctl", "show", unit,
                       "--property=Id,FragmentPath,InvocationID,ControlGroup,ActiveState,SubState,Result,MainPID,ExecMainCode,ExecMainStatus,ExecMainStartTimestampMonotonic,ExecMainExitTimestampMonotonic,MemoryMax,MemorySwapMax,TasksMax,RuntimeMaxUSec,CPUQuotaPerSecUSec,Description,Transient,ExecStart"])
-    return dict(line.split("=", 1) for line in result.splitlines() if "=" in line)
+    observed = dict(line.split("=", 1) for line in result.splitlines() if "=" in line)
+    # systemd omits service-only properties for slices and timers. Explicitly
+    # classify those unit types; a missing service PID/cgroup still fails closed.
+    if unit.endswith((".slice", ".timer")):
+        if observed.get("MainPID", "0") != "0":
+            raise RuntimeError("Non-service unit reported a main process")
+        observed.update(MainPID="0", MainProcessApplicable="false")
+    else:
+        observed["MainPID"]
+        observed["MainProcessApplicable"] = "true"
+    if unit.endswith(".timer"):
+        if observed.get("ControlGroup", ""):
+            raise RuntimeError("Timer reported a process cgroup")
+        observed.update(ControlGroup="", ControlGroupApplicable="false")
+    else:
+        observed["ControlGroup"]
+        observed["ControlGroupApplicable"] = "true"
+    return observed
 
 
 def members(cgroup):

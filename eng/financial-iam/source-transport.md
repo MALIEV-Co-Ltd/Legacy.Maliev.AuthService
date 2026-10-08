@@ -62,3 +62,13 @@ remains separate. Coordinator interruption/lease-expiry fault injection and runn
 container lifecycle are not claimed by this initial stub proof.
 
 The revised child finally path retains the first BaseException while attempting bounded wait, exact-handle KILL fallback, pipe closure and pidfd closure even when TERM fails. Cleanup errors remain separate in the receipt. Final child/readback receipt-write errors cannot mask an earlier failure or accept apparent success. Focused controls execute these real helper paths with injected synthetic handles; they create no native resources and cannot replace hosted proof.
+
+The first actual proof run (37715435648) stopped before daemon or workload allocation:
+systemd omitted service-only MainPID on the aggregate slice. Independent recovery
+encountered the same omission; physical root/fragment absence was not proved.
+The causal correction explicitly marks main-process accounting inapplicable for
+slices and timers, and process cgroup accounting inapplicable for timers. Service
+PID and service/slice cgroup omissions remain rejected, as do non-service process
+claims or timer cgroup claims. Eight added controls replay omission-shaped slice
+and timer start/stop paths using synthetic manager responses. They bring the pure
+total to 96, create no native resources, and do not qualify the actual retry.
