@@ -70,12 +70,24 @@ jobs:
       - name: Materialize immutable genuine IAM HTTP build copy
         shell: pwsh
         run: ./eng/Prepare-GenuineIamHttpSource.ps1 -CommittedSourceRoot .dependencies
+      - name: Verify bounded PostgreSQL observation controls and capture baseline
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          python3 -m py_compile scripts/observe_postgres_cleanup.py scripts/test_observe_postgres_cleanup.py
+          python3 -m unittest discover -s scripts -p test_observe_postgres_cleanup.py
+          python3 scripts/observe_postgres_cleanup.py --role before --directory artifacts/ordinary-postgres-cleanup
       - name: Validate .NET solution
         # The Customer API reference is test-only; no production project acquires it.
         uses: MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@e3a6093324a24968876782153286f52db8b29fd8
         with:
           solution: Legacy.Maliev.AuthService.slnx
           use-local-maliev-dependencies: 'true'
+      - name: Capture bounded PostgreSQL lifecycle readback
+        if: always()
+        timeout-minutes: 1
+        shell: bash
+        run: python3 scripts/observe_postgres_cleanup.py --role after --directory artifacts/ordinary-postgres-cleanup
       - name: Build and verify the genuine Auth Defaults IAM HTTP join
         timeout-minutes: 15
         shell: bash
@@ -329,6 +341,7 @@ jobs:
             artifacts/genuine-iam-http
             artifacts/genuine-iam-http-focus
             artifacts/genuine-iam-resource-ledger
+            artifacts/ordinary-postgres-cleanup/*.json
             .genuine-iam-source/source-manifest.json
           if-no-files-found: error
           retention-days: 3
