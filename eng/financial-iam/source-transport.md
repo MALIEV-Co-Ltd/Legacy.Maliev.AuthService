@@ -9,8 +9,8 @@ the proof-stage owner bytes. Its remaining 22 paths and seven encoded Accounting
 their exact producer hashes, including the two CRLF postimages. The path-specific
 PowerShell Git attributes and scanner classification remain unchanged.
 
-Source validation compiles twelve Python files before 38 retained pure controls,
-five transport controls, 16 BUILD route rejection controls and twenty-nine stub proof failure-fence controls. Three PowerShell
+Source validation compiles twelve Python files before 69 retained owner controls,
+five transport controls, 16 BUILD route rejection controls and 34 stub proof failure-fence controls (124 total). Three PowerShell
 files are parsed without execution. A Windows import alias permits pure mock
 controls only; Linux CI does not use it. These checks establish source provenance
 and rejection behavior, not Linux lifecycle or application acceptance.
@@ -102,4 +102,19 @@ The property parser follows systemd v257 busctl get_property/json_transform_vari
 ExecStart data contains command rows directly; GetUnit method replies retain the
 message argument wrapper. A regression control rejects the extra property wrapper.
 Source: https://github.com/systemd/systemd/blob/v257/src/busctl/busctl.c#L2088
-and #L1649. The 69 owner controls plus 50 other controls are source evidence only.
+and #L1649. The 69 owner controls plus 55 other controls are source evidence only.
+
+The f760 one-shot proof 37751806689 completed coordinator recovery and tiny
+workloads, then failed reset-failed before physical root/fragment removal.
+Cleanup now resets only freshly observed failed units; inactive units may be
+collected between show and ResetFailedUnit. Unknown/live state and every manager
+error still fence cleanup. Exact generation and final absence checks remain.
+Primary: https://github.com/systemd/systemd/blob/v257/src/core/dbus-manager.c#L781
+The failing command names were redacted; the collection race is source-reproduced,
+not a proven identification of the actual failed unit. Runtime proof is pending.
+
+The immutable count metadata is enforced before source loading: 69 owner, five
+transport, 16 Commerce and 34 proof controls, total 124; ten sealed Python
+sources plus two verifier/control sources are compiled, and three PowerShell
+sources remain in the inventory. Resealed wrong, boolean, missing or unknown
+count metadata is rejected; these checks do not qualify native lifecycle.
