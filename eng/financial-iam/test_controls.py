@@ -337,7 +337,7 @@ class TrxControls(unittest.TestCase):
 
 class CoordinatorCommandControls(unittest.TestCase):
     def reply(self, metadata=None):
-        return json.dumps({"type": "a(sasbttttuii)", "data": [[["/usr/bin/python3", ["/usr/bin/python3", "-B", "owned.py"], False] + (metadata or [1, 2, 3, 4, 2416, 1, 7])]]})
+        return json.dumps({"type": "a(sasbttttuii)", "data": [["/usr/bin/python3", ["/usr/bin/python3", "-B", "owned.py"], False] + (metadata or [1, 2, 3, 4, 2416, 1, 7])]})
     def object_reply(self):
         return json.dumps({"type": "o", "data": ["/org/freedesktop/systemd1/unit/owned_2eservice"]})
     def test_typed_command_is_independent_of_runtime_metadata(self):
@@ -345,15 +345,19 @@ class CoordinatorCommandControls(unittest.TestCase):
         for metadata in ([1, 0, 0, 0, 2416, 0, 0], [1, 2, 3, 4, 2416, 1, 7]):
             with patch("recover_owner.command", side_effect=[self.object_reply(), self.reply(metadata)]): values.append(coordinator_command("owned.service"))
         self.assertEqual(values[0], values[1])
+    def test_method_message_wrapper_is_rejected_for_property(self):
+        value=json.loads(self.reply()); value["data"]=[value["data"]]
+        with patch("recover_owner.command", side_effect=[self.object_reply(), json.dumps(value)]):
+            with self.assertRaises(RuntimeError): coordinator_command("owned.service")
     def test_wrong_manager_object_type_is_rejected(self):
         with patch("recover_owner.command", return_value=json.dumps({"type":"s","data":["foreign"]})):
             with self.assertRaises(RuntimeError): coordinator_command("owned.service")
     def test_multiple_execstart_commands_are_rejected(self):
-        value=json.loads(self.reply()); value["data"][0].append(value["data"][0][0])
+        value=json.loads(self.reply()); value["data"].append(value["data"][0])
         with patch("recover_owner.command", side_effect=[self.object_reply(), json.dumps(value)]):
             with self.assertRaises(RuntimeError): coordinator_command("owned.service")
     def test_malformed_argv_is_rejected(self):
-        value=json.loads(self.reply()); value["data"][0][0][1]=[123]
+        value=json.loads(self.reply()); value["data"][0][1]=[123]
         with patch("recover_owner.command", side_effect=[self.object_reply(), json.dumps(value)]):
             with self.assertRaises(RuntimeError): coordinator_command("owned.service")
 

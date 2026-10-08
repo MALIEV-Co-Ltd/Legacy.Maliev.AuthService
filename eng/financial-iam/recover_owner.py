@@ -19,10 +19,9 @@ def coordinator_command(unit):
         raise RuntimeError("Ambiguous coordinator manager object")
     document = json.loads(command(["/usr/bin/busctl", "--json=short", "get-property", "org.freedesktop.systemd1",
         reply["data"][0], "org.freedesktop.systemd1.Service", "ExecStart"]))
-    if document.get("type") != "a(sasbttttuii)" or not isinstance(document.get("data"), list) or len(document["data"]) != 1 or \
-            not isinstance(document["data"][0], list) or len(document["data"][0]) != 1:
+    if document.get("type") != "a(sasbttttuii)" or not isinstance(document.get("data"), list) or len(document["data"]) != 1:
         raise RuntimeError("Exactly one typed coordinator command required")
-    row = document["data"][0][0]
+    row = document["data"][0]
     if not isinstance(row, list) or len(row) != 10 or not isinstance(row[0], str) or \
             not isinstance(row[1], list) or not row[1] or any(not isinstance(value, str) for value in row[1]) or \
             type(row[2]) is not bool or any(type(value) is not int for value in row[3:]):
