@@ -1,0 +1,136 @@
+name: Auth exact customer identity validation
+on:
+  workflow_dispatch:
+    inputs:
+      request_base64:
+        description: Root-reviewed fresh one-run Auth request
+        required: true
+        type: string
+      request_sha256:
+        description: Exact Root-reviewed request SHA256
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: auth-financial-iam-qualification
+  cancel-in-progress: false
+jobs:
+  auth-identity:
+    if: github.repository == 'MALIEV-Co-Ltd/Legacy.Maliev.AuthService' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 110
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Exact request and source controls before allocation
+        timeout-minutes: 3
+        env:
+          AUTH_SOURCE_ROOT: ${{ github.workspace }}
+          REQUEST_BASE64: ${{ inputs.request_base64 }}
+          REQUEST_SHA256: ${{ inputs.request_sha256 }}
+        run: |
+          set -euo pipefail
+          ulimit -v 524288
+          ulimit -t 30
+          python3 -B eng/customer-self-identity-validation/admission.py
+          python3 -B eng/customer-self-identity-validation/test_route.py
+          python3 -B -O eng/customer-self-identity-validation/test_route.py
+      - name: Provision the SDK using the existing accepted action
+        timeout-minutes: 5
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.401
+      - name: Exact Legacy.Maliev.AuthService
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.AuthService
+          ref: ee0e314ce37a127e6e3dd45d659b5d7ba95b3a9b
+          fetch-depth: 0
+          path: .source-checkouts/Legacy.Maliev.AuthService
+          persist-credentials: false
+      - name: Exact Legacy.Maliev.ServiceDefaults
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+          ref: 7edcd961024868513fd5f373cab3dcb261197f77
+          fetch-depth: 0
+          path: .source-checkouts/Legacy.Maliev.ServiceDefaults
+          persist-credentials: false
+      - name: Exact Legacy.Maliev.CompatibilityContracts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts
+          ref: 78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7
+          fetch-depth: 0
+          path: .source-checkouts/Legacy.Maliev.CompatibilityContracts
+          persist-credentials: false
+      - name: Exact Legacy.Maliev.CustomerService
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.CustomerService
+          ref: 4eedecd81d1d8dcb4f38d8f76e51e7e9cb2110be
+          fetch-depth: 0
+          path: .source-checkouts/Legacy.Maliev.CustomerService
+          persist-credentials: false
+      - name: Exact Maliev.IAMService
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Maliev.IAMService
+          ref: 4fe6642e5674013de9a3672505aec898fdcae0ed
+          fetch-depth: 0
+          path: .source-checkouts/Maliev.IAMService
+          persist-credentials: false
+      - name: Exact GenuineIamDefaults
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
+          ref: 7b3099bf67d0f17e56cfdb3dcf36541304abaac2
+          fetch-depth: 0
+          path: .source-checkouts/GenuineIamDefaults
+          persist-credentials: false
+      - name: Exact Maliev.Aspire
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Maliev.Aspire
+          ref: 01d506203763b914e237268a8746f1406423df86
+          fetch-depth: 0
+          path: .source-checkouts/Maliev.Aspire
+          persist-credentials: false
+      - name: Exact Maliev.MessagingContracts
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Maliev.MessagingContracts
+          ref: 559a00db0c7920a5247fdff60d4476ad23a9a501
+          fetch-depth: 0
+          path: .source-checkouts/Maliev.MessagingContracts
+          persist-credentials: false
+      - name: Exact Legacy.Maliev.Workflows
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: MALIEV-Co-Ltd/Legacy.Maliev.Workflows
+          ref: e3a6093324a24968876782153286f52db8b29fd8
+          fetch-depth: 0
+          path: .source-checkouts/Legacy.Maliev.Workflows
+          persist-credentials: false
+      - name: Manager-owned Auth validation and mandatory shutdown cleanup
+        timeout-minutes: 90
+        env:
+          REQUEST_SHA256: ${{ inputs.request_sha256 }}
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_REPOSITORY,GITHUB_EVENT_NAME,GITHUB_SHA,GITHUB_RUN_ID,GITHUB_RUN_ATTEMPT,GITHUB_REF,RUNNER_TEMP,REQUEST_SHA256 /usr/bin/python3 -B eng/customer-self-identity-validation/caller.py --role dispatch --source "$PWD" --evidence "$RUNNER_TEMP/auth-identity-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+      - name: Retain exact Auth validation and cleanup receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: auth-identity-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/auth-identity-${{ github.run_id }}-${{ github.run_attempt }}/**
+            ${{ runner.temp }}/auth-identity-${{ github.run_id }}-${{ github.run_attempt }}.caller-intent.json
+            ${{ runner.temp }}/auth-cs9-request-${{ github.run_id }}.json
+          retention-days: 7
+          if-no-files-found: error

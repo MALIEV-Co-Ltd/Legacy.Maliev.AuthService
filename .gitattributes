@@ -8,3 +8,5 @@ eng/customer-refresh-native-create-policy-v1-20261009/** -text
 eng/customer-refresh-owner-caller/** -text
 
 eng/customer-self-identity-intake/** -text
+
+eng/customer-self-identity-validation/** -text
