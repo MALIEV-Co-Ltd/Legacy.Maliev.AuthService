@@ -1,0 +1,46 @@
+{
+  "schema": 2,
+  "sourceOnly": true,
+  "files": [
+    {
+      "path": "admission.py",
+      "sha256": "5c0e943b74c5cf891ac2cbce086fff9b1f9e8e0124226f10327c9efea640179e"
+    },
+    {
+      "path": "auth_owner.py",
+      "sha256": "f3beb0570b6fee26630ff31cbe99e57672f53dec9b94745a6ecbf0357a4236c5"
+    },
+    {
+      "path": "caller.py",
+      "sha256": "c9024a3cea42fc464faa3ad84f4e448c3645f53772a81274f3fa81fe143badcb"
+    },
+    {
+      "path": "proxy.py",
+      "sha256": "2d064e9cf4b534c1cd9eab22df2a6c88d09d0a5b08e308e3aee3e969ac3ac4b8"
+    },
+    {
+      "path": "readback.py",
+      "sha256": "7ee27e9043758d208e292db6855661ae295e9e9e359a2b72406610efaa9b71d1"
+    },
+    {
+      "path": "route.py",
+      "sha256": "380ee098e93193b75229abf5e974affd32ee33ffc133c90facd53135d15d3ad8"
+    },
+    {
+      "path": "test_caller.py",
+      "sha256": "afcfd80f7dd8141cc6fd5033b67277f47c4a8484937f8252bb2240858d0f99cc"
+    },
+    {
+      "path": "test_route.py",
+      "sha256": "b3d4d345f0d23d02d17e4551ba33411b832c1a42d07ab28d14b7ab730c36930e"
+    },
+    {
+      "path": "worker.py",
+      "sha256": "da1ca2c22089605af61140ab9523309f94f177d932bc1d59981bfe019fcf0758"
+    },
+    {
+      "path": "workflow.yml",
+      "sha256": "77fdc3823f77ea023ae7c180d397923de424de48cea886b2f936433a7f7b7ea7"
+    }
+  ]
+}
