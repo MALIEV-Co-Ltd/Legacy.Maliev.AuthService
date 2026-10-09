@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "files": [
+    {
+      "path": "consumer-CustomerAuthenticationClient.cs",
+      "bytes": 27241,
+      "sha256": "fa7f185ad1cc070e963a7dd2731ca20523856e93cfda663274b7ab1f128594e1"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Application/AuthenticationService.cs",
+      "bytes": 6352,
+      "sha256": "cee54be98d074f838e320517f3d54fec706d8be17a4920c4ad507c493fd10e0e"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityReader.cs",
+      "bytes": 4438,
+      "sha256": "c43ac458d1244d343a400ffb765be09176b0d15718a56dbc6dda89bfcaf0d333"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Tests/CustomerRefreshAdmissionTests.cs",
+      "bytes": 3791,
+      "sha256": "34842005117cdd4c4af45b6d9b7b6768d10910a265748b63fbcb3815c84f44c7"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Tests/LegacyIdentityReaderTests.cs",
+      "bytes": 11560,
+      "sha256": "4869d60ebc06fd8eeb22aaa9baa38263ecfbbccd35eef4c8de75693bce133809"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Tests/RefreshSessionIdentityBoundaryHttpTests.cs",
+      "bytes": 25964,
+      "sha256": "83f6556b6837e2f060b47caded17b32a220ac921b6af1b44df59eeca71284f78"
+    },
+    {
+      "path": "manifest.json",
+      "bytes": 5452,
+      "sha256": "4a663e17df21579d26d8313ed30eacf833794e62e33e047e943811852e514cad"
+    },
+    {
+      "path": "original/Maliev.AuthService.Api/Controllers/AuthController.cs",
+      "bytes": 7436,
+      "sha256": "108964703b0acf073e5d0e0081341d63a54d244d473bcc44b43efb50680d4f6c"
+    },
+    {
+      "path": "original/Maliev.Web/Pages/Account/Login.cshtml.cs",
+      "bytes": 16118,
+      "sha256": "c3c13d76f3d6061c0bf44e1ee2109959aeecbc06ea0a4a03a730631d9222d5ff"
+    },
+    {
+      "path": "original/Maliev.Web/Security/TemporaryPasswordCredential.cs",
+      "bytes": 5635,
+      "sha256": "cbc606a25658b8eb0f70616567e206dcd4b855be260960b693ece1819d69243d"
+    },
+    {
+      "path": "original/Maliev.Web.Tests/InitialPasswordSetupTests.cs",
+      "bytes": 27158,
+      "sha256": "ac68a12fc7dc3c9979bf3c90c8f4f2c24333d6ea792a3c85e3e6a7291757f17c"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1622,
+      "sha256": "7131b9dbe56e995c636009c52c80626288b40ce8808ac3a26f6425ef7ae60c5c"
+    },
+    {
+      "path": "source.patch",
+      "bytes": 12117,
+      "sha256": "8127940e4e9a6708ec2128eef586b2c2cc913a0aa41927c87315f3ddd0da6c9c"
+    }
+  ]
+}
