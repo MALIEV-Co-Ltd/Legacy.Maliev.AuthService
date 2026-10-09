@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "status": "SOURCE_PATCH_PREPARED - actual build/regression/suite UNRUN",
+  "base": "54a8358d4ba8c5d8c8dcf39d9cec9429cd951edf",
+  "files": [
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/CustomerSelfIdentityReader.cs",
+      "bytes": 1536,
+      "sha256": "2cfe3432abe0c090fb1467522fbbbc172425aa37ff14b3274086b02a64546c92",
+      "parentSha256": "fbebc8b26af2fe07cadc85630e67813d476791e8199017e2d50aa891493f7037",
+      "gitNormalizedPostimageSha256": "2cfe3432abe0c090fb1467522fbbbc172425aa37ff14b3274086b02a64546c92"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/CustomerSelfIdentityTests.cs",
+      "bytes": 12171,
+      "sha256": "ee677e59507e54272865364f3624080618be8c08bc645acfac43fd1e5a595b8d",
+      "parentSha256": "9b175cdde26cd3c128c940ad2a45d7aac36592368802ac832b7aad1a230708a7",
+      "gitNormalizedPostimageSha256": "ee677e59507e54272865364f3624080618be8c08bc645acfac43fd1e5a595b8d"
+    }
+  ],
+  "originalProvenance": [
+    {
+      "revision": "5fac706a7983a6d359b39acbd670e6800afe020e",
+      "parents": [],
+      "path": "Maliev.Identities/ApplicationUser.cs",
+      "bytes": 1076,
+      "sha256": "1f5f25cdcd8dbe84cce608b61c7a043ffbc69560277f6c0375f7c6c9ffbd223c",
+      "scope": "assigned identity authority producer"
+    },
+    {
+      "revision": "5fac706a7983a6d359b39acbd670e6800afe020e",
+      "parents": [],
+      "path": "Maliev.Identities/ApplicationUserDbContext.cs",
+      "bytes": 1246,
+      "sha256": "208a26eb0bca28e961ca33bc2bb05d3d61647246d54cddc7de3f87339baedc4d",
+      "scope": "assigned identity authority producer"
+    },
+    {
+      "revision": "135e526d0dab85c415b3afdcefd7b70fe2c82e2f",
+      "parents": [
+        "eb11c81a6c759e1d4bcd1a1b3b28dc5f30cc02cb"
+      ],
+      "path": "Maliev.Web/Areas/Member/Pages/Account/Manage/Profile.cshtml.cs",
+      "bytes": 16228,
+      "sha256": "7b8fc708f5e10bf1dd4ada0b71986ed3e3caedee4a7473a41468ddc773eb6c5e",
+      "scope": "original GetUser consumer context"
+    },
+    {
+      "revision": "e25c833ee9a6eea2740210e850b2663d9c292d38",
+      "parents": [
+        "04c9bb0d80ddc9d8be97af632c71f1348307c332"
+      ],
+      "path": "Maliev.Web/Security/TemporaryPasswordCredential.cs",
+      "bytes": 5635,
+      "sha256": "cbc606a25658b8eb0f70616567e206dcd4b855be260960b693ece1819d69243d",
+      "scope": "initial-password lifecycle consumer context; not whole assigned-source closure"
+    },
+    {
+      "revision": "e25c833ee9a6eea2740210e850b2663d9c292d38",
+      "parents": [
+        "04c9bb0d80ddc9d8be97af632c71f1348307c332"
+      ],
+      "path": "Maliev.Web/Pages/Account/SetInitialPassword.cshtml.cs",
+      "bytes": 9181,
+      "sha256": "27108dce485146878d961480cda5491ee789d94a350cb2d27b4e8f6957386ec8",
+      "scope": "initial-password lifecycle consumer context; not whole assigned-source closure"
+    }
+  ],
+  "currentConsumer": {
+    "repository": "Legacy.Maliev.Web",
+    "revision": "cc315c9ea53a08006aca2a6648d8a82b10a4d93b",
+    "path": "Legacy.Maliev.Web.Infrastructure/CustomerAuthenticationClient.cs",
+    "sha256": "fa7f185ad1cc070e963a7dd2731ca20523856e93cfda663274b7ab1f128594e1",
+    "forbiddenMapping": "NotAuthorized"
+  },
+  "behavior": "Current PasswordSetupRequired denies customer contact projection even for a previously issued signed token",
+  "responseContract": "Existing 403 and unchanged customerId/email/mobile success DTO; no endpoint or schema added",
+  "regression": "NormalWebIdentityUserPolicy_CurrentInitialPasswordState_RechecksPreviouslyIssuedTokenWithoutMutatingIdentity",
+  "focusedFilter": "FullyQualifiedName~NormalWebIdentityUserPolicy_",
+  "focusedWiring": "Existing normal HTTP step; reusable workflow and frozen qualification graphs unchanged",
+  "predictedBaseline": "New regression should fail expecting403 because baseline returns200; actual RED UNRUN",
+  "expectedSuiteCount": 936,
+  "actualBuild": "UNRUN",
+  "actualFocused": "UNRUN",
+  "actualSuite": "UNRUN",
+  "nativeAccepted": false,
+  "wholeSourceClosed": false,
+  "productionOrCustomerDataChanged": false
+}
