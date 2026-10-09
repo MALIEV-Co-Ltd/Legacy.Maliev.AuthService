@@ -6,6 +6,8 @@ on:
       - '.gitattributes'
       - '.github/workflows/customer-refresh-owner-source.yml'
       - 'eng/Test-CustomerRefreshOwnerSource.py'
+      - 'eng/customer-refresh-owner-caller/**'
+      - '.github/workflows/customer-refresh-owner-no-sdk.yml'
       - 'eng/customer-refresh-no-sdk-adapter-v2-20261009/**'
       - 'eng/customer-refresh-native-create-policy-v1-20261009/**'
   push:
@@ -14,6 +16,8 @@ on:
       - '.gitattributes'
       - '.github/workflows/customer-refresh-owner-source.yml'
       - 'eng/Test-CustomerRefreshOwnerSource.py'
+      - 'eng/customer-refresh-owner-caller/**'
+      - '.github/workflows/customer-refresh-owner-no-sdk.yml'
       - 'eng/customer-refresh-no-sdk-adapter-v2-20261009/**'
       - 'eng/customer-refresh-native-create-policy-v1-20261009/**'
 
@@ -41,3 +45,4 @@ jobs:
           ulimit -v 524288
           ulimit -t 30
           timeout --foreground --signal=TERM --kill-after=5s 60s python3 -B eng/Test-CustomerRefreshOwnerSource.py
+          timeout --foreground --signal=TERM --kill-after=5s 60s python3 -B eng/customer-refresh-owner-caller/source_check.py

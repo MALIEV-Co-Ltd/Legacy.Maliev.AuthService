@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "sourceOnly": true,
+  "nativeAccepted": false,
+  "predecessorSealSha256": "05613d0839b1c21953b509dacd5bd21127e8e7364cf8cca5288ce624998f1315",
+  "files": {
+    "caller.py": "c6f7cd6699f4e11d6544899c797f4cc128c35ba7ef1cf140a9d2e935bd766760",
+    "test_caller.py": "0df331b9f3f8c51a764d071add86106301ec33c0cd9959934570fb19e6aff417",
+    "source_check.py": "57533ea45a500e9efe325878a8efc3af4202452df0ba04241c30280690a5e557",
+    "workflow.yml": "0c93294fbb3f3d98e7fe740f6c9fbdb1ef0cc47bb29c72d63e16ca14ac975982",
+    "README.md": "3d2c5b4734aa8561b0b7bbfccf383f947ceb477f20f081055ead905f0ebca291",
+    "source-validation.json": "839244260e14277734ec5aaaee75b8dc3bddbc1250b1cd2866cd3e24de8fb84e"
+  }
+}
