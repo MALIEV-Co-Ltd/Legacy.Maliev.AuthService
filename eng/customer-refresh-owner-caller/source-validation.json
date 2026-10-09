@@ -1,0 +1,20 @@
+{
+  "compileFirst": 3,
+  "normalControls": 18,
+  "optimizedControls": 18,
+  "actionlint": "PASS",
+  "scopedGitleaks": "PASS",
+  "nativeAccepted": false,
+  "gitBoundPublishedPreflight": "UNRUN - off-repository proposal",
+  "budgetSeconds": {
+    "wait": 4380,
+    "stop": 810,
+    "absence": 10,
+    "finiteChecks": 185,
+    "total": 5385,
+    "step": 5400,
+    "job": 6000
+  },
+  "canonicalUnitSuffix": ".service",
+  "v2ImmutablePinsVerified": true
+}

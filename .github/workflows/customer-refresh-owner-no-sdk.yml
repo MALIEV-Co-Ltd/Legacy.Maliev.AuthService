@@ -1,0 +1,57 @@
+name: Auth owner no-SDK lifecycle qualification
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact reviewed main source commit
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: auth-financial-iam-qualification
+  cancel-in-progress: false
+jobs:
+  auth-proof:
+    if: github.repository == 'MALIEV-Co-Ltd/Legacy.Maliev.AuthService' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 100
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Exact source and pure controls before allocation
+        timeout-minutes: 3
+        env:
+          EXPECTED_SOURCE: ${{ inputs.source_commit }}
+          EVENT_SOURCE: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          test "$EXPECTED_SOURCE" = "$EVENT_SOURCE"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_SOURCE"
+          ulimit -v 524288
+          ulimit -t 30
+          timeout --foreground --signal=TERM --kill-after=5s 60s python3 -B eng/Test-CustomerRefreshOwnerSource.py
+          timeout --foreground --signal=TERM --kill-after=5s 60s python3 -B eng/customer-refresh-owner-caller/source_check.py
+      - name: Manager-owned finite caller and shutdown cleanup
+        timeout-minutes: 90
+        env:
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+          GITHUB_SHA: ${{ github.sha }}
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          sudo -n --preserve-env=GITHUB_REPOSITORY,GITHUB_EVENT_NAME,GITHUB_SHA,GITHUB_RUN_ID,GITHUB_RUN_ATTEMPT /usr/bin/python3 -B eng/customer-refresh-owner-caller/caller.py --role dispatch --source "$PWD" --evidence "$RUNNER_TEMP/auth-proof-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+      - name: Retain lifecycle and cleanup receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: auth-owner-no-sdk-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/auth-proof-${{ github.run_id }}-${{ github.run_attempt }}/**/*.json
+            ${{ runner.temp }}/auth-proof-${{ github.run_id }}-${{ github.run_attempt }}.caller-intent.json
+          if-no-files-found: error
+          retention-days: 3
