@@ -1,0 +1,76 @@
+diff --git a/Legacy.Maliev.AuthService.Infrastructure/CustomerSelfIdentityReader.cs b/Legacy.Maliev.AuthService.Infrastructure/CustomerSelfIdentityReader.cs
+index 532f100..2262ccc 100644
+--- a/Legacy.Maliev.AuthService.Infrastructure/CustomerSelfIdentityReader.cs
++++ b/Legacy.Maliev.AuthService.Infrastructure/CustomerSelfIdentityReader.cs
+@@ -11,15 +11,15 @@ public sealed class CustomerSelfIdentityReader(CustomerIdentityDbContext custome
+     {
+         var row = await customers.Users.AsNoTracking()
+             .Where(value => value.Id == identityId)
+-            .Select(value => new { value.DatabaseID, value.Email, value.MobileNumber, value.EmailConfirmed, value.LockoutEnabled, value.LockoutEnd })
++            .Select(value => new { value.DatabaseID, value.Email, value.MobileNumber, value.EmailConfirmed, value.PasswordSetupRequired, value.LockoutEnabled, value.LockoutEnd })
+             .SingleOrDefaultAsync(cancellationToken);
+         if (row is null)
+         {
+             return new(CustomerSelfIdentityStatus.Missing);
+         }
+ 
+-        // Match LegacyIdentityReader's current customer eligibility rules.
+-        if (expectedCustomerId <= 0 || row.DatabaseID != expectedCustomerId || !row.EmailConfirmed
++        // Recheck current customer admission rather than relying on a previously issued token.
++        if (expectedCustomerId <= 0 || row.DatabaseID != expectedCustomerId || !row.EmailConfirmed || row.PasswordSetupRequired
+             || (row.LockoutEnabled && row.LockoutEnd is { } lockout && lockout >= timeProvider.GetUtcNow()))
+         {
+             return new(CustomerSelfIdentityStatus.Forbidden);
+diff --git a/Legacy.Maliev.AuthService.Tests/CustomerSelfIdentityTests.cs b/Legacy.Maliev.AuthService.Tests/CustomerSelfIdentityTests.cs
+index f0a4a4e..3acdae5 100644
+--- a/Legacy.Maliev.AuthService.Tests/CustomerSelfIdentityTests.cs
++++ b/Legacy.Maliev.AuthService.Tests/CustomerSelfIdentityTests.cs
+@@ -109,6 +109,48 @@ public sealed class CustomerSelfIdentityTests(PostgresFixture postgres)
+         }
+     }
+ 
++    [Fact]
++    public async Task NormalWebIdentityUserPolicy_CurrentInitialPasswordState_RechecksPreviouslyIssuedTokenWithoutMutatingIdentity()
++    {
++        await using var factory = await SelfIdentityFactory.CreateAsync(postgres);
++        using var client = factory.CreateClient();
++        client.DefaultRequestHeaders.Authorization = new("Bearer", factory.Token());
++        using var before = await client.GetAsync(Route);
++        Assert.Equal(HttpStatusCode.OK, before.StatusCode);
++
++        var row = await factory.Customers.Users.SingleAsync(value => value.Id == "customer-42");
++        var passwordHash = row.PasswordHash;
++        var securityStamp = row.SecurityStamp;
++        row.PasswordSetupRequired = true;
++        await factory.Customers.SaveChangesAsync();
++
++        using var denied = await client.GetAsync(Route);
++        Assert.Equal(HttpStatusCode.Forbidden, denied.StatusCode);
++        var deniedBody = await denied.Content.ReadAsStringAsync();
++        Assert.DoesNotContain("current@example.com", deniedBody);
++        Assert.DoesNotContain("+66812345678", deniedBody);
++        Assert.True(denied.Headers.CacheControl?.NoStore);
++        Assert.True(denied.Headers.CacheControl?.Private);
++        Assert.False(denied.Headers.Contains("Set-Cookie"));
++        await factory.Customers.Entry(row).ReloadAsync();
++        Assert.True(row.PasswordSetupRequired);
++        Assert.Equal(passwordHash, row.PasswordHash);
++        Assert.Equal(securityStamp, row.SecurityStamp);
++        Assert.Equal(42, row.DatabaseID);
++
++        row.PasswordSetupRequired = false;
++        await factory.Customers.SaveChangesAsync();
++        using var restored = await client.GetAsync(Route);
++        Assert.Equal(HttpStatusCode.OK, restored.StatusCode);
++        using var json = JsonDocument.Parse(await restored.Content.ReadAsStringAsync());
++        Assert.Equal(42, json.RootElement.GetProperty("customerId").GetInt32());
++        Assert.Equal("current@example.com", json.RootElement.GetProperty("email").GetString());
++        await factory.Customers.Entry(row).ReloadAsync();
++        Assert.False(row.PasswordSetupRequired);
++        Assert.Equal(passwordHash, row.PasswordHash);
++        Assert.Equal(securityStamp, row.SecurityStamp);
++    }
++
+     [Fact]
+     public async Task Get_CustomerToken_CannotUseEmployeeIdentityAdminEndpoint()
+     {

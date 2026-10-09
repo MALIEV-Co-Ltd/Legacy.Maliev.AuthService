@@ -1,0 +1,57 @@
+name: Customer self identity intake source controls
+on:
+  pull_request:
+    paths:
+      - '.gitattributes'
+      - '.github/workflows/customer-self-identity-intake-source.yml'
+      - 'eng/customer-self-identity-intake/**'
+      - 'eng/customer-refresh-intake/controls/intake.py'
+  push:
+    branches: [main]
+    paths:
+      - '.gitattributes'
+      - '.github/workflows/customer-self-identity-intake-source.yml'
+      - 'eng/customer-self-identity-intake/**'
+      - 'eng/customer-refresh-intake/controls/intake.py'
+permissions:
+  contents: read
+concurrency:
+  group: customer-self-identity-intake-source-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  source-controls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compile first and verify only immutable intake source
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          set -euo pipefail
+          ulimit -v 524288
+          ulimit -t 30
+          for mode in normal optimized; do
+            flags=()
+            if [[ "$mode" = optimized ]]; then flags=(-O); fi
+            timeout --foreground --signal=TERM --kill-after=5s 40s python3 -B "${flags[@]}" - <<'PY'
+          from pathlib import Path
+          import sys, unittest
+          root=Path.cwd()
+          controls=root/'eng/customer-self-identity-intake/controls'
+          for name in ('intake_adapter.py','test_intake_adapter.py'):
+              compile((controls/name).read_bytes(),str(controls/name),'exec')
+          sys.path.insert(0,str(controls))
+          import test_intake_adapter as tests
+          tests.BACKEND_ROOT=root
+          tests.PACKET=root/'eng/customer-self-identity-intake/customer-self-identity-setup-admission-source-v1-20261009'
+          suite=unittest.defaultTestLoader.loadTestsFromModule(tests)
+          if suite.countTestCases()!=21:raise ValueError('Exact 21 source controls required')
+          result=unittest.TextTestRunner(verbosity=2).run(suite)
+          if not result.wasSuccessful() or result.skipped:raise SystemExit(1)
+          print('Source controls only; SDK and native qualification unrun')
+          PY
+          done

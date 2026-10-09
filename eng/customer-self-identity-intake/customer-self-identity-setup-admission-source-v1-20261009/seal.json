@@ -1,0 +1,11 @@
+{
+  "schema": 1,
+  "sourceOnly": true,
+  "nativeAccepted": false,
+  "files": {
+    "manifest.json": "c4675a28c8dca1f3a46246dd067b0b3fdf90b6fc413858695ff43a239f1274c6",
+    "patch.diff": "74fedda903ebc4acb1f4b9c9efa9f94b50f06faad237f4abfa71f7ed9a704c14",
+    "files/Legacy.Maliev.AuthService.Infrastructure/CustomerSelfIdentityReader.cs": "2cfe3432abe0c090fb1467522fbbbc172425aa37ff14b3274086b02a64546c92",
+    "files/Legacy.Maliev.AuthService.Tests/CustomerSelfIdentityTests.cs": "ee677e59507e54272865364f3624080618be8c08bc645acfac43fd1e5a595b8d"
+  }
+}
