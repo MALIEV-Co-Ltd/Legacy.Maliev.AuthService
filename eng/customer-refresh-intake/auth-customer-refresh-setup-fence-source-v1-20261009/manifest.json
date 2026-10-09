@@ -1,0 +1,125 @@
+{
+  "schemaVersion": 1,
+  "status": "SOURCE_REVIEW_CLEAR_NATIVE_UNRUN",
+  "owner": "Legacy.Maliev.AuthService",
+  "base": "85a00d4bb54cf95199ee67dfd97d2b168233ff68",
+  "files": [
+    {
+      "path": "Legacy.Maliev.AuthService.Application/AuthenticationService.cs",
+      "bytes": 6352,
+      "sha256": "cee54be98d074f838e320517f3d54fec706d8be17a4920c4ad507c493fd10e0e",
+      "parentSha256": "2a058a79c552fe1d2a1fcb07c0af935e3504f04f2957daf3b9753156e99b3879"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityReader.cs",
+      "bytes": 4438,
+      "sha256": "c43ac458d1244d343a400ffb765be09176b0d15718a56dbc6dda89bfcaf0d333",
+      "parentSha256": "e40f72c5c2545f3a78031c7e2c772cc26f2ace11e899ad28ed101fdf222bd2f7"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/CustomerRefreshAdmissionTests.cs",
+      "bytes": 3791,
+      "sha256": "34842005117cdd4c4af45b6d9b7b6768d10910a265748b63fbcb3815c84f44c7",
+      "parentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/LegacyIdentityReaderTests.cs",
+      "bytes": 11560,
+      "sha256": "4869d60ebc06fd8eeb22aaa9baa38263ecfbbccd35eef4c8de75693bce133809",
+      "parentSha256": "f82b429aee842c1b09ecfb3ec9c87a5523d8ccf264cc782b26053785722993bd"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/RefreshSessionIdentityBoundaryHttpTests.cs",
+      "bytes": 25964,
+      "sha256": "83f6556b6837e2f060b47caded17b32a220ac921b6af1b44df59eeca71284f78",
+      "parentSha256": "b47e651309e23db265e1f644312938bc3c3a772a06c666d94cebf188d18f0216"
+    }
+  ],
+  "patchSha256": "8127940e4e9a6708ec2128eef586b2c2cc913a0aa41927c87315f3ddd0da6c9c",
+  "sourceCheckpoints": [
+    {
+      "sha": "e25c833ee9a6eea2740210e850b2663d9c292d38",
+      "parents": [
+        "04c9bb0d80ddc9d8be97af632c71f1348307c332"
+      ],
+      "path": "Maliev.Web/Pages/Account/Login.cshtml.cs",
+      "owner": "Legacy.Maliev.Web",
+      "blobSha": "d876f75af7ba206f20581ae34655bad980c484dc",
+      "bytes": 16118,
+      "sha256": "c3c13d76f3d6061c0bf44e1ee2109959aeecbc06ea0a4a03a730631d9222d5ff"
+    },
+    {
+      "sha": "e25c833ee9a6eea2740210e850b2663d9c292d38",
+      "parents": [
+        "04c9bb0d80ddc9d8be97af632c71f1348307c332"
+      ],
+      "path": "Maliev.Web/Security/TemporaryPasswordCredential.cs",
+      "owner": "Legacy.Maliev.Web",
+      "blobSha": "4ffc1a06ad0e4dbe881ac259c613a182c043acc8",
+      "bytes": 5635,
+      "sha256": "cbc606a25658b8eb0f70616567e206dcd4b855be260960b693ece1819d69243d"
+    },
+    {
+      "sha": "e25c833ee9a6eea2740210e850b2663d9c292d38",
+      "parents": [
+        "04c9bb0d80ddc9d8be97af632c71f1348307c332"
+      ],
+      "path": "Maliev.Web.Tests/InitialPasswordSetupTests.cs",
+      "owner": "Legacy.Maliev.Web",
+      "blobSha": "5477f2a7001a2d586d771d1ea8c91160521ff832",
+      "bytes": 27158,
+      "sha256": "ac68a12fc7dc3c9979bf3c90c8f4f2c24333d6ea792a3c85e3e6a7291757f17c"
+    },
+    {
+      "sha": "135e526d0dab85c415b3afdcefd7b70fe2c82e2f",
+      "parents": [
+        "eb11c81a6c759e1d4bcd1a1b3b28dc5f30cc02cb"
+      ],
+      "path": "Maliev.AuthService.Api/Controllers/AuthController.cs",
+      "owner": "Legacy.Maliev.AuthService",
+      "blobSha": "39fe0099921cee7b5bc50f4b61f1cc7e6253e7f2",
+      "bytes": 7436,
+      "sha256": "108964703b0acf073e5d0e0081341d63a54d244d473bcc44b43efb50680d4f6c"
+    }
+  ],
+  "consumerMap": {
+    "originalWebSetupGate": "marked temporary credentials redirect to SetInitialPassword before SignInAsync",
+    "originalAuthToken": "Basic producer at checkpoint has no refresh/session setup-state contract; this does not close d2db LINE behavior",
+    "targetLogin": "AuthenticationService.LoginAsync refuses Customer RequiresInitialPassword and returns opaque setup action",
+    "targetRotation": "PostgresRefreshSessionStore calls ILegacyIdentityReader before both fresh rotation and successful unknown-commit reconciliation; null identity revokes the presented family",
+    "targetPostRotation": "AuthenticationService.RefreshAsync rechecks identity before issuance and revokes replacement family when customer setup becomes required",
+    "targetHttp": "POST /auth/v1/refresh remains generic401; no JWT/refresh/cookie/action on denial",
+    "targetWeb": {
+      "head": "cc315c9ea53a08006aca2a6648d8a82b10a4d93b",
+      "path": "Legacy.Maliev.Web.Infrastructure/CustomerAuthenticationClient.cs",
+      "bytes": 27241,
+      "sha256": "fa7f185ad1cc070e963a7dd2731ca20523856e93cfda663274b7ab1f128594e1",
+      "behavior": "401 refresh yields null session; existing public wire contract unchanged"
+    }
+  },
+  "tests": {
+    "authoredCases": 10,
+    "unitCases": 4,
+    "postgresReaderCases": 4,
+    "registeredProgramHttpCases": 2,
+    "predictedPreFixFailures": 3,
+    "nativeRedExecuted": false,
+    "nativeGreenExecuted": false,
+    "fullSuiteExecuted": false
+  },
+  "validation": {
+    "gitDiffCheck": "PASS",
+    "sourceReviewer": "SOURCE-CLEAR; no native tests/builds performed"
+  },
+  "excluded": [
+    "Employee cachecontroller lane",
+    "financial solewriter",
+    "sealed49dbd45 build/discovery extension",
+    "new session claims or routes",
+    "LINE identity linking, token handoff or external caller closure",
+    "retired Swagger/Prediction or SQLServer runtime"
+  ],
+  "commit": null,
+  "push": false,
+  "nativeAccepted": false
+}

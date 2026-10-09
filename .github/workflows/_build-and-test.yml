@@ -2,6 +2,11 @@ name: Build and test
 
 on:
   workflow_call:
+    inputs:
+      customer-refresh-source-intake:
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -18,6 +23,29 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Materialize reviewed customer refresh source before SDK
+        if: inputs.customer-refresh-source-intake
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'Customer refresh intake is source-only: bounded native resource admission is not qualified.' >&2
+          exit 2
+          target="$RUNNER_TEMP/customer-refresh-intake-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          python3 -B eng/customer-refresh-intake/controls/export_transport.py "$GITHUB_WORKSPACE" "$GITHUB_SHA" "$target" > "$RUNNER_TEMP/customer-refresh-transport.json"
+          echo "CUSTOMER_REFRESH_OBSERVER_SOURCE=$target/observer-controls" >> "$GITHUB_ENV"
+          git checkout --detach 85a00d4bb54cf95199ee67dfd97d2b168233ff68
+          python3 -B -m unittest discover -s "$target/controls" -p test_intake.py
+          python3 -B "$target/controls/intake.py" --checkout "$GITHUB_WORKSPACE" --packet "$target/auth-customer-refresh-setup-fence-source-v1-20261009" > "$RUNNER_TEMP/customer-refresh-intake.json"
+          echo "CUSTOMER_REFRESH_INTAKE_CONTROLS=$target/controls" >> "$GITHUB_ENV"
+      - name: Verify customer refresh source intake controls
+        if: ${{ !inputs.customer-refresh-source-intake }}
+        timeout-minutes: 2
+        shell: bash
+        run: |
+          python3 -B -c "from pathlib import Path; p=Path('eng/customer-refresh-intake/controls'); [compile(f.read_bytes(),str(f),'exec') for f in sorted(p.glob('*.py'))]"
+          python3 -B -m unittest discover -s eng/customer-refresh-intake/controls -p test_intake.py
+          python3 -B -O -m unittest discover -s eng/customer-refresh-intake/controls -p test_intake.py
       - name: Check out Legacy.Maliev.ServiceDefaults
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -74,9 +102,15 @@ jobs:
         timeout-minutes: 1
         shell: bash
         run: |
-          python3 -m py_compile scripts/observe_postgres_cleanup.py scripts/test_observe_postgres_cleanup.py
-          python3 -m unittest discover -s scripts -p test_observe_postgres_cleanup.py
-          python3 scripts/observe_postgres_cleanup.py --role before --directory artifacts/ordinary-postgres-cleanup
+          if [[ -n "${CUSTOMER_REFRESH_OBSERVER_SOURCE:-}" ]]; then
+            python3 -B -c "import os; from pathlib import Path; p=Path(os.environ['CUSTOMER_REFRESH_OBSERVER_SOURCE']); [compile((p/n).read_bytes(),str(p/n),'exec') for n in ('observe_postgres_cleanup.py','test_observe_postgres_cleanup.py')]"
+            python3 -B -m unittest discover -s "$CUSTOMER_REFRESH_OBSERVER_SOURCE" -p test_observe_postgres_cleanup.py
+            python3 -B "$CUSTOMER_REFRESH_OBSERVER_SOURCE/observe_postgres_cleanup.py" --role before --directory artifacts/ordinary-postgres-cleanup
+          else
+            python3 -m py_compile scripts/observe_postgres_cleanup.py scripts/test_observe_postgres_cleanup.py
+            python3 -m unittest discover -s scripts -p test_observe_postgres_cleanup.py
+            python3 scripts/observe_postgres_cleanup.py --role before --directory artifacts/ordinary-postgres-cleanup
+          fi
       - name: Validate .NET solution
         # The Customer API reference is test-only; no production project acquires it.
         uses: MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@e3a6093324a24968876782153286f52db8b29fd8
@@ -87,7 +121,30 @@ jobs:
         if: always()
         timeout-minutes: 1
         shell: bash
-        run: python3 scripts/observe_postgres_cleanup.py --role after --directory artifacts/ordinary-postgres-cleanup
+        run: |
+          if [[ -n "${CUSTOMER_REFRESH_OBSERVER_SOURCE:-}" ]]; then
+            python3 -B "$CUSTOMER_REFRESH_OBSERVER_SOURCE/observe_postgres_cleanup.py" --role after --directory artifacts/ordinary-postgres-cleanup
+          else
+            python3 scripts/observe_postgres_cleanup.py --role after --directory artifacts/ordinary-postgres-cleanup
+          fi
+      - name: Verify ten customer refresh regressions after normal build
+        if: inputs.customer-refresh-source-intake
+        timeout-minutes: 10
+        shell: bash
+        env:
+          INTAKE_CONTROLS: ${{ env.CUSTOMER_REFRESH_INTAKE_CONTROLS }}
+        run: |
+          set -euo pipefail
+          assembly="$GITHUB_WORKSPACE/Legacy.Maliev.AuthService.Tests/bin/Release/net10.0/Legacy.Maliev.AuthService.Tests.dll"
+          before=$(sha256sum "$assembly")
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj --configuration Release --no-build --no-restore -p:UseLocalMalievDependencies=true --list-tests > "$RUNNER_TEMP/customer-refresh-discovery.txt"
+          test "$before" = "$(sha256sum "$assembly")"
+          python3 -B "$INTAKE_CONTROLS/discovery.py" "$assembly" "$RUNNER_TEMP/customer-refresh-discovery.txt" > "$RUNNER_TEMP/customer-refresh-discovery.json"
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore -p:UseLocalMalievDependencies=true \
+            --filter 'FullyQualifiedName~CustomerRefreshAdmissionTests.Refresh_RechecksInitialPasswordStateBeforeIssuance|FullyQualifiedName~LegacyIdentityReaderTests.FindActive_InitialPasswordState_DeniesOnlySetupRequiredCustomer|FullyQualifiedName~RefreshSessionIdentityBoundaryHttpTests.CustomerRefresh_CurrentInitialPasswordState_ControlsFamilyAdmissionOnly' \
+            --logger 'trx;LogFileName=customer-refresh.trx' --results-directory artifacts/customer-refresh
+          python3 -B "$INTAKE_CONTROLS/verify_trx.py" artifacts/customer-refresh/customer-refresh.trx "$assembly" "$RUNNER_TEMP/customer-refresh-discovery.txt" "$RUNNER_TEMP/customer-refresh-discovery.json"
       - name: Build and verify the genuine Auth Defaults IAM HTTP join
         timeout-minutes: 15
         shell: bash

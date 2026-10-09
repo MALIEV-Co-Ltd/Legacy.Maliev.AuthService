@@ -1,0 +1,222 @@
+diff --git a/Legacy.Maliev.AuthService.Application/AuthenticationService.cs b/Legacy.Maliev.AuthService.Application/AuthenticationService.cs
+index ba25db2..9a808f0 100644
+--- a/Legacy.Maliev.AuthService.Application/AuthenticationService.cs
++++ b/Legacy.Maliev.AuthService.Application/AuthenticationService.cs
+@@ -93,7 +93,9 @@ public sealed class AuthenticationService(
+ 
+         var identity = await identityReader.FindActiveAsync(
+             rotation.IdentityId, rotation.IdentityKind.Value, cancellationToken);
+-        if (identity is null || !string.Equals(identity.SecurityStamp, rotation.SecurityStamp, StringComparison.Ordinal))
++        if (identity is null ||
++            (identity.Kind == IdentityKind.Customer && identity.RequiresInitialPassword) ||
++            !string.Equals(identity.SecurityStamp, rotation.SecurityStamp, StringComparison.Ordinal))
+         {
+             await refreshSessionStore.RevokeFamilyAsync(replacement.TokenHash, now, cancellationToken);
+             return AuthenticationResult.Failed();
+diff --git a/Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityReader.cs b/Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityReader.cs
+index e56afd6..1471549 100644
+--- a/Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityReader.cs
++++ b/Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityReader.cs
+@@ -51,7 +51,9 @@ public sealed class LegacyIdentityReader(
+         var user = await Users(kind)
+             .AsNoTracking()
+             .SingleOrDefaultAsync(x => x.Id == identityId, cancellationToken);
+-        return IsActive(user) ? Project(user!, kind) : null;
++        return IsActive(user) && !(kind == IdentityKind.Customer && user!.PasswordSetupRequired)
++            ? Project(user!, kind)
++            : null;
+     }
+ 
+     /// <inheritdoc />
+diff --git a/Legacy.Maliev.AuthService.Tests/LegacyIdentityReaderTests.cs b/Legacy.Maliev.AuthService.Tests/LegacyIdentityReaderTests.cs
+index a6ba972..439aa9f 100644
+--- a/Legacy.Maliev.AuthService.Tests/LegacyIdentityReaderTests.cs
++++ b/Legacy.Maliev.AuthService.Tests/LegacyIdentityReaderTests.cs
+@@ -174,6 +174,32 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
+         Assert.NotNull(await reader.FindActiveEmployeeByEmailAsync(user.Email!, default));
+     }
+ 
++    [Theory]
++    [InlineData(IdentityKind.Customer, true, false)]
++    [InlineData(IdentityKind.Customer, false, true)]
++    [InlineData(IdentityKind.Employee, true, true)]
++    [InlineData(IdentityKind.Employee, false, true)]
++    public async Task FindActive_InitialPasswordState_DeniesOnlySetupRequiredCustomer(
++        IdentityKind kind, bool setupRequired, bool expectedActive)
++    {
++        await using var contexts = await ContextPair.CreateAsync(postgres);
++        var user = CreateUser("refresh-setup-id", "refresh-setup@example.com", "correct-password");
++        user.PasswordSetupRequired = setupRequired;
++        var context = kind == IdentityKind.Customer
++            ? (Microsoft.EntityFrameworkCore.DbContext)contexts.Customer
++            : contexts.Employee;
++        context.Set<LegacyIdentityRow>().Add(user);
++        await context.SaveChangesAsync();
++        var before = System.Text.Json.JsonSerializer.Serialize(
++            await context.Set<LegacyIdentityRow>().AsNoTracking().SingleAsync());
++
++        var current = await contexts.CreateReader().FindActiveAsync(user.Id, kind, default);
++
++        Assert.Equal(expectedActive, current is not null);
++        Assert.Equal(before, System.Text.Json.JsonSerializer.Serialize(
++            await context.Set<LegacyIdentityRow>().AsNoTracking().SingleAsync()));
++    }
++
+     [Fact]
+     public async Task ContextModels_MapCustomerOnlyColumnsOnlyInCustomerDatabase()
+     {
+diff --git a/Legacy.Maliev.AuthService.Tests/RefreshSessionIdentityBoundaryHttpTests.cs b/Legacy.Maliev.AuthService.Tests/RefreshSessionIdentityBoundaryHttpTests.cs
+index a3e214a..d3fdf5f 100644
+--- a/Legacy.Maliev.AuthService.Tests/RefreshSessionIdentityBoundaryHttpTests.cs
++++ b/Legacy.Maliev.AuthService.Tests/RefreshSessionIdentityBoundaryHttpTests.cs
+@@ -208,6 +208,58 @@ public sealed class RefreshSessionIdentityBoundaryHttpTests(PostgresFixture post
+             : await bff.PostAsJsonAsync(CustomerRoot + "password-reset/complete", new CompletePasswordResetRequest("customer@example.com", challenge.Token, ReplacementPassword));
+     }
+ 
++    [Theory]
++    [InlineData(true)]
++    [InlineData(false)]
++    public async Task CustomerRefresh_CurrentInitialPasswordState_ControlsFamilyAdmissionOnly(bool setupRequired)
++    {
++        await using var stores = await Stores.CreateAsync(postgres);
++        await using var factory = new Factory(stores);
++        using var client = factory.Client();
++        var sessions = await PrepareSessionsAsync(stores, client);
++        await stores.Customers.Users.Where(row => row.Id == SharedId)
++            .ExecuteUpdateAsync(setters => setters.SetProperty(row => row.PasswordSetupRequired, setupRequired));
++        var identityBefore = JsonSerializer.Serialize(
++            await stores.Customers.Users.AsNoTracking().OrderBy(row => row.Id).ToListAsync());
++        var rowsBefore = await stores.State.RefreshSessions.AsNoTracking().ToListAsync();
++        var currentHash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(sessions.Customer.RefreshToken)));
++        var original = rowsBefore.Single(row => row.TokenHash == currentHash);
++        var otherRows = rowsBefore.Where(row => row.FamilyId != original.FamilyId).OrderBy(row => row.Id).ToList();
++
++        using var refresh = await client.PostAsJsonAsync("/auth/v1/refresh", new RefreshRequest(sessions.Customer.RefreshToken));
++
++        Assert.Equal(setupRequired ? HttpStatusCode.Unauthorized : HttpStatusCode.OK, refresh.StatusCode);
++        var rowsAfter = await stores.State.RefreshSessions.AsNoTracking().ToListAsync();
++        var family = rowsAfter.Where(row => row.FamilyId == original.FamilyId).ToList();
++        if (setupRequired)
++        {
++            Assert.Single(family);
++            Assert.NotNull(family[0].RevokedAt);
++            Assert.Null(family[0].RotatedAt);
++            Assert.Null(family[0].ReplacedById);
++            Assert.Equal(rowsBefore.Count, rowsAfter.Count);
++            var body = await refresh.Content.ReadAsStringAsync();
++            Assert.DoesNotContain("accessToken", body, StringComparison.OrdinalIgnoreCase);
++            Assert.DoesNotContain("refreshToken", body, StringComparison.OrdinalIgnoreCase);
++            Assert.False(refresh.Headers.Contains("Set-Cookie"));
++        }
++        else
++        {
++            var token = Assert.IsType<TokenResponse>(await refresh.Content.ReadFromJsonAsync<TokenResponse>());
++            Assert.NotEqual(sessions.Customer.RefreshToken, token.RefreshToken);
++            Assert.Equal(2, family.Count);
++            Assert.All(family, row => Assert.Null(row.RevokedAt));
++        }
++        Assert.Equal(JsonSerializer.Serialize(otherRows), JsonSerializer.Serialize(
++            rowsAfter.Where(row => row.FamilyId != original.FamilyId).OrderBy(row => row.Id).ToList()));
++        Assert.Equal(identityBefore, JsonSerializer.Serialize(
++            await stores.Customers.Users.AsNoTracking().OrderBy(row => row.Id).ToListAsync()));
++        Assert.Equal(sessions.EmployeeIdentity, JsonSerializer.Serialize(await stores.Employees.Users.AsNoTracking().SingleAsync()));
++        Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
++        using var employeeRefresh = await client.PostAsJsonAsync("/auth/v1/refresh", new RefreshRequest(sessions.Employee.RefreshToken));
++        Assert.Equal(HttpStatusCode.OK, employeeRefresh.StatusCode);
++    }
++
+     private static async Task<Sessions> PrepareSessionsAsync(Stores stores, HttpClient client)
+     {
+         var customer = await LoginAsync(client, IdentityKind.Customer);
+diff --git a/Legacy.Maliev.AuthService.Tests/CustomerRefreshAdmissionTests.cs b/Legacy.Maliev.AuthService.Tests/CustomerRefreshAdmissionTests.cs
+new file mode 100644
+index 0000000..8a36063
+--- /dev/null
++++ b/Legacy.Maliev.AuthService.Tests/CustomerRefreshAdmissionTests.cs
+@@ -0,0 +1,86 @@
++using Legacy.Maliev.AuthService.Application;
++using Legacy.Maliev.AuthService.Domain;
++using Microsoft.Extensions.Time.Testing;
++
++namespace Legacy.Maliev.AuthService.Tests;
++
++public sealed class CustomerRefreshAdmissionTests
++{
++    [Theory]
++    [InlineData(IdentityKind.Customer, true, false)]
++    [InlineData(IdentityKind.Customer, false, true)]
++    [InlineData(IdentityKind.Employee, true, true)]
++    [InlineData(IdentityKind.Employee, false, true)]
++    public async Task Refresh_RechecksInitialPasswordStateBeforeIssuance(
++        IdentityKind kind, bool setupRequired, bool expectedSuccess)
++    {
++        var identity = new LegacyIdentity("refresh-state-id", "state@example.com", "state@example.com", kind, 42, "unchanged-stamp")
++        {
++            RequiresInitialPassword = setupRequired,
++        };
++        var issuer = new RecordingIssuer();
++        var store = new SuccessfulRotation(identity);
++        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 10, 9, 0, 0, 0, TimeSpan.Zero));
++        var service = new AuthenticationService(new UnusedValidator(), new CurrentIdentity(identity), issuer, store, clock);
++
++        var result = await service.RefreshAsync(new RefreshRequest(new string('r', 64)), default);
++
++        Assert.Equal(expectedSuccess, result.Succeeded);
++        Assert.Equal(expectedSuccess ? 1 : 0, issuer.Calls);
++        Assert.Null(result.RequiredAction);
++        Assert.NotNull(store.Replacement);
++        if (expectedSuccess)
++        {
++            Assert.NotNull(result.Tokens);
++            Assert.Null(store.RevokedHash);
++        }
++        else
++        {
++            Assert.Null(result.Tokens);
++            Assert.Equal(store.Replacement.TokenHash, store.RevokedHash);
++            Assert.Equal(clock.GetUtcNow(), store.RevokedAt);
++        }
++    }
++
++    private sealed class UnusedValidator : ILegacyCredentialValidator
++    {
++        public Task<LegacyIdentity?> ValidateAsync(string userName, string password, IdentityKind kind, CancellationToken cancellationToken) =>
++            throw new InvalidOperationException("Refresh must not invoke password validation.");
++    }
++
++    private sealed class CurrentIdentity(LegacyIdentity identity) : ILegacyIdentityReader
++    {
++        public Task<LegacyIdentity?> FindActiveAsync(string identityId, IdentityKind kind, CancellationToken cancellationToken) =>
++            Task.FromResult<LegacyIdentity?>(identity);
++    }
++
++    private sealed class RecordingIssuer : IAccessTokenIssuer
++    {
++        public int Calls { get; private set; }
++        public IssuedAccessToken Issue(LegacyIdentity identity, DateTimeOffset now, Guid? employeeSessionId)
++        {
++            Calls++;
++            return new("controlled-access-token", 900);
++        }
++    }
++
++    private sealed class SuccessfulRotation(LegacyIdentity identity) : IRefreshSessionStore
++    {
++        public RefreshSession? Replacement { get; private set; }
++        public string? RevokedHash { get; private set; }
++        public DateTimeOffset? RevokedAt { get; private set; }
++        public Task CreateAsync(RefreshSession session, CancellationToken cancellationToken) =>
++            throw new InvalidOperationException("Refresh must use the rotation boundary.");
++        public Task<RefreshRotationResult> RotateAsync(string presentedHash, RefreshSession replacement, CancellationToken cancellationToken)
++        {
++            Replacement = replacement;
++            return Task.FromResult(new RefreshRotationResult(RefreshRotationStatus.Succeeded, identity.Id, identity.Kind, identity.SecurityStamp));
++        }
++        public Task RevokeFamilyAsync(string tokenHash, DateTimeOffset now, CancellationToken cancellationToken)
++        {
++            RevokedHash = tokenHash;
++            RevokedAt = now;
++            return Task.CompletedTask;
++        }
++    }
++}

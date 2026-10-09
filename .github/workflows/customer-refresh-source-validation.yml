@@ -1,0 +1,13 @@
+name: Customer refresh frozen source validation
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: customer-refresh-frozen-source-validation
+  cancel-in-progress: false
+jobs:
+  validate:
+    uses: ./.github/workflows/_build-and-test.yml
+    with:
+      customer-refresh-source-intake: true
