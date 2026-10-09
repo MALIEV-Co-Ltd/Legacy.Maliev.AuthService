@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "purpose": "Source-only Auth adapter for existing no-SDK lifecycle route",
+  "nativeQualified": false,
+  "customerRuntimeAccepted": false,
+  "files": [
+    {
+      "path": "auth_owner.py",
+      "bytes": 1448,
+      "sha256": "77d4da4d844a2e7d4afbc7fc79bba7aa58bf5d4aea21920ee7e152205cded72a"
+    },
+    {
+      "path": "auth_proof.py",
+      "bytes": 4106,
+      "sha256": "0303cf52f17a764013dd930b51752a951117222854c5b1a186284c18bfe57b2c"
+    },
+    {
+      "path": "prepare_launcher.py",
+      "bytes": 947,
+      "sha256": "26291f61f59f1fad2bd0ef9ecd68e556942463bce3a99c73366175e92b2a7d9f"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1596,
+      "sha256": "3a6f72b1f7f98aea6b2fba1741ad49679dcde64b863dcffeecacbffc0d48a6b6"
+    },
+    {
+      "path": "shared_backend.py",
+      "bytes": 5022,
+      "sha256": "5be4ff1305cd95081504bfb13d3484235346281772de281fa40cbf2c5cfb0847"
+    },
+    {
+      "path": "source-validation.json",
+      "bytes": 602,
+      "sha256": "5b0c174cd098081e729ee4e8f70285df4de6c07058e674a1b72018a981a18545"
+    },
+    {
+      "path": "test_adapter.py",
+      "bytes": 6193,
+      "sha256": "0ca21207c3f2db744b3100fe20efdeb6d1217a78915c7a1c6ed5443828795d61"
+    }
+  ]
+}
