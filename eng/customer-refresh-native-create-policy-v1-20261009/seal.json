@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "status": "SOURCE_REVIEW_CLEAR_NATIVE_UNRUN",
+  "controlsNormal": 5,
+  "controlsOptimized": 5,
+  "qualifiedProviderConnected": false,
+  "resourcesCreated": 0,
+  "files": [
+    {
+      "path": "create_policy.py",
+      "bytes": 4564,
+      "sha256": "eacd143bb1ee22fdb00ab078d1672e9a7538808465beba60a5d1c5387026811f"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1857,
+      "sha256": "19688e6e6d0d5421380a880799d96b104fdf240e7c9044911668afe5d457aa4a"
+    },
+    {
+      "path": "test_create_policy.py",
+      "bytes": 3383,
+      "sha256": "6579b231ad2b9e3982aa67145655002ae60834472daf6753a13c551bc9521ef4"
+    }
+  ]
+}

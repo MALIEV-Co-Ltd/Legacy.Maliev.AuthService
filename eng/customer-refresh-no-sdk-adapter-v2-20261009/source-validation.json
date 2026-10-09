@@ -1,0 +1,20 @@
+{
+  "compiledFirst": 5,
+  "controls": [
+    {
+      "optimized": false,
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ".......\n----------------------------------------------------------------------\nRan 7 tests in 0.301s\n\nOK\n"
+    },
+    {
+      "optimized": true,
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": ".......\n----------------------------------------------------------------------\nRan 7 tests in 0.038s\n\nOK\n"
+    }
+  ],
+  "independentReview": "SOURCE-CLEAR; source inspection only",
+  "nativeExecution": false,
+  "taskHelpersRemaining": 0
+}

@@ -1,0 +1,43 @@
+name: Auth customer refresh owner source controls
+
+on:
+  pull_request:
+    paths:
+      - '.gitattributes'
+      - '.github/workflows/customer-refresh-owner-source.yml'
+      - 'eng/Test-CustomerRefreshOwnerSource.py'
+      - 'eng/customer-refresh-no-sdk-adapter-v2-20261009/**'
+      - 'eng/customer-refresh-native-create-policy-v1-20261009/**'
+  push:
+    branches: [main]
+    paths:
+      - '.gitattributes'
+      - '.github/workflows/customer-refresh-owner-source.yml'
+      - 'eng/Test-CustomerRefreshOwnerSource.py'
+      - 'eng/customer-refresh-no-sdk-adapter-v2-20261009/**'
+      - 'eng/customer-refresh-native-create-policy-v1-20261009/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: customer-refresh-owner-source-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  source-controls:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Verify frozen inputs and run only pure source controls
+        timeout-minutes: 2
+        shell: bash
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          ulimit -v 524288
+          ulimit -t 30
+          timeout --foreground --signal=TERM --kill-after=5s 60s python3 -B eng/Test-CustomerRefreshOwnerSource.py
