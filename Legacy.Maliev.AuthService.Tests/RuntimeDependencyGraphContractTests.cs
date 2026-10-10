@@ -8,8 +8,8 @@ public sealed class RuntimeDependencyGraphContractTests
         new Dictionary<string, string>(StringComparer.Ordinal)
         {
             ["Asp.Versioning.Mvc.ApiExplorer"] = "10.2.1",
-            ["MassTransit.Abstractions"] = "9.2.2",
-            ["MassTransit.RabbitMQ"] = "9.2.2",
+            ["MassTransit.Abstractions"] = "9.2.3",
+            ["MassTransit.RabbitMQ"] = "9.2.3",
             ["Microsoft.AspNetCore.Authentication.JwtBearer"] = "10.0.12",
             ["Microsoft.AspNetCore.OpenApi"] = "10.0.12",
             ["Microsoft.EntityFrameworkCore.Design"] = "10.0.12",
@@ -24,7 +24,7 @@ public sealed class RuntimeDependencyGraphContractTests
             ["OpenTelemetry.Instrumentation.AspNetCore"] = "1.19.0",
             ["OpenTelemetry.Instrumentation.Http"] = "1.19.0",
             ["OpenTelemetry.Instrumentation.Runtime"] = "1.19.0",
-            ["Scalar.AspNetCore"] = "2.17.10",
+            ["Scalar.AspNetCore"] = "2.17.13",
             ["System.IdentityModel.Tokens.Jwt"] = "8.23.0",
         };
 
