@@ -43,7 +43,8 @@ jobs:
           root = Path.cwd()
           seal = json.loads((root/'eng/auth-composed-carrier/carrier-seal.json').read_bytes())
           names = {row['path'] for row in seal['packetFiles']}
-          names.update(('eng/auth-composed-carrier/entry.py', 'eng/auth-composed-carrier/test_entry.py'))
+          names.update(('eng/auth-composed-carrier/entry.py', 'eng/auth-composed-carrier/test_entry.py',
+                        'eng/customer-self-identity-validation/test_native_toolchain.py'))
           python_names = sorted(name for name in names if name.endswith('.py'))
           for name in python_names:
               compile((root/name).read_bytes(), name, 'exec')
@@ -59,6 +60,8 @@ jobs:
           python3 -B -O -W error eng/auth-composed-carrier/test_entry.py
           python3 -B -W error eng/customer-self-identity-validation/test_route.py
           python3 -B -O -W error eng/customer-self-identity-validation/test_route.py
+          python3 -B -W error eng/customer-self-identity-validation/test_native_toolchain.py
+          python3 -B -O -W error eng/customer-self-identity-validation/test_native_toolchain.py
       - name: Install the pinned workflow linter
         timeout-minutes: 3
         env:

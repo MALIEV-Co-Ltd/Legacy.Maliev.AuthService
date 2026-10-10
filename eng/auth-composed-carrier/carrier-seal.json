@@ -303,7 +303,7 @@
     {
       "path": "eng/customer-self-identity-validation/seal.json",
       "bytes": 1352,
-      "sha256": "62a97a2a1ce3bc4ba63e3b33d7463fdb52fbcaa974c88892f2ccb471c6a88b3c"
+      "sha256": "e1fc97592388590a2182f7e0a3d2a6f464f62b896cfdd00927ecf972d498f75a"
     },
     {
       "path": "eng/customer-self-identity-validation/test_caller.py",
@@ -318,7 +318,7 @@
     {
       "path": "eng/customer-self-identity-validation/worker.py",
       "bytes": 17910,
-      "sha256": "061d774bf345269fe74c1bd35b5e02bf6794af621b879c7edeb83264337d5f90"
+      "sha256": "c5983f0e0894374ec1ce200f9b81268d6b9bc801611f0e0e730ccd72736563ea"
     },
     {
       "path": "eng/customer-self-identity-validation/workflow.yml",
@@ -389,7 +389,7 @@
   "dispatchPerformed": false,
   "resourcesRemaining": 0,
   "entrySeals": {
-    "publishedProducerSealSha256": "62a97a2a1ce3bc4ba63e3b33d7463fdb52fbcaa974c88892f2ccb471c6a88b3c",
+    "publishedProducerSealSha256": "e1fc97592388590a2182f7e0a3d2a6f464f62b896cfdd00927ecf972d498f75a",
     "closed43PacketSealSha256": "4c0a696315089af2faaa844223f13619d48991962d047ac20fb48555f5e54f68",
     "closed43ManifestSha256": "b872953f3b3bfea1e7d8f2830fff95d2a3dc6bbbf31e9fbbad4969e7024adefc"
   }

@@ -42,8 +42,8 @@ def copy_carrier(source, destination):
         raise ValueError('Closed fixture carrier seal required')
     rows = json.loads(raw)['packetFiles']
     names = [row['path'] for row in rows]+sorted(entry.ADDITIONS)
-    if len(rows) != 64 or len(set(names)) != 69:
-        raise ValueError('Exactly 69 closed fixture inputs required')
+    if len(rows) != 64 or len(set(names)) != 70:
+        raise ValueError('Exactly 70 closed fixture inputs required')
     payloads = {}
     for name in names:
         path = PurePosixPath(name)

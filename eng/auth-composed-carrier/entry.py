@@ -8,11 +8,12 @@ import subprocess
 import sys
 
 BASE = '2bd6a61bfce1d19310209c0d00b56d92f0abea91'
-CARRIER = '043d78481fb6ec34ae9249158e176160cbcfe7100d02ff95380a6289ab09a26f'
+CARRIER = 'df834deb68488bc59f58ef2668bced3a61529c02a88d5bb0741ef1980058c4c5'
 REPOSITORY = 'MALIEV-Co-Ltd/Legacy.Maliev.AuthService'
 WORKFLOW = '.github/workflows/auth-composed-carrier-validation.yml'
 ADDITIONS = {WORKFLOW, 'eng/auth-composed-carrier/entry.py',
-             'eng/auth-composed-carrier/test_entry.py', 'eng/auth-composed-carrier/carrier-seal.json', '.gitattributes'}
+             'eng/auth-composed-carrier/test_entry.py', 'eng/auth-composed-carrier/carrier-seal.json', '.gitattributes',
+             'eng/customer-self-identity-validation/test_native_toolchain.py'}
 
 
 def read(root, relative, maximum):
