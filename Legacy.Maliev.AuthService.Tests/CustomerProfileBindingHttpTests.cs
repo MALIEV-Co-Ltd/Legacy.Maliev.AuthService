@@ -144,7 +144,11 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         using var client = factory.CreateClient();
         await AuthorizeAsync(client, false);
         using var created = await SendAsync(client, 72, Submitted, false, Guid.NewGuid());
-        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        try { Assert.Equal(HttpStatusCode.Created, created.StatusCode); }
+        catch (Xunit.Sdk.XunitException exception)
+        {
+            throw new Xunit.Sdk.XunitException(exception.Message + "\nSafe binding failure: " + stores.FailureSummary, exception);
+        }
         var stored = Assert.Single(await stores.Identities.Users.AsNoTracking().ToListAsync());
         Assert.Equal(profile.Email, stored.Email);
         Assert.Equal(profile.Telephone, stored.PhoneNumber);
@@ -427,7 +431,7 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
-            builder.ConfigureLogging(logging => logging.AddProvider(new FixtureFailureLogger()));
+            builder.ConfigureLogging(logging => logging.AddProvider(new FixtureFailureLogger(stores, "auth")));
             builder.UseSetting("CORS:AllowedOrigins:0", "https://localhost");
             builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(new Dictionary<string, string?>
             {
@@ -522,7 +526,7 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Production");
-            builder.ConfigureLogging(logging => logging.AddProvider(new FixtureFailureLogger()));
+            builder.ConfigureLogging(logging => logging.AddProvider(new FixtureFailureLogger(stores, "customer")));
             foreach (var setting in new Dictionary<string, string?>
             {
                 ["ConnectionStrings:CustomerDbContext"] = stores.Profiles.Database.GetConnectionString(),
@@ -552,17 +556,18 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         }
     }
 
-    private sealed class FixtureFailureLogger : ILoggerProvider
+    private sealed class FixtureFailureLogger(Stores stores, string phase) : ILoggerProvider
     {
-        public ILogger CreateLogger(string categoryName) => new FailureLogger();
+        public ILogger CreateLogger(string categoryName) => new FailureLogger(stores, phase);
         public void Dispose() { }
-        private sealed class FailureLogger : ILogger
+        private sealed class FailureLogger(Stores stores, string phase) : ILogger
         {
             public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
             public bool IsEnabled(LogLevel level) => level >= LogLevel.Error;
             public void Log<TState>(LogLevel level, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
             {
                 if (exception is null) return;
+                stores.RecordFailure(phase, exception);
                 var depth = 0;
                 for (var cause = exception; cause is not null && depth++ < 3; cause = cause.InnerException)
                     Console.WriteLine("CustomerBindingFailure: " + cause.GetType().FullName + " at " + string.Join(" -> ", new System.Diagnostics.StackTrace(cause).GetFrames().Take(8).Select(frame => frame.GetMethod()?.DeclaringType?.FullName + "." + frame.GetMethod()?.Name)));
@@ -576,6 +581,23 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         public EmployeeIdentityDbContext Employees { get; private set; } = null!;
         public RefreshSessionDbContext State { get; private set; } = null!;
         public CustomerDbContext Profiles { get; private set; } = null!;
+        private readonly Queue<string> failures = new();
+        private readonly object failureGate = new();
+        public string FailureSummary
+        {
+            get { lock (failureGate) return failures.Count == 0 ? "no captured exception" : string.Join(" | ", failures); }
+        }
+        public void RecordFailure(string phase, Exception exception)
+        {
+            lock (failureGate)
+            {
+                for (var cause = exception; cause is not null && failures.Count < 12; cause = cause.InnerException)
+                {
+                    var sqlState = cause is PostgresException postgres ? postgres.SqlState : "none";
+                    failures.Enqueue(phase + ":" + cause.GetType().Name + ":sqlstate=" + sqlState);
+                }
+            }
+        }
         private readonly List<DbContext> owned = [];
         private readonly HashSet<NpgsqlConnection> pools = [];
         private readonly object poolGate = new();
