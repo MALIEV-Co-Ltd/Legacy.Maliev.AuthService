@@ -1,5 +1,6 @@
 name: Auth43 closed carrier infrastructure validation
 on:
+  pull_request:
   workflow_dispatch:
     inputs:
       request_base64:
@@ -13,9 +14,62 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: auth-financial-iam-qualification
+  group: ${{ github.event_name == 'pull_request' && format('auth-carrier-source-{0}', github.event.pull_request.number) || 'auth-financial-iam-qualification' }}
   cancel-in-progress: false
 jobs:
+  carrier-source-controls:
+    name: Auth carrier source controls
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    env:
+      AUTH_SOURCE_ROOT: ${{ github.workspace }}
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Compile the closed Python carrier inputs
+        timeout-minutes: 1
+        run: |
+          set -euo pipefail
+          ulimit -v 524288
+          ulimit -t 30
+          python3 -B -W error - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path.cwd()
+          seal = json.loads((root/'eng/auth-composed-carrier/carrier-seal.json').read_bytes())
+          names = {row['path'] for row in seal['packetFiles']}
+          names.update(('eng/auth-composed-carrier/entry.py', 'eng/auth-composed-carrier/test_entry.py'))
+          python_names = sorted(name for name in names if name.endswith('.py'))
+          for name in python_names:
+              compile((root/name).read_bytes(), name, 'exec')
+          print(f'{len(python_names)} closed Python inputs compiled')
+          PY
+      - name: Publication guard and composed route controls
+        timeout-minutes: 3
+        run: |
+          set -euo pipefail
+          ulimit -v 524288
+          ulimit -t 30
+          python3 -B -W error eng/auth-composed-carrier/test_entry.py
+          python3 -B -O -W error eng/auth-composed-carrier/test_entry.py
+          python3 -B -W error eng/customer-self-identity-validation/test_route.py
+          python3 -B -O -W error eng/customer-self-identity-validation/test_route.py
+      - name: Install the pinned workflow linter
+        timeout-minutes: 3
+        env:
+          GOTOOLCHAIN: go1.26.9
+          GOMAXPROCS: '2'
+        run: |
+          set -euo pipefail
+          go install github.com/rhysd/actionlint/cmd/actionlint@914e7df21a07ef503a81201c76d2b11c789d3fca # v1.7.12
+      - name: Lint the additive carrier workflow
+        timeout-minutes: 1
+        run: '"$(go env GOPATH)/bin/actionlint" -shellcheck= .github/workflows/auth-composed-carrier-validation.yml'
   auth-identity:
     if: github.repository == 'MALIEV-Co-Ltd/Legacy.Maliev.AuthService' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
