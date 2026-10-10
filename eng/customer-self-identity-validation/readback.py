@@ -34,7 +34,10 @@ def readback(loaded,evidence,source):
         identity=result['identity'];actual=row['mainProcess']
         if row.get('exitCode')!='0' or row.get('result')!='success' or any(identity[k]!=actual[k] for k in ('pid','startTicks','executable')) or identity['cgroup']!='0::'+actual['cgroup']:
             raise ValueError('Actual SDK generation/exit differs')
-        if result['focused']!=3 or result['full']!=936 or result['coverage']!=936 or result['warnings'] or result['errors']:
+        from route import module
+        verifier=module(Path(source)/'eng/customer-self-identity-validation/worker.py','composed_readback_worker')
+        verifier.verify_retained_results(evidence/'resources/cs9-results',result)
+        if result['warnings'] or result['errors']:
             raise ValueError('Exact Auth validation evidence required')
     except BaseException as error:
         if first is None:first=error

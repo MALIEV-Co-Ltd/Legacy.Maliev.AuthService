@@ -1,0 +1,287 @@
+{
+  "base": "2bd6a61bfce1d19310209c0d00b56d92f0abea91",
+  "custodySha256": "179a85a5fddd49e1683f4d4f5248dbfba2eeb6ef2d6b67ec6787e1e7bcd15444",
+  "files": [
+    {
+      "bytes": 8829,
+      "parentSha256": "da98a12ab7b7d41b0d6565e7c8d4aa748274c76308155eea5a82162e3584e929",
+      "path": "Legacy.Maliev.AuthService.Api/Controllers/AuthenticationController.cs",
+      "sha256": "a1df5b77174c0da51c4a3b14d58d4704387e2925ba5e1ca09eeef10d3c7a18af"
+    },
+    {
+      "bytes": 5549,
+      "parentSha256": "c3496610a97ffcd6e4d2b13efd8474dc8cdf472c64c04dd5f9fc6382f8bfb2ff",
+      "path": "Legacy.Maliev.AuthService.Api/Program.cs",
+      "sha256": "c7d6907909c2c4384cf299a7dceac99f6ca7739eef480dc95af5a53841f2d912"
+    },
+    {
+      "bytes": 2317,
+      "parentSha256": "89e877d3fb35a6cc3648c5f95ace9ffd5309630d745c348d5da14a652765b80e",
+      "path": "Legacy.Maliev.AuthService.Application/AuthContracts.cs",
+      "sha256": "490ed862089c6a8ebfeedb44705016f920a411966c414098fb2ca5b3c8ee0bdf"
+    },
+    {
+      "bytes": 4892,
+      "parentSha256": "42c77391b50459bec7db024c2b392e38441dde41d1b9a05365404ecedc71f3e4",
+      "path": "Legacy.Maliev.AuthService.Application/AuthenticationAbstractions.cs",
+      "sha256": "5cb4acedbb960dcca82f4cf6dc605f2585b0485fedfda208f661f1e0e4a2cad7"
+    },
+    {
+      "bytes": 6422,
+      "parentSha256": "2a058a79c552fe1d2a1fcb07c0af935e3504f04f2957daf3b9753156e99b3879",
+      "path": "Legacy.Maliev.AuthService.Application/AuthenticationService.cs",
+      "sha256": "60edb65d85483d506f8d03bdb7dbe91cf171b02c15167ee0f6780c707a0904e1"
+    },
+    {
+      "bytes": 16700,
+      "parentSha256": "4f7fdb197fdb36731c9f3a95e92fb39bd81cb5cf0811c1dfc98b49e20e1d0932",
+      "path": "Legacy.Maliev.AuthService.Infrastructure/CustomerIdentityAdminService.cs",
+      "sha256": "09a154929ab5422dba84b406ebd7938dc7007695ef8866008ecfacfc53b61640"
+    },
+    {
+      "bytes": 1249,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Infrastructure/CustomerPasswordSetupState.cs",
+      "sha256": "1b813602ade333a0e52726469b212e3c23487d7de3d816adaf18f2ea461015d0"
+    },
+    {
+      "bytes": 1851,
+      "parentSha256": "fbebc8b26af2fe07cadc85630e67813d476791e8199017e2d50aa891493f7037",
+      "path": "Legacy.Maliev.AuthService.Infrastructure/CustomerSelfIdentityReader.cs",
+      "sha256": "92b409ec22fe59b4cd107564fd2513d99bacd84e9caa2de1d5ae8fd3f643465f"
+    },
+    {
+      "bytes": 39445,
+      "parentSha256": "764e3e0f4e0d2dd762ad36c95f37c77ddb5a4b1e45b28670f2d624c79d3730ac",
+      "path": "Legacy.Maliev.AuthService.Infrastructure/CustomerSelfService.cs",
+      "sha256": "549db5847146fd35e0245058430db2a0c3e88f49b1c503e0be5ef2574abc90cc"
+    },
+    {
+      "bytes": 3050,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Infrastructure/EmployeeDataProtectionXmlRepository.cs",
+      "sha256": "55f2aeb0554cd969dbf1137f76cb287f76ee763caec8ed439505847afef710b9"
+    },
+    {
+      "bytes": 8881,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Infrastructure/EmployeePasswordTwoFactorPolicy.cs",
+      "sha256": "8fc165593091da40e0715f97715c5b7eb4161d8ee4277f855c9bf7ecb1f2f53e"
+    },
+    {
+      "bytes": 5725,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Infrastructure/EmployeeRememberedClientDataProtection.cs",
+      "sha256": "524fa269d33c23f67160890919d05eaa4f70c2401826b73a4d6cd9fd333ee784"
+    },
+    {
+      "bytes": 5467,
+      "parentSha256": "74c4457544033aef4ae34a1de077a91a2f4a2b19c7730833c4042030956a6ca7",
+      "path": "Legacy.Maliev.AuthService.Infrastructure/InteractiveLegacyCredentialValidator.cs",
+      "sha256": "aa1c58be31dad27305ef9b0ece68d6f1fa21663eae2f8c0a5a428ac6978ef3f6"
+    },
+    {
+      "bytes": 3063,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityAncillaryModel.cs",
+      "sha256": "2adc7389c66aeb8ac7604f164bea08c3261e4e3a9694035cbf8b1da9bdc30176"
+    },
+    {
+      "bytes": 7757,
+      "parentSha256": "bbdb2d3a069cdf7f9de495a36e4ea0e199cb3ec69f6c3cdb6978708913f92c27",
+      "path": "Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityContexts.cs",
+      "sha256": "2f8b981a225c77f509fe695067e7efea79d265241ff9447145e408d45f0aad1c"
+    },
+    {
+      "bytes": 5391,
+      "parentSha256": "e40f72c5c2545f3a78031c7e2c772cc26f2ace11e899ad28ed101fdf222bd2f7",
+      "path": "Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityReader.cs",
+      "sha256": "0f051b5b33c5abd2a60c97c8159432ae14fd6a08da70d2ae3d8108bdba20b2cb"
+    },
+    {
+      "bytes": 912,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Infrastructure/Migrations/CustomerIdentityPostgres/202610100001_RestoreCustomerIdentityAncillaryStore.cs",
+      "sha256": "985bdd1de1741f97f46b8378ff5a7ff607a3760e8f19eb1c1b6d378b3f23486d"
+    },
+    {
+      "bytes": 1306,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Infrastructure/Migrations/EmployeeIdentityPostgres/202610090001_RestoreEmployeeIdentityTokenStore.cs",
+      "sha256": "5cf927a2ab047eeb3ad491735b4ad3ac170e7e6fe0dc7da532cb1f39da4ad128"
+    },
+    {
+      "bytes": 1008,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Infrastructure/Migrations/EmployeeIdentityPostgres/202610100001_RestoreEmployeeIdentityAncillaryStore.cs",
+      "sha256": "11c6ac0fc954c766fe3fb7b01cfe1ef94308a1deae1bf826486a1e8f17360864"
+    },
+    {
+      "bytes": 6245,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Infrastructure/Migrations/LegacyIdentityAncillarySchema.cs",
+      "sha256": "0a7574d225932c4736360ce2053260e0edc9ed733fd109469fb538e2d3a43099"
+    },
+    {
+      "bytes": 6700,
+      "parentSha256": "ac3e31768341be0ac982fb515680ed7caf915e0f5de769a49d6ede8567a6c087",
+      "path": "Legacy.Maliev.AuthService.Infrastructure/ServiceCollectionExtensions.cs",
+      "sha256": "65a1de3cbc46289704e8b93c16d1687a92e32483b8a457382401323ef1adcc17"
+    },
+    {
+      "bytes": 18947,
+      "parentSha256": "81149054cddda83a8e2004b63f420cec7e7b4d2cc579065b32a1f2e27fb620d8",
+      "path": "Legacy.Maliev.AuthService.Tests/CustomerIdentityAdminTests.cs",
+      "sha256": "9857b02ea25d103e388e314e1c31eb02a14af7567eb3ff11f0e7e7f720e8b48b"
+    },
+    {
+      "bytes": 3791,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Tests/CustomerRefreshAdmissionTests.cs",
+      "sha256": "34842005117cdd4c4af45b6d9b7b6768d10910a265748b63fbcb3815c84f44c7"
+    },
+    {
+      "bytes": 12171,
+      "parentSha256": "9b175cdde26cd3c128c940ad2a45d7aac36592368802ac832b7aad1a230708a7",
+      "path": "Legacy.Maliev.AuthService.Tests/CustomerSelfIdentityTests.cs",
+      "sha256": "ee677e59507e54272865364f3624080618be8c08bc645acfac43fd1e5a595b8d"
+    },
+    {
+      "bytes": 829,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeeDataProtectionCustodyTests.cs",
+      "sha256": "b0dca37db1ea55091197906fb63a302ae1f70a84cfb98194655567d0104bd7ca"
+    },
+    {
+      "bytes": 6175,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeeDataProtectionPostgresTests.cs",
+      "sha256": "193ea4f3d0d8e2ef739e173cdf87d66392839ac1b36aa79999df87fae530ad78"
+    },
+    {
+      "bytes": 5807,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeePasswordTwoFactorPolicyTests.cs",
+      "sha256": "60bf6d5ab48d8c3e1ae79b3ba3be7775948931ff0da9c06332c49986e1259959"
+    },
+    {
+      "bytes": 4606,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeeRememberedCustodyHttpTests.cs",
+      "sha256": "289efe83d41e7b193ac63b5762cefdd4c3a69136348f00997c46d9187c21e4c2"
+    },
+    {
+      "bytes": 6483,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeeRememberedKeyRingFixture.cs",
+      "sha256": "5f82a24ebf09890da23cc22f1831cf86d049677c1409670ce2e6ace5c45bd8bb"
+    },
+    {
+      "bytes": 162772,
+      "parentSha256": "723a449058ccf353dc052468b215915fdeafc2a2d3e890f914fd1d48f80b9e85",
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeeSessionIssuanceHttpTests.cs",
+      "sha256": "9b78da9c6b8f8b9d9400cf398bf0565a58e9d9c7bfc71fb3a7cda194b832f128"
+    },
+    {
+      "bytes": 10251,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Tests/InheritedIdentityStoreTests.cs",
+      "sha256": "d787fecc76a4dba357d25eaf2c889b834ee265fb88c5d350ca46bcfd55e6b717"
+    },
+    {
+      "bytes": 25819,
+      "parentSha256": "b944dc5e487fc416ca50f17df95eb830e632d4feb0c42287df4d4d8e5635f9e8",
+      "path": "Legacy.Maliev.AuthService.Tests/InvoiceDelegationCurrentSessionHttpTests.cs",
+      "sha256": "18e847b5b82d1b2777df50e39c48edde63dd1d57a5d54d895235b72bdb226c47"
+    },
+    {
+      "bytes": 2847,
+      "parentSha256": "c49da484df6bb5bfa369efa8957a8b940a6f18ea0ac7a543b52f163d9b991169",
+      "path": "Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj",
+      "sha256": "4818e77830ce0fcaf1e968201a287b4e1c3305897110ee983c74fc9befd9c359"
+    },
+    {
+      "bytes": 11560,
+      "parentSha256": "f82b429aee842c1b09ecfb3ec9c87a5523d8ccf264cc782b26053785722993bd",
+      "path": "Legacy.Maliev.AuthService.Tests/LegacyIdentityReaderTests.cs",
+      "sha256": "4869d60ebc06fd8eeb22aaa9baa38263ecfbbccd35eef4c8de75693bce133809"
+    },
+    {
+      "bytes": 16660,
+      "parentSha256": null,
+      "path": "Legacy.Maliev.AuthService.Tests/OriginalUserConcurrencyTests.cs",
+      "sha256": "aaae201fe9fc039bdbf27d0a17c24223721e04eefdeeeb05655b72f5daecd6fd"
+    },
+    {
+      "bytes": 42836,
+      "parentSha256": "b47e651309e23db265e1f644312938bc3c3a772a06c666d94cebf188d18f0216",
+      "path": "Legacy.Maliev.AuthService.Tests/RefreshSessionIdentityBoundaryHttpTests.cs",
+      "sha256": "3eb0378232e3a543d7b777bd682ed02fb96e4fcead952590f9bae33a1b9bf655"
+    },
+    {
+      "bytes": 3683,
+      "parentSha256": null,
+      "path": "acceptance/EmployeeLockoutSwitch/EmployeeLockoutSwitchAcceptanceTests.cs",
+      "sha256": "cde59f1524f48ddba3c6c26738c85fc40b2efe5b1c8014fe866c94538d0e2fbf"
+    },
+    {
+      "bytes": 804,
+      "parentSha256": null,
+      "path": "acceptance/EmployeeLockoutSwitch/Legacy.Maliev.EmployeeLockoutSwitch.Acceptance.csproj",
+      "sha256": "7f263f6dda0bc465b70369cd68650d94866a7b17327610ba13c87679f39d6c25"
+    },
+    {
+      "bytes": 11959,
+      "parentSha256": null,
+      "path": "acceptance/EmployeeRememberedCookie/EmployeeRememberedCookieAcceptanceTests.cs",
+      "sha256": "3ade31aae46bd9bbd825a539c9552baa15a8262a9ce0204e3af9d83505c94eb2"
+    },
+    {
+      "bytes": 963,
+      "parentSha256": null,
+      "path": "acceptance/EmployeeRememberedCookie/Legacy.Maliev.EmployeeRememberedCookie.Acceptance.csproj",
+      "sha256": "37d57d9dd90030a78af6514b7949e136f6d5d6f081b817fc62e1c23d8a8c7e0b"
+    },
+    {
+      "bytes": 503,
+      "parentSha256": null,
+      "path": "docs/employee-data-protection-postgres-schema.sql",
+      "sha256": "7cac83166f2458bdf06ef12e638e9d2fc127946fef5468cbdf58d71ffb1a0921"
+    },
+    {
+      "bytes": 4495,
+      "parentSha256": null,
+      "path": "docs/employee-remembered-cookie-compatibility.md",
+      "sha256": "23a1fda266b6152557341de8685e064018d0c57f4af307eeb29af65b35d34929"
+    },
+    {
+      "bytes": 6122,
+      "parentSha256": "f148f8a524fc9c4a395bdfb4805a36717b93ebb9f9a5524f343a8739779cfc7b",
+      "path": "docs/interactive-password-attempt-accounting.md",
+      "sha256": "8cd2a2ee65b234929e7e430eb2b352cf8bd6f171ca1aa3e29003d218f85e6644"
+    }
+  ],
+  "handoffSha256": "ec2dca070ed96cbed4cc6f6f800b6e867e4add4605d35b9ae6f3df54ba7aaeb8",
+  "newDirectories": [
+    "acceptance/EmployeeLockoutSwitch",
+    "acceptance/EmployeeRememberedCookie"
+  ],
+  "parentSeals": [
+    {
+      "path": "parent-seals/0.json",
+      "sha256": "4743b495f87eac7c8e20678b0c52bdbf9dc85989e0245f3f66641cad4f70faca"
+    },
+    {
+      "path": "parent-seals/1.json",
+      "sha256": "9a5e6b01b89ffba62d5966dfc5f2f225f97e8958b8cc6a81c8c60dda1a147d21"
+    },
+    {
+      "path": "parent-seals/2.json",
+      "sha256": "e1db77891b35f9018659d96def42dde54e73b9ea428aabe2a558197a4ebf3d11"
+    },
+    {
+      "path": "parent-seals/3.json",
+      "sha256": "790b358c00a7bea155c84b8acb36609445227a876fa5822b25815e5cbdf0529e"
+    }
+  ]
+}

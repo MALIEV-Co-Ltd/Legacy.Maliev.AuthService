@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.12" />
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.1.0" />
+    <PackageReference Include="Testcontainers.PostgreSql" Version="4.10.0" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="SSH.NET" Version="2026.0.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+  <ItemGroup>
+    <Using Include="Xunit" />
+    <InternalsVisibleTo Include="Legacy.Maliev.EmployeeRememberedCookie.Acceptance" />
+    <InternalsVisibleTo Include="Legacy.Maliev.EmployeeLockoutSwitch.Acceptance" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Legacy.Maliev.AuthService.Api\Legacy.Maliev.AuthService.Api.csproj" />
+    <ProjectReference Include="..\Legacy.Maliev.AuthService.Application\Legacy.Maliev.AuthService.Application.csproj" />
+    <ProjectReference Include="..\Legacy.Maliev.AuthService.Domain\Legacy.Maliev.AuthService.Domain.csproj" />
+    <ProjectReference Include="..\Legacy.Maliev.AuthService.Infrastructure\Legacy.Maliev.AuthService.Infrastructure.csproj" />
+    <!-- Test-only exact Customer producer join; Program remains explicitly aliased. -->
+    <ProjectReference Include="$(MalievWorkspaceRoot)\Legacy.Maliev.CustomerService\Legacy.Maliev.CustomerService.Api\Legacy.Maliev.CustomerService.Api.csproj" Aliases="CustomerProducer" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(GITHUB_ACTIONS)' != 'true' Or '$(UseLocalMalievDependencies)' == 'true'">
+    <ProjectReference Include="$(MalievWorkspaceRoot)\Legacy.Maliev.ServiceDefaults\src\Legacy.Maliev.ServiceDefaults\Legacy.Maliev.ServiceDefaults.csproj" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(GITHUB_ACTIONS)' == 'true' And '$(UseLocalMalievDependencies)' != 'true'">
+    <PackageReference Include="Legacy.Maliev.ServiceDefaults" Version="$(SharedLibraryVersion)" />
+  </ItemGroup>
+  <!-- Compile the genuine pinned IAM live guard; no copied or fixture admission policy. -->
+  <ItemGroup>
+    <Compile Include="$(MalievWorkspaceRoot)/Maliev.IAMService/Maliev.IAMService.Api/Authorization/LivePermissionCheckGuard.cs" Link="GenuineIam/LivePermissionCheckGuard.cs" />
+    <Compile Include="$(MalievWorkspaceRoot)/Maliev.IAMService/Maliev.IAMService.Api/Authorization/LivePermissionCheckOptions.cs" Link="GenuineIam/LivePermissionCheckOptions.cs" />
+  </ItemGroup>
+</Project>

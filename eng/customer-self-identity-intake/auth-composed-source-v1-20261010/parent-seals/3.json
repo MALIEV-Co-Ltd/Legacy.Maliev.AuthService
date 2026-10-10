@@ -1,0 +1,34 @@
+{
+  "files": [
+    {
+      "path": "Auth.composed.complete.patch",
+      "bytes": 592390,
+      "sha256": "1f7d9a29930a59a579f255f12c8b529c2c5dfaf4381567c7cd855d90c04379f0"
+    },
+    {
+      "path": "delete-only.patch",
+      "bytes": 9026,
+      "sha256": "6c539d2c3028a1599573540bcb4903654f302e9b1ca97f20045202aa03efb5f4"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Infrastructure/CustomerIdentityAdminService.cs",
+      "bytes": 16700,
+      "sha256": "09a154929ab5422dba84b406ebd7938dc7007695ef8866008ecfacfc53b61640"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Tests/CustomerIdentityAdminTests.cs",
+      "bytes": 18947,
+      "sha256": "9857b02ea25d103e388e314e1c31eb02a14af7567eb3ff11f0e7e7f720e8b48b"
+    },
+    {
+      "path": "manifest.json",
+      "bytes": 2025,
+      "sha256": "465368be4a33f2f127ee61ef444d289e4e89feb0604547aed4667088beb7c9c1"
+    },
+    {
+      "path": "README.md",
+      "bytes": 676,
+      "sha256": "34b8808f900bcd5b4da82310ca1acfe69a712020ea735541667c47ff4c81d12d"
+    }
+  ]
+}

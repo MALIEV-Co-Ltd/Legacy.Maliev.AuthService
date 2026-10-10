@@ -1,0 +1,49 @@
+{
+  "files": [
+    {
+      "path": "Auth.composed.complete.patch",
+      "bytes": 189026,
+      "sha256": "c464b8e11f2dafcf0cf77a20adb513551de9887a1486e72f2d669c05cb10f043"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Infrastructure/CustomerSelfService.cs",
+      "bytes": 39445,
+      "sha256": "549db5847146fd35e0245058430db2a0c3e88f49b1c503e0be5ef2574abc90cc"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityContexts.cs",
+      "bytes": 7757,
+      "sha256": "2f8b981a225c77f509fe695067e7efea79d265241ff9447145e408d45f0aad1c"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Tests/OriginalUserConcurrencyTests.cs",
+      "bytes": 16660,
+      "sha256": "aaae201fe9fc039bdbf27d0a17c24223721e04eefdeeeb05655b72f5daecd6fd"
+    },
+    {
+      "path": "manifest.json",
+      "bytes": 5006,
+      "sha256": "b8f4ee88c208d034e0f1f671f136dca8e7025c87bb62eeba98a0e6f4df2f04a7"
+    },
+    {
+      "path": "parent-to-concurrency.patch",
+      "bytes": 23577,
+      "sha256": "304e47797dea21587aaff8230f25f748a7d34425dd186d86bf5e5834142ec31d"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2977,
+      "sha256": "d79fad28c6ab25ab8c64b498b6c8c01b76be785c50439ec2850b916bbd98db42"
+    },
+    {
+      "path": "savechanges-consumer-audit.json",
+      "bytes": 6296,
+      "sha256": "5327691f0a3e0fab42fa3754f734ca4b6dbd8098c66410074b0323757a69195b"
+    },
+    {
+      "path": "v1-to-v2.patch",
+      "bytes": 8779,
+      "sha256": "b3018ddf607fd3d16719e563266bbdb16d85b41a4530780374cde55973dc05e6"
+    }
+  ]
+}

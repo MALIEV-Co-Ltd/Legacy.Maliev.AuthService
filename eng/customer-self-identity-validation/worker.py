@@ -1,5 +1,6 @@
 """Exact Auth build-first/focused/full/static/coverage sequence, no deployment."""
 import argparse
+from collections import Counter
 import hashlib
 import json
 import os
@@ -31,7 +32,7 @@ def duplicate_source(auth):
     if hashlib.sha256((auth/DUPLICATE_SOURCE_PATH).read_bytes()).hexdigest()!=DUPLICATE_SOURCE_SHA:
         raise ValueError('Closed duplicate roster source witness changed')
 
-def trx(path,count,new_case=False):
+def trx(path,count,new_case=False,roster=None,check_assembly=True):
     root=ET.parse(path).getroot()
     ns='{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}'
     def require(ok):
@@ -79,7 +80,67 @@ def trx(path,count,new_case=False):
             allowed=DUPLICATE_ROSTER.get(name)
             require(allowed is not None and multiplicity==allowed['count'] and methods[name]=={(allowed['className'],allowed['methodName'])})
     if new_case:require(names.count(NEW_CASE)==1)
+    if roster is not None:
+        validate_roster(roster)
+        require(count==len(roster['cases']) and Counter(names)==Counter(roster['cases']))
+        require(all(one(definition,'TestMethod').get('codeBase')==roster['assemblyPath'] for definition in definitions))
+        if check_assembly:require(compiled_sha(Path(roster['assemblyPath']))==roster['assemblySha256'])
     return c
+
+PREFIX='Legacy.Maliev.AuthService.Tests.'
+ASSEMBLY='Legacy.Maliev.AuthService.Tests.dll'
+DELETE_METHOD=PREFIX+'CustomerIdentityAdminTests.Delete_WaitsForCurrentOwnerAndPreservesExistingControllerOutcomes'
+DELETE_ROUTE=PREFIX+'CustomerIdentityAdminTests.Delete_PreservesExistingPermissionEmployeePolicyAndRoute'
+FOCUSED_CASES=(DELETE_METHOD+'(contender: "update")',DELETE_METHOD+'(contender: "delete")',DELETE_ROUTE)
+FOCUSED_FILTER='FullyQualifiedName='+DELETE_METHOD+'|FullyQualifiedName='+DELETE_ROUTE
+
+def compiled_sha(path):
+    if path.name!=ASSEMBLY or path.is_symlink() or not path.is_file() or path.stat().st_nlink!=1 or path.stat().st_size>64*1024*1024:raise ValueError('Regular bounded compiled Auth assembly required')
+    with path.open('rb') as stream:raw=stream.read(64*1024*1024+1)
+    if not raw or len(raw)>64*1024*1024:raise ValueError('Compiled Auth assembly bound')
+    return hashlib.sha256(raw).hexdigest()
+
+def validate_roster(roster):
+    keys={'schemaVersion','assemblyPath','assemblySha256','listingSha256','cases'}
+    if type(roster) is not dict or set(roster)!=keys or type(roster['schemaVersion']) is not int or roster['schemaVersion']!=1 or type(roster['assemblyPath']) is not str or not Path(roster['assemblyPath']).is_absolute() or Path(roster['assemblyPath']).name!=ASSEMBLY:raise ValueError('Exact compiled discovery record required')
+    for field in ('assemblySha256','listingSha256'):
+        if type(roster[field]) is not str or not re.fullmatch('[a-f0-9]{64}',roster[field]):raise ValueError('Exact discovery digest required')
+    cases=roster['cases']
+    if type(cases) is not list or not 0<len(cases)<=4096 or any(type(n) is not str or not n.startswith(PREFIX) or len(n)>2048 for n in cases):raise ValueError('Bounded Auth discovery names required')
+    for name,count in Counter(cases).items():
+        if count>1:
+            allowed=DUPLICATE_ROSTER.get(name)
+            if allowed is None or count!=allowed['count']:raise ValueError('Unreviewed discovery collision')
+    return roster
+
+def capture_discovery(assembly,listing):
+    path=Path(listing)
+    if path.is_symlink() or not path.is_file() or path.stat().st_nlink!=1 or path.stat().st_size>1024*1024:raise ValueError('Regular bounded discovery listing required')
+    with path.open('rb') as stream:raw=stream.read(1024*1024+1)
+    if len(raw)>1024*1024:raise ValueError('Discovery listing bound')
+    lines=raw.decode('utf-8-sig').splitlines();marker='The following Tests are available:'
+    if lines.count(marker)!=1:raise ValueError('One actual VSTest discovery section required')
+    cases=[line.strip() for line in lines[lines.index(marker)+1:] if line.strip()]
+    roster={'schemaVersion':1,'assemblyPath':str(Path(assembly).resolve(strict=True)),'assemblySha256':compiled_sha(Path(assembly)),'listingSha256':hashlib.sha256(raw).hexdigest(),'cases':cases}
+    validate_roster(roster)
+    if any(cases.count(name)!=1 for name in FOCUSED_CASES) or cases.count(NEW_CASE)!=1:raise ValueError('Current composed cases missing from compiled discovery')
+    return roster
+
+def focused_roster(roster):
+    validate_roster(roster)
+    if any(roster['cases'].count(name)!=1 for name in FOCUSED_CASES):raise ValueError('Exact three discovered delete cases required')
+    return dict(roster,cases=list(FOCUSED_CASES))
+
+def verify_retained_results(results,result):
+    results=Path(results);raw=(results/'discovery.json').read_bytes()
+    if len(raw)>1024*1024 or hashlib.sha256(raw).hexdigest()!=result['discoverySha256']:raise ValueError('Retained discovery identity changed')
+    roster=json.loads(raw);validate_roster(roster);focused=focused_roster(roster)
+    if roster['assemblySha256']!=result['assemblySha256'] or roster['listingSha256']!=result['listingSha256'] or hashlib.sha256((results/'discovery.log').read_bytes()).hexdigest()!=roster['listingSha256']:raise ValueError('Compiled/listing identity join changed')
+    if type(result['focused']) is not int or type(result['full']) is not int or type(result['coverage']) is not int or result['focused']!=len(focused['cases']) or result['full']!=len(roster['cases']) or result['coverage']!=len(roster['cases']) or result['base']!=BASE:raise ValueError('Actual discovered counts required')
+    trx(results/'focused/focused.trx',len(focused['cases']),False,focused,False)
+    trx(results/'full/full.trx',len(roster['cases']),True,roster,False)
+    trx(results/'coverage/coverage.trx',len(roster['cases']),True,roster,False)
+    return {'focused':len(focused['cases']),'full':len(roster['cases']),'coverage':len(roster['cases']),'assemblySha256':roster['assemblySha256']}
 
 def main():
     p=argparse.ArgumentParser(allow_abbrev=False)
@@ -109,7 +170,7 @@ def main():
         target=auth if name=='Legacy.Maliev.AuthService' else a.destination/'.dependencies'/name
         target.parent.mkdir(parents=True,exist_ok=True)
         run(['git','clone','--no-hardlinks','--no-checkout',str(source),str(target)],a.destination,'clone-'+name,30)
-        run(['git','checkout','--detach',sha],target,'checkout-'+name,30)
+        run(['git','-c','core.autocrlf=false','checkout','--detach',sha],target,'checkout-'+name,30)
     intake=materialize(a.source,auth)
     duplicate_source(auth)
     (results/'intake.json').write_text(json.dumps(intake,sort_keys=True))
@@ -134,17 +195,25 @@ def main():
         values=re.findall(r'(\d+) '+token+r'\(s\)',build)
         if not values or any(int(v) for v in values):raise ValueError('Zero build warnings/errors required')
     stable();project='Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj'
-    def test(name,count,extras,new_case=False):
+    assembly=auth/'Legacy.Maliev.AuthService.Tests/bin/Release/net10.0'/ASSEMBLY
+    run(['dotnet','test',project,*common,'--no-build','--no-restore','--list-tests'],auth,'discovery',120)
+    roster=capture_discovery(assembly,results/'discovery.log');focused=focused_roster(roster)
+    discovery_raw=json.dumps(roster,sort_keys=True).encode();(results/'discovery.json').write_bytes(discovery_raw)
+    stable()
+    def discovery_stable():
+        if compiled_sha(assembly)!=roster['assemblySha256'] or hashlib.sha256((results/'discovery.log').read_bytes()).hexdigest()!=roster['listingSha256'] or (results/'discovery.json').read_bytes()!=discovery_raw:raise ValueError('Compiled discovery custody changed')
+    def test(name,selected,extras,new_case=False):
+        discovery_stable()
         run(['dotnet','test',project,*common,'--no-build','--no-restore','--logger','trx;LogFileName='+name+'.trx','--results-directory',str(results/name),*extras],auth,name,700)
-        trx(results/name/(name+'.trx'),count,new_case);stable()
-    test('focused',3,['--filter','FullyQualifiedName~NormalWebIdentityUserPolicy_'],True)
-    test('full',936,[],True)
+        trx(results/name/(name+'.trx'),len(selected['cases']),new_case,selected);stable();discovery_stable()
+    test('focused',focused,['--filter',FOCUSED_FILTER])
+    test('full',roster,[],True)
     run(['dotnet','format','Legacy.Maliev.AuthService.slnx','--verify-no-changes','--no-restore'],auth,'format',180);stable()
     audit=run(['dotnet','list','Legacy.Maliev.AuthService.slnx','package','--vulnerable','--include-transitive','--no-restore'],auth,'audit',60)
     if audit.count('has no vulnerable packages given the current sources.')!=5:raise ValueError('Five clean dependency audits required')
-    test('coverage',936,['--collect','XPlat Code Coverage','--settings','eng/coverage.runsettings'],True)
+    test('coverage',roster,['--collect','XPlat Code Coverage','--settings','eng/coverage.runsettings'],True)
     run(['/usr/bin/pwsh','-NoProfile','-Command',"$ErrorActionPreference='Stop'; $reports=@(& ./eng/Get-OwnedCoverageReport.ps1 -ResultsDirectory '"+str(results/'coverage')+"'); if($reports.Count -ne 1){throw 'Exact coverage report required'}; & ./eng/Assert-OwnedCoverage.ps1 -CoveragePath $reports[0].FullName; & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory '"+str(results/'coverage')+"' -OutputDirectory '"+str(results/'coverage-evidence')+"'"],auth,'coverage-gate',60);stable()
     stat=Path('/proc/self/stat').read_text().rsplit(')',1)[1].split()[19]
-    (results/'result.json').write_text(json.dumps({'base':BASE,'treeSha256':tree,'focused':3,'full':936,'coverage':936,'warnings':0,'errors':0,'identity':{'pid':os.getpid(),'startTicks':stat,'executable':os.readlink('/proc/self/exe'),'cgroup':actual,'bootId':Path('/proc/sys/kernel/random/boot_id').read_text().strip()},'caps':expected,'run':context['owner'],'sourceCommit':os.environ['GITHUB_SHA'],'nativeAccepted':False,'customerRuntimeAccepted':False},sort_keys=True))
+    (results/'result.json').write_text(json.dumps({'base':BASE,'treeSha256':tree,'focused':len(focused['cases']),'full':len(roster['cases']),'coverage':len(roster['cases']),'assemblySha256':roster['assemblySha256'],'listingSha256':roster['listingSha256'],'discoverySha256':hashlib.sha256(discovery_raw).hexdigest(),'warnings':0,'errors':0,'identity':{'pid':os.getpid(),'startTicks':stat,'executable':os.readlink('/proc/self/exe'),'cgroup':actual,'bootId':Path('/proc/sys/kernel/random/boot_id').read_text().strip()},'caps':expected,'run':context['owner'],'sourceCommit':os.environ['GITHUB_SHA'],'nativeAccepted':False,'customerRuntimeAccepted':False},sort_keys=True))
 
 if __name__=='__main__':main()

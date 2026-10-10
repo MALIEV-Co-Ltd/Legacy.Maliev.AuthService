@@ -1,0 +1,64 @@
+{
+  "files": [
+    {
+      "path": "Auth.composed.complete.patch",
+      "bytes": 166327,
+      "sha256": "52771d52b30412050a30871dd30b8aa2b2906d231770bbe48e7c0afb7d52d559"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Infrastructure/CustomerPasswordSetupState.cs",
+      "bytes": 1249,
+      "sha256": "1b813602ade333a0e52726469b212e3c23487d7de3d816adaf18f2ea461015d0"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Infrastructure/CustomerSelfIdentityReader.cs",
+      "bytes": 1851,
+      "sha256": "92b409ec22fe59b4cd107564fd2513d99bacd84e9caa2de1d5ae8fd3f643465f"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Infrastructure/CustomerSelfService.cs",
+      "bytes": 38066,
+      "sha256": "a24a882534e44e305fa031eecb0d7e27a03d9bbaa5292ac56fe520c08e55edd8"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Infrastructure/InteractiveLegacyCredentialValidator.cs",
+      "bytes": 5467,
+      "sha256": "aa1c58be31dad27305ef9b0ece68d6f1fa21663eae2f8c0a5a428ac6978ef3f6"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityReader.cs",
+      "bytes": 5391,
+      "sha256": "0f051b5b33c5abd2a60c97c8159432ae14fd6a08da70d2ae3d8108bdba20b2cb"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Tests/CustomerSelfIdentityTests.cs",
+      "bytes": 12171,
+      "sha256": "ee677e59507e54272865364f3624080618be8c08bc645acfac43fd1e5a595b8d"
+    },
+    {
+      "path": "files/Legacy.Maliev.AuthService.Tests/RefreshSessionIdentityBoundaryHttpTests.cs",
+      "bytes": 42836,
+      "sha256": "3eb0378232e3a543d7b777bd682ed02fb96e4fcead952590f9bae33a1b9bf655"
+    },
+    {
+      "path": "manifest.json",
+      "bytes": 6585,
+      "sha256": "fa670b94daeb34cd937ac9cf6d57d3ac778749b6d5d8e6bd4c116255868b609c"
+    },
+    {
+      "path": "README.md",
+      "bytes": 4071,
+      "sha256": "672a415083dc72503e128a6e9379b54d3cbdd8e87c6b7ffbb70d679186aa6bda"
+    },
+    {
+      "path": "v1-to-v2.patch",
+      "bytes": 5140,
+      "sha256": "a418b53e54b1189250d0df78fafcb2c7dadd72baa79535bc914f254e45e2c2ad"
+    },
+    {
+      "path": "V5-to-marker.patch",
+      "bytes": 32873,
+      "sha256": "01d0641ac84f9db8e9ed6df9c4aa5a49e001d11ad4dad14dcfb5580505e03147"
+    }
+  ]
+}

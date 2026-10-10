@@ -116,7 +116,7 @@ class RouteControls(unittest.TestCase):
                 with self.assertRaises(ValueError):self.check(root,696)
     def request(self):
         now=datetime.now(timezone.utc)
-        row={'issuedBy':'019fc21e-50f0-7112-834f-9fb3b35b9dfe','owner':'01a1009c-c0ad-71b2-986b-136d13d5d51f','phase':'auth-cs9-validation','base':route.BASE,'packetSeal':route.PACKET_SEAL,'leaseId':'11111111-1111-4111-8111-111111111111','issuedUtc':now.isoformat(),'expiresUtc':(now+timedelta(minutes=10)).isoformat(),'sourceCommit':route.BASE}
+        row={'issuedBy':'019fc21e-50f0-7112-834f-9fb3b35b9dfe','owner':'01a1009c-c0ad-71b2-986b-136d13d5d51f','phase':'auth-composed-validation-v1','base':route.BASE,'packetSeal':route.PACKET_SEAL,'leaseId':'11111111-1111-4111-8111-111111111111','issuedUtc':now.isoformat(),'expiresUtc':(now+timedelta(minutes=10)).isoformat(),'sourceCommit':route.BASE}
         env={'GITHUB_REPOSITORY':'MALIEV-Co-Ltd/Legacy.Maliev.AuthService','GITHUB_EVENT_NAME':'workflow_dispatch','GITHUB_REF':'refs/heads/main','GITHUB_RUN_ATTEMPT':'1','GITHUB_SHA':route.BASE}
         return row,env,now
     def test_fresh_exact_request_only(self):
@@ -140,17 +140,18 @@ class RouteControls(unittest.TestCase):
         self.assertNotIn('Invoke-FinancialIamQualification.ps1',text)
         self.assertIn('memory="128M" if args.stage == "proof" else "3G"',text)
         self.assertIn('runtime=180 if args.stage == "proof" else 2100',text)
-    def test_real_current_main_materialization_exact_two_files(self):
+    def test_real_current_main_materialization_exact43_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root=Path(tmp)/'auth'
             subprocess.run(['git','clone','--no-hardlinks','--no-checkout',str(BACKEND),str(root)],check=True,capture_output=True,timeout=30)
-            subprocess.run(['git','-C',str(root),'checkout','--detach',route.BASE],check=True,capture_output=True,timeout=30)
-            result=route.materialize(BACKEND,root)
+            subprocess.run(['git','-C',str(root),'fetch',str(BACKEND),route.BASE],check=True,capture_output=True,timeout=30)
+            subprocess.run(['git','-c','core.autocrlf=false','-C',str(root),'checkout','--detach',route.BASE],check=True,capture_output=True,timeout=30)
+            result=route.materialize(Path(__file__).resolve().parents[2],root)
             self.assertEqual(result['base'],route.BASE)
-            adapter=route.module(BACKEND/'eng/customer-self-identity-intake/controls/intake_adapter.py','test_cs9_adapter')
-            self.assertEqual(set(result['changedPaths']),set(adapter.PATHS))
-            for name in adapter.PATHS:self.assertEqual((root/name).read_bytes(),(route.packet(BACKEND)/'files'/name).read_bytes())
-            with self.assertRaisesRegex(ValueError,'dirty checkout'):route.materialize(BACKEND,root)
+            self.assertEqual(set(result['changedPaths']),set(route.PATHS))
+            for name in route.PATHS:self.assertEqual((root/name).read_bytes(),(route.packet(Path(__file__).resolve().parents[2])/'files'/name).read_bytes())
+            self.assertEqual(result['createdDirectories'],list(route.DIRECTORIES))
+            with self.assertRaisesRegex(ValueError,'[Cc]lean composed checkout'):route.materialize(Path(__file__).resolve().parents[2],root)
     def test_proxy_preserves_original_caps_and_disposable_storage(self):
         shared=shared_source()
         api=shared.pure_create_api(BACKEND/'eng/financial-iam')
@@ -168,12 +169,108 @@ class RouteControls(unittest.TestCase):
         for data in ({'Image':'other'},{'Image':'postgres:18-alpine','HostConfig':{'Binds':['/foreign:/data']}},{'Image':'postgres:18-alpine','HostConfig':{'Tmpfs':{'/foreign':'rw'}}}):
             with self.assertRaises(ValueError):proxy.plan(data,'auth-financial-1-1-aaaaaaaaaaaa','fixed.slice',lambda:image,api.create_plan)
 
+class ComposedControls(unittest.TestCase):
+    """Synthetic parsing/state controls; no compiled application proof."""
+    def fixture(self,folder):
+        assembly=Path(folder)/worker.ASSEMBLY;assembly.write_bytes(b'synthetic-not-a-compiled-assembly')
+        listing=Path(folder)/'listing.log'
+        names=list(worker.FOCUSED_CASES)+[worker.NEW_CASE]
+        listing.write_text('The following Tests are available:\n'+''.join('    '+n+'\n' for n in names),encoding='utf-8')
+        return assembly,listing
+    def test_discovery_selects_exact_three_new_cases_without_full_count_guess(self):
+        with tempfile.TemporaryDirectory() as folder:
+            assembly,listing=self.fixture(folder);roster=worker.capture_discovery(assembly,listing)
+            self.assertEqual(len(roster['cases']),4)
+            self.assertEqual(worker.focused_roster(roster)['cases'],list(worker.FOCUSED_CASES))
+            self.assertEqual(roster['assemblySha256'],hashlib.sha256(assembly.read_bytes()).hexdigest())
+    def test_discovery_rejects_missing_case_foreign_rows_and_marker_ambiguity(self):
+        for mode in ('missing','foreign','duplicate-marker','collision'):
+            with self.subTest(mode=mode),tempfile.TemporaryDirectory() as folder:
+                assembly,listing=self.fixture(folder);text=listing.read_text()
+                if mode=='missing':text=text.replace('    '+worker.FOCUSED_CASES[0]+'\n','')
+                elif mode=='foreign':text+='    Foreign.Tests.Test\n'
+                elif mode=='duplicate-marker':text+='The following Tests are available:\n'
+                else:text+='    '+worker.FOCUSED_CASES[0]+'\n'
+                listing.write_text(text)
+                with self.assertRaises(ValueError):worker.capture_discovery(assembly,listing)
+    def test_focused_roster_refuses_substituted_theory_argument(self):
+        with tempfile.TemporaryDirectory() as folder:
+            assembly,listing=self.fixture(folder);roster=worker.capture_discovery(assembly,listing)
+            roster['cases'][0]=worker.DELETE_METHOD+'(contender: "other")'
+            with self.assertRaises(ValueError):worker.focused_roster(roster)
+    def test_roster_rejects_bool_schema_foreign_digest_and_unreviewed_collisions(self):
+        with tempfile.TemporaryDirectory() as folder:
+            assembly,listing=self.fixture(folder);roster=worker.capture_discovery(assembly,listing)
+            for changed in (dict(roster,schemaVersion=True),dict(roster,assemblySha256='wrong'),dict(roster,cases=roster['cases']*2)):
+                with self.assertRaises(ValueError):worker.validate_roster(changed)
+    def replay_trx(self,folder):
+        assembly=Path(folder)/worker.ASSEMBLY;assembly.write_bytes(b'synthetic-assembly-identity-only')
+        xml=RouteControls().raw();ns='{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}'
+        # Captured historical TRX is another service's schema fixture. These
+        # explicit synthetic associations exercise Auth namespace/path joins;
+        # they are never an Auth execution receipt.
+        mapping={}
+        for definition in xml.find(ns+'TestDefinitions'):
+            method=definition.find(ns+'TestMethod');before=method.get('className')+'.'+method.get('name')
+            new_class=worker.PREFIX+'Replay'+method.get('className').rsplit('.',1)[-1]
+            name=new_class+'.'+method.get('name')+definition.get('name')[len(before):]
+            mapping[definition.get('id')]=name
+            method.set('className',new_class);method.set('codeBase',str(assembly.resolve()));definition.set('name',name)
+        for result in xml.find(ns+'Results'):result.set('testName',mapping[result.get('testId')])
+        names=[n.get('testName') for n in xml.find(ns+'Results')]
+        path=Path(folder)/'replay.trx';ET.ElementTree(xml).write(path,encoding='utf-8')
+        roster={'schemaVersion':1,'assemblyPath':str(assembly.resolve()),'assemblySha256':hashlib.sha256(assembly.read_bytes()).hexdigest(),'listingSha256':'1'*64,'cases':names}
+        return path,assembly,roster
+    def test_trx_requires_discovered_case_multiset_and_exact_assembly_path(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path,assembly,roster=self.replay_trx(folder)
+            self.assertEqual(worker.trx(path,31,roster=roster)['passed'],31)
+            changed=dict(roster,cases=list(roster['cases']));changed['cases'][0]=worker.PREFIX+'Other.Substituted'
+            with self.assertRaises(ValueError):worker.trx(path,31,roster=changed)
+            changed=dict(roster,assemblyPath=str(Path(folder)/'foreign'/worker.ASSEMBLY))
+            with self.assertRaises(ValueError):worker.trx(path,31,roster=changed,check_assembly=False)
+    def test_trx_rejects_assembly_digest_drift_after_discovery(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path,assembly,roster=self.replay_trx(folder);assembly.write_bytes(b'changed-synthetic-assembly')
+            with self.assertRaises(ValueError):worker.trx(path,31,roster=roster)
+    def model_backend(self,root,failure=None):
+        import types
+        def require(ok,message):
+            if not ok:raise ValueError(message)
+        def git(unused,*args):return route.BASE.encode() if args[0]=='rev-parse' else b''
+        def safe_path(unused,name):return root/name
+        def materialize(unused,candidate):
+            if failure is not None:raise failure
+            return {'changedPaths':list(route.PATHS)}
+        return types.SimpleNamespace(require=require,git=git,safe_path=safe_path,validate_preimages=lambda *a:None,materialize=materialize)
+    def test_declared_directory_success_preserves_existing_parent(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'acceptance').mkdir();backend=self.model_backend(root)
+            with patch.object(route,'load_intake',return_value=backend),patch.object(route,'verify_packet',return_value=[]):
+                result=route.materialize(root,root)
+            self.assertEqual(result['createdDirectories'],list(route.DIRECTORIES))
+            self.assertTrue(all((root/n).is_dir() for n in route.DIRECTORIES))
+    def test_materialization_failure_rolls_back_only_declared_empty_directories(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'acceptance').mkdir();primary=RuntimeError('injected materialization failure');backend=self.model_backend(root,primary)
+            with patch.object(route,'load_intake',return_value=backend),patch.object(route,'verify_packet',return_value=[]):
+                with self.assertRaises(RuntimeError) as caught:route.materialize(root,root)
+            self.assertIs(caught.exception,primary)
+            self.assertTrue((root/'acceptance').is_dir())
+            self.assertFalse(any((root/n).exists() for n in route.DIRECTORIES))
+    def test_existing_declared_directory_is_refused_and_preserved(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root=Path(folder);(root/'acceptance').mkdir();existing=root/route.DIRECTORIES[1];existing.mkdir();backend=self.model_backend(root)
+            with patch.object(route,'load_intake',return_value=backend),patch.object(route,'verify_packet',return_value=[]):
+                with self.assertRaises(ValueError):route.materialize(root,root)
+            self.assertTrue(existing.is_dir());self.assertFalse((root/route.DIRECTORIES[0]).exists())
+
 def main():
     here=Path(__file__).resolve().parent
     for name in ('route.py','auth_owner.py','proxy.py','worker.py','caller.py','readback.py','admission.py','test_caller.py','test_route.py'):compile((here/name).read_bytes(),str(here/name),'exec')
     test_caller.BACKEND=BACKEND
-    suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromModule(test_caller),unittest.defaultTestLoader.loadTestsFromTestCase(RouteControls)])
-    if suite.countTestCases()!=31:raise ValueError('Exact 31 route controls required')
+    suite=unittest.TestSuite([unittest.defaultTestLoader.loadTestsFromModule(test_caller),unittest.defaultTestLoader.loadTestsFromTestCase(RouteControls),unittest.defaultTestLoader.loadTestsFromTestCase(ComposedControls)])
+    if suite.countTestCases()!=40:raise ValueError('Exact 40 composed route controls required')
     result=unittest.TextTestRunner(verbosity=2).run(suite)
     if not result.wasSuccessful() or result.skipped:raise SystemExit(1)
 
