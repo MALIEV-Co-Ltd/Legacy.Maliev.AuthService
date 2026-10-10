@@ -19,6 +19,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
@@ -147,7 +148,9 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         try { Assert.Equal(HttpStatusCode.Created, created.StatusCode); }
         catch (Xunit.Sdk.XunitException exception)
         {
-            throw new Xunit.Sdk.XunitException(exception.Message + "\nSafe binding failure: " + stores.FailureSummary, exception);
+            throw new Xunit.Sdk.XunitException(exception.Message + "\nSafe binding failure: " + stores.FailureSummary +
+                "; profileReads=" + factory.ProfileReads + "; downstreamStatus=" +
+                (factory.LastDownstreamStatus is { } status ? ((int)status).ToString(System.Globalization.CultureInfo.InvariantCulture) : "none"), exception);
         }
         var stored = Assert.Single(await stores.Identities.Users.AsNoTracking().ToListAsync());
         Assert.Equal(profile.Email, stored.Email);
@@ -422,6 +425,7 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         public const string Secret = "customer-profile-test-only-0123456789";
         private readonly RSA signing = RSA.Create(2048);
         private CustomerFactory? customer;
+        public void RecordTransportFailure(Exception exception) => stores.RecordFailure("customer-transport", exception);
         public int ProfileReads { get; private set; }
         public HttpStatusCode? ResponseStatus { get; set; }
         public string? ResponseBody { get; set; }
@@ -455,6 +459,7 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
             }));
             builder.ConfigureTestServices(services =>
             {
+                services.Configure<MvcOptions>(options => options.Filters.Add(new FixtureExceptionCapture(stores, "auth-controller")));
                 var pools = new OwnedPoolCapture(stores);
                 services.AddDbContext<CustomerIdentityDbContext>(options => options.AddInterceptors(pools));
                 services.AddDbContext<EmployeeIdentityDbContext>(options => options.AddInterceptors(pools));
@@ -501,7 +506,13 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
                 }
                 if (owner.ResponseStatus is { } status) return new(status) { Content = new StringContent("{}") };
                 if (owner.ResponseBody is { } body) return new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
-                var result = await base.SendAsync(request, cancellationToken);
+                HttpResponseMessage result;
+                try { result = await base.SendAsync(request, cancellationToken); }
+                catch (Exception exception)
+                {
+                    owner.RecordTransportFailure(exception);
+                    throw;
+                }
                 owner.LastDownstreamStatus = result.StatusCode;
                 owner.LastProfileBody = await result.Content.ReadAsStringAsync(cancellationToken);
                 return result;
@@ -538,7 +549,11 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
                 ["Features:ResourceScopedAuthEnabled"] = "true",
                 ["OTEL_EXPORTER_OTLP_ENDPOINT"] = "",
             }) builder.UseSetting(setting.Key, setting.Value);
-            builder.ConfigureTestServices(services => services.AddDbContext<CustomerDbContext>(options => options.AddInterceptors(new OwnedPoolCapture(stores))));
+            builder.ConfigureTestServices(services =>
+            {
+                services.AddDbContext<CustomerDbContext>(options => options.AddInterceptors(new OwnedPoolCapture(stores)));
+                services.Configure<MvcOptions>(options => options.Filters.Add(new FixtureExceptionCapture(stores, "customer-controller")));
+            });
         }
     }
 
@@ -554,6 +569,11 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
             stores.RegisterPool((NpgsqlConnection)connection);
             return ValueTask.FromResult(result);
         }
+    }
+
+    private sealed class FixtureExceptionCapture(Stores stores, string phase) : IExceptionFilter
+    {
+        public void OnException(ExceptionContext context) => stores.RecordFailure(phase, context.Exception);
     }
 
     private sealed class FixtureFailureLogger(Stores stores, string phase) : ILoggerProvider
