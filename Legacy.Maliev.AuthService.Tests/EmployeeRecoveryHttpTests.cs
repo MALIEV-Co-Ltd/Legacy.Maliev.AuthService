@@ -29,6 +29,106 @@ public sealed class EmployeeRecoveryHttpTests(PostgresFixture postgres)
     private const string Root = "/auth/v1/employee-self-service/";
 
     [Theory]
+    [InlineData("employee@example.com", true)]
+    [InlineData("\"employee@office\"@example.com", true)]
+    [InlineData("Employee <employee@example.com>", false)]
+    [InlineData(" employee@example.com ", false)]
+    [InlineData("invalid-address", false)]
+    [InlineData("", false)]
+    [InlineData("overlong", false)]
+    [InlineData("maximum", true)]
+    [InlineData("employee\r\n@example.com", false)]
+    [InlineData("employee\t@example.com", false)]
+    public async Task RecoveryEmail_SyntaxMatchesHistoricalBareAddressPredicate(string email, bool accepted)
+    {
+        if (email == "overlong") email = new string('a', 310) + "@maliev.test";
+        if (email == "maximum") email = new string('a', 308) + "@maliev.test";
+        if (email.StartsWith('"'))
+        {
+            Assert.Equal(email, new System.Net.Mail.MailAddress(email).Address);
+            Assert.False(new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(email));
+        }
+        await using var stores = await Stores.CreateAsync(postgres);
+        // The DTO bound is 320; persisted legacy identity email is separately bounded to 256.
+        if (accepted && email.Length <= 256)
+            await stores.Employees.Users.ExecuteUpdateAsync(setters => setters
+                .SetProperty(row => row.Email, email)
+                .SetProperty(row => row.NormalizedEmail, email.ToUpperInvariant()));
+        using var factory = new RecoveryFactory(stores, production: true);
+        using var owner = factory.Client(factory.Token());
+        var before = await RecoverySnapshotAsync(stores);
+        using var request = await owner.PostAsJsonAsync(Root + "password-reset/request", new EmployeeActionRequest(email));
+        Assert.Equal(accepted ? HttpStatusCode.OK : HttpStatusCode.BadRequest, request.StatusCode);
+        if (!accepted)
+        {
+            Assert.Equal(before, await RecoverySnapshotAsync(stores));
+            return;
+        }
+        var reset = (await request.Content.ReadFromJsonAsync<EmployeeActionChallenge>())!;
+        if (email.Length == 320)
+        {
+            Assert.True(reset.Accepted);
+            Assert.Null(reset.Token); // Admission accepts the bound; an absent account stays enumeration-safe.
+            Assert.Equal(before, await RecoverySnapshotAsync(stores));
+            return;
+        }
+        Assert.False(string.IsNullOrWhiteSpace(reset.Token));
+        using var completion = await owner.PostAsJsonAsync(Root + "password-reset/complete",
+            new CompleteEmployeePasswordResetRequest(email, reset.Token!, "replacement-password"));
+        Assert.Equal(HttpStatusCode.NoContent, completion.StatusCode);
+        using var confirmation = await owner.PostAsJsonAsync(Root + "email-confirmation/request", new EmployeeActionRequest(email));
+        Assert.Equal(HttpStatusCode.OK, confirmation.StatusCode);
+        var challenge = (await confirmation.Content.ReadFromJsonAsync<EmployeeActionChallenge>())!;
+        Assert.False(string.IsNullOrWhiteSpace(challenge.Token));
+        using var confirmed = await owner.PostAsJsonAsync(Root + "email-confirmation/complete",
+            new CompleteEmployeeActionRequest(email, challenge.Token!));
+        Assert.Equal(HttpStatusCode.NoContent, confirmed.StatusCode);
+    }
+
+    [Theory]
+    [InlineData("email-confirmation")]
+    [InlineData("password-reset")]
+    public async Task RecoveryEmail_InvalidAdmissionPreservesRealChallengeAndStoredState(string purpose)
+    {
+        await using var stores = await Stores.CreateAsync(postgres);
+        using var factory = new RecoveryFactory(stores, production: true);
+        using var owner = factory.Client(factory.Token());
+        string?[] invalid = [null, "", "   ", "Employee <employee@example.com>", " employee@example.com ",
+            "invalid-address", "employee\r\n@example.com", "employee\t@example.com", new string('a', 310) + "@maliev.test"];
+        var initial = await RecoverySnapshotAsync(stores);
+        foreach (var email in invalid)
+        {
+            using var rejected = await owner.PostAsJsonAsync(Root + purpose + "/request", new EmployeeActionRequest(email!));
+            Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+            Assert.Equal(initial, await RecoverySnapshotAsync(stores));
+        }
+        using var issued = await owner.PostAsJsonAsync(Root + purpose + "/request", new EmployeeActionRequest("employee@example.com"));
+        Assert.Equal(HttpStatusCode.OK, issued.StatusCode);
+        var challenge = (await issued.Content.ReadFromJsonAsync<EmployeeActionChallenge>())!;
+        Assert.False(string.IsNullOrWhiteSpace(challenge.Token));
+        var before = await RecoverySnapshotAsync(stores);
+        foreach (var email in invalid)
+        {
+            object payload = purpose == "email-confirmation"
+                ? new CompleteEmployeeActionRequest(email!, challenge.Token!)
+                : new CompleteEmployeePasswordResetRequest(email!, challenge.Token!, "replacement-password");
+            using var rejected = await owner.PostAsJsonAsync(Root + purpose + "/complete", payload);
+            Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+            var body = await rejected.Content.ReadAsStringAsync();
+            Assert.DoesNotContain(challenge.Token!, body);
+            Assert.DoesNotContain("replacement-password", body);
+            Assert.Equal(before, await RecoverySnapshotAsync(stores));
+        }
+        object valid = purpose == "email-confirmation"
+            ? new CompleteEmployeeActionRequest("employee@example.com", challenge.Token!)
+            : new CompleteEmployeePasswordResetRequest("employee@example.com", challenge.Token!, "replacement-password");
+        using var completed = await owner.PostAsJsonAsync(Root + purpose + "/complete", valid);
+        Assert.Equal(HttpStatusCode.NoContent, completed.StatusCode);
+        using var replay = await owner.PostAsJsonAsync(Root + purpose + "/complete", valid);
+        Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
+    }
+
+    [Theory]
     [InlineData(0)]
     [InlineData(1)]
     [InlineData(2)]
