@@ -184,7 +184,7 @@ def main():
     if subprocess.check_output(['git','-C',str(tools),'status','--porcelain','--untracked-files=all'],timeout=30):raise ValueError('Clean trusted scanner checkout required')
     for scanner in ('Invoke-JwtSigningResourceScan.ps1','Invoke-CurrentTreeCredentialScan.ps1'):
         run(['/usr/bin/pwsh','-NoProfile','-File',str(tools/'scripts'/scanner),'-RepositoryPath',str(auth)],auth,'scan-'+scanner,60)
-    env['GOBIN']=str(a.destination/'owned-tools');env['GOTOOLCHAIN']='go1.26.8'
+    env['GOBIN']=str(a.destination/'owned-tools');env['GOTOOLCHAIN']='go1.26.9'
     Path(env['GOBIN']).mkdir()
     run(['go','install','github.com/zricethezav/gitleaks/v8@6eaad039603a4de39fddd1cf5f727391efe9974e'],auth,'install-scanner',180)
     for kind in ('git','dir'):

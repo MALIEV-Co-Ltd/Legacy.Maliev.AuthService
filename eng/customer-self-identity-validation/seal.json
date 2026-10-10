@@ -16,7 +16,7 @@
     },
     {
       "path": "worker.py",
-      "sha256": "061d774bf345269fe74c1bd35b5e02bf6794af621b879c7edeb83264337d5f90"
+      "sha256": "c5983f0e0894374ec1ce200f9b81268d6b9bc801611f0e0e730ccd72736563ea"
     },
     {
       "path": "caller.py",
