@@ -125,7 +125,7 @@ jobs:
           sudo -n --preserve-env=GITHUB_REPOSITORY,GITHUB_EVENT_NAME,GITHUB_SHA,GITHUB_RUN_ID,GITHUB_RUN_ATTEMPT,GITHUB_REF,RUNNER_TEMP,REQUEST_SHA256 /usr/bin/python3 -B eng/customer-self-identity-validation/caller.py --role dispatch --source "$PWD" --evidence "$RUNNER_TEMP/auth-identity-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
       - name: Retain exact Auth validation and cleanup receipts
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: auth-identity-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
