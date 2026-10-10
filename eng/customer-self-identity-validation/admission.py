@@ -20,7 +20,7 @@ def validate(raw,expected,env,now):
     if type(raw) is not bytes or not 0<len(raw)<=4096 or hashlib.sha256(raw).hexdigest()!=expected:raise ValueError('Exact reviewed request bytes required')
     row=json.loads(raw,object_pairs_hook=unique)
     keys={'issuedBy','owner','phase','leaseId','issuedUtc','expiresUtc','sourceCommit','base','packetSeal'}
-    fixed={'issuedBy':'019fc21e-50f0-7112-834f-9fb3b35b9dfe','owner':'01a1009c-c0ad-71b2-986b-136d13d5d51f','phase':'auth-cs9-validation','base':BASE,'packetSeal':PACKET_SEAL}
+    fixed={'issuedBy':'019fc21e-50f0-7112-834f-9fb3b35b9dfe','owner':'01a1009c-c0ad-71b2-986b-136d13d5d51f','phase':'auth-composed-validation-v1','base':BASE,'packetSeal':PACKET_SEAL}
     if set(row)!=keys or any(type(v) is not str for v in row.values()) or any(row[k]!=v for k,v in fixed.items()):raise ValueError('Exact Auth request scope required')
     if str(uuid.UUID(row['leaseId']))!=row['leaseId']:raise ValueError('Canonical fresh lease required')
     issued=datetime.fromisoformat(row['issuedUtc']);expiry=datetime.fromisoformat(row['expiresUtc'])

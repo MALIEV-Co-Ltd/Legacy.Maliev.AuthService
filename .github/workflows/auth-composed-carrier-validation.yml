@@ -1,4 +1,4 @@
-name: Auth exact composed source validation
+name: Auth43 closed carrier infrastructure validation
 on:
   workflow_dispatch:
     inputs:
@@ -36,7 +36,8 @@ jobs:
           set -euo pipefail
           ulimit -v 524288
           ulimit -t 30
-          python3 -B eng/customer-self-identity-validation/admission.py
+          python3 -B eng/auth-composed-carrier/entry.py
+          python3 -B eng/auth-composed-carrier/test_entry.py
           python3 -B eng/customer-self-identity-validation/test_route.py
           python3 -B -O eng/customer-self-identity-validation/test_route.py
       - name: Provision the SDK using the existing accepted action

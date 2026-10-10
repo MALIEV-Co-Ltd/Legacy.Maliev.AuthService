@@ -1,0 +1,869 @@
+using Legacy.Maliev.AuthService.Application;
+using Legacy.Maliev.AuthService.Domain;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.WebUtilities;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.Json;
+
+namespace Legacy.Maliev.AuthService.Infrastructure;
+
+/// <summary>Owns customer registration, confirmation, and recovery without changing the legacy schema.</summary>
+public sealed class CustomerSelfService(CustomerIdentityDbContext customers, RefreshSessionDbContext state, IPasswordHasher<LegacyIdentityRow> passwordHasher, TimeProvider timeProvider) : ICustomerLoginActionLifecycle, ICustomerPasswordSetupIssuer
+{
+    private const string EmailConfirmation = "email-confirmation";
+    private const string EmailChange = "email-change";
+    private const string PasswordReset = "password-reset";
+    private const string InitialPassword = "initial-password";
+    private const string EmailConfirmationRecovery = "email-confirmation-recovery";
+    private static readonly TimeSpan ActionLifetime = TimeSpan.FromHours(24);
+    private static readonly TimeSpan LoginActionLifetime = TimeSpan.FromMinutes(15);
+
+    /// <summary>Creates an unconfirmed customer identity.</summary>
+    public async Task<CustomerSelfServiceResult> RegisterAsync(RegisterCustomerIdentityRequest request, CancellationToken cancellationToken)
+    {
+        if (!WebIdentityEmailPolicy.Accepts(request.Email)) return new(false, null, null, null);
+        var email = request.Email.Trim();
+        var normalized = LegacyIdentityKeyOwnership.CanonicalKey(email);
+        await using var identity = NewRegistrationContext();
+        await using var transaction = await identity.Database.BeginTransactionAsync(cancellationToken);
+        await CustomerIdentityAdminService.LockProfileAsync(identity, request.DatabaseId, cancellationToken);
+        await LockNormalizedEmailAsync(identity, normalized, cancellationToken);
+        await LegacyIdentityKeyOwnership.LockUserNameAsync(identity, normalized, cancellationToken);
+        var exists = await identity.Users.AnyAsync(
+            value => value.DatabaseID == request.DatabaseId
+                || value.NormalizedUserName == normalized,
+            cancellationToken) || await LegacyIdentityKeyOwnership.HasOtherUserNameOwnerAsync(identity, email, null, cancellationToken)
+            || await LegacyIdentityKeyOwnership.HasOtherOwnerAsync(identity, email, null, cancellationToken);
+        if (exists)
+        {
+            return new(false, null, null, null);
+        }
+
+        var row = new LegacyIdentityRow
+        {
+            Id = Guid.NewGuid().ToString(),
+            DatabaseID = request.DatabaseId,
+            UserName = email,
+            NormalizedUserName = normalized,
+            Email = email,
+            NormalizedEmail = normalized,
+            EmailConfirmed = false,
+            PhoneNumberConfirmed = false,
+            TwoFactorEnabled = false,
+            LockoutEnabled = true,
+            AccessFailedCount = 0,
+            SecurityStamp = Guid.NewGuid().ToString(),
+            ConcurrencyStamp = Guid.NewGuid().ToString(),
+        };
+        row.PasswordHash = passwordHasher.HashPassword(row, request.Password);
+        identity.Users.Add(row);
+        await identity.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return new(true, row.Id, row.DatabaseID, row.Email, Created: true);
+    }
+
+    /// <summary>Resolves and links a deterministic existing identity after an ambiguous registration response.</summary>
+    public async Task<CustomerSelfServiceResult> ResolveRegistrationAsync(
+        ResolveCustomerIdentityRequest request,
+        CancellationToken cancellationToken)
+    {
+        var normalized = LegacyIdentityKeyOwnership.CanonicalKey(request.Email);
+        var retained = request.Email.Trim().ToUpperInvariant();
+        await using var identity = NewRegistrationContext();
+        var matches = await identity.Users.AsNoTracking().Where(value => value.NormalizedEmail == normalized
+                || value.NormalizedEmail == retained || value.NormalizedUserName == normalized
+                || value.NormalizedUserName == retained).Take(2).ToListAsync(cancellationToken);
+        if (matches.Count != 1) return new(false, null, null, null);
+        await using var transaction = await identity.Database.BeginTransactionAsync(cancellationToken);
+        await CustomerIdentityAdminService.LockProfileAsync(identity, request.DatabaseId, cancellationToken);
+        // Existing writers lock the identity row before the email partition. Re-read after both waits.
+        var observedId = matches[0].Id;
+        var row = await identity.Users.FromSqlInterpolated(
+            $"SELECT * FROM \"AspNetUsers\" WHERE \"Id\" = {observedId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken);
+        if (row is null) return new(false, null, null, null);
+        await LockNormalizedEmailAsync(identity, normalized, cancellationToken);
+        var currentMatches = await identity.Users.AsNoTracking().Where(value => value.NormalizedEmail == normalized
+                || value.NormalizedEmail == retained || value.NormalizedUserName == normalized
+                || value.NormalizedUserName == retained).Select(value => value.Id).Take(2).ToListAsync(cancellationToken);
+        if (currentMatches.Count != 1 || currentMatches[0] != row.Id ||
+            await identity.Users.AnyAsync(value => value.Id != row.Id && value.DatabaseID == request.DatabaseId, cancellationToken))
+            return new(false, null, null, null);
+
+        var passwordWasCommitted = row.PasswordHash is not null
+            && passwordHasher.VerifyHashedPassword(row, row.PasswordHash, request.Password)
+                is not PasswordVerificationResult.Failed;
+        if (!passwordWasCommitted
+            || (row.DatabaseID is > 0 && row.DatabaseID != request.DatabaseId))
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return new(false, null, null, null);
+        }
+
+        if (row.DatabaseID != request.DatabaseId)
+        {
+            row.DatabaseID = request.DatabaseId;
+            row.SecurityStamp = Guid.NewGuid().ToString();
+            row.ConcurrencyStamp = Guid.NewGuid().ToString();
+            await identity.SaveChangesAsync(cancellationToken);
+        }
+
+        await transaction.CommitAsync(cancellationToken);
+        return new(true, row.Id, row.DatabaseID, row.Email, Created: passwordWasCommitted);
+    }
+
+    private CustomerIdentityDbContext NewRegistrationContext() => new(
+        new DbContextOptionsBuilder<CustomerIdentityDbContext>()
+            // Never automatically retry an uncertain identity/link commit. The caller's
+            // existing resolve endpoint verifies the committed credential and current link.
+            .UseNpgsql(customers.Database.GetConnectionString(), options => options.CommandTimeout(120))
+            .Options);
+
+    private CustomerIdentityDbContext NewIdentityWriteContext() => new(
+        new DbContextOptionsBuilder<CustomerIdentityDbContext>(
+            (DbContextOptions<CustomerIdentityDbContext>)customers.GetService<IDbContextOptions>())
+            .UseNpgsql(customers.Database.GetConnectionString(), provider => provider.CommandTimeout(120)
+                .ExecutionStrategy(dependencies => new NonRetryingExecutionStrategy(dependencies))).Options);
+
+    private static Task<int> LockNormalizedEmailAsync(CustomerIdentityDbContext identity, string normalizedEmail,
+        CancellationToken cancellationToken) => LegacyIdentityKeyOwnership.LockAsync(identity, normalizedEmail, cancellationToken);
+
+    /// <summary>Creates a confirmation challenge for a known unconfirmed identity.</summary>
+    public Task<CustomerActionChallenge> RequestEmailConfirmationAsync(CustomerActionRequest request, CancellationToken cancellationToken) => CreateChallengeAsync(request.Email, EmailConfirmation, requireUnconfirmed: true, cancellationToken);
+    /// <summary>Creates a reset challenge without revealing missing identities to the public caller.</summary>
+    public async Task<CustomerActionChallenge> RequestPasswordResetAsync(CustomerActionRequest request, CancellationToken cancellationToken)
+    {
+        var row = await FindAsync(request.Email, cancellationToken);
+        if (row is null || !EmailMatches(row.Email, request.Email))
+        {
+            return new(true, null);
+        }
+
+        if (string.IsNullOrWhiteSpace(row.SecurityStamp))
+        {
+            // Migrated identities may have no stamp. Only replace the value we observed,
+            // then reload so concurrent initialization or credential changes win safely.
+            var previousStamp = row.SecurityStamp;
+            var initialStamp = Guid.NewGuid().ToString();
+            var initialConcurrencyStamp = Guid.NewGuid().ToString();
+            await customers.Users.Where(value => value.Id == row.Id && value.SecurityStamp == previousStamp)
+                .ExecuteUpdateAsync(setters => setters.SetProperty(value => value.SecurityStamp, initialStamp)
+                    .SetProperty(value => value.ConcurrencyStamp, initialConcurrencyStamp), cancellationToken);
+            await customers.Entry(row).ReloadAsync(cancellationToken);
+            if (customers.Entry(row).State == EntityState.Detached
+                || !EmailMatches(row.Email, request.Email)
+                || string.IsNullOrWhiteSpace(row.SecurityStamp))
+            {
+                return new(true, null);
+            }
+        }
+
+        return await CreateSecurityStampBoundChallengeAsync(
+            row.Id, PasswordReset, row.Email!, row.SecurityStamp, cancellationToken, ActionLifetime);
+    }
+
+    /// <inheritdoc />
+    public async Task<string?> IssueInitialPasswordChallengeAsync(
+        string identityId,
+        string email,
+        string securityStamp,
+        CancellationToken cancellationToken) =>
+        (await CreateSecurityStampBoundChallengeAsync(
+            identityId,
+            InitialPassword,
+            email,
+            securityStamp,
+            cancellationToken,
+            LoginActionLifetime)).Token;
+
+    /// <summary>Issues a setup challenge only for an explicitly classified bootstrap customer.</summary>
+    public async Task<CustomerActionChallenge> IssueInitialPasswordChallengeForDatabaseIdAsync(
+        int databaseId,
+        CancellationToken cancellationToken)
+    {
+        var row = await customers.Users.AsNoTracking().SingleOrDefaultAsync(
+            value => value.DatabaseID == databaseId,
+            cancellationToken);
+        if (row is null
+            || !await CustomerPasswordSetupState.IsRequiredAsync(customers, row, cancellationToken)
+            || !row.EmailConfirmed
+            || string.IsNullOrWhiteSpace(row.Email)
+            || string.IsNullOrWhiteSpace(row.SecurityStamp))
+        {
+            return new(false, null);
+        }
+
+        return await CreateSecurityStampBoundChallengeAsync(
+            row.Id,
+            InitialPassword,
+            row.Email,
+            row.SecurityStamp,
+            cancellationToken,
+            ActionLifetime);
+    }
+
+    /// <inheritdoc />
+    public async Task<string?> IssueEmailConfirmationRecoveryAsync(
+        string identityId,
+        string email,
+        string securityStamp,
+        CancellationToken cancellationToken) =>
+        (await CreateSecurityStampBoundChallengeAsync(
+            identityId,
+            EmailConfirmationRecovery,
+            email,
+            securityStamp,
+            cancellationToken,
+            LoginActionLifetime)).Token;
+
+    /// <summary>Consumes a credential-validated resend grant and returns a fresh confirmation challenge.</summary>
+    public async Task<CustomerActionChallenge> RecoverEmailConfirmationAsync(
+        CompleteCustomerActionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var recovery = await FindSecurityStampBoundActionAsync(
+            EmailConfirmationRecovery,
+            request.Email,
+            request.Token,
+            cancellationToken);
+        if (recovery is null)
+        {
+            return new(false, null);
+        }
+
+        var row = await customers.Users.AsNoTracking().SingleOrDefaultAsync(
+            value => value.Id == recovery.IdentityId,
+            cancellationToken);
+        if (row is null || row.EmailConfirmed || string.IsNullOrWhiteSpace(row.Email)
+            || (row.LockoutEnabled && row.LockoutEnd >= timeProvider.GetUtcNow()))
+        {
+            return new(false, null);
+        }
+
+        if (!await TryConsumeAsync(recovery, cancellationToken))
+        {
+            return new(false, null);
+        }
+
+        return await CreateChallengeForIdentityAsync(
+            row.Id,
+            EmailConfirmation,
+            row.Email,
+            cancellationToken);
+    }
+
+    /// <summary>Replaces an issued temporary password through a single-use login challenge.</summary>
+    public async Task<bool> CompleteInitialPasswordAsync(
+        CompleteInitialPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var action = await FindSecurityStampBoundActionAsync(
+            InitialPassword,
+            request.Email,
+            request.Token,
+            cancellationToken);
+        if (action is null)
+        {
+            return false;
+        }
+
+        await using var identity = NewIdentityWriteContext();
+        await using var transaction = await identity.Database.BeginTransactionAsync(cancellationToken);
+        var row = await identity.Users.FromSqlInterpolated(
+            $"SELECT * FROM \"AspNetUsers\" WHERE \"Id\" = {action.IdentityId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken);
+        if (row is null || !row.EmailConfirmed || !EmailMatches(row.Email, request.Email)
+            || string.IsNullOrWhiteSpace(row.SecurityStamp)
+            || !string.Equals(action.TokenHash, HashBoundToken(request.Token, row.SecurityStamp), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!await TryConsumeAsync(action, cancellationToken))
+        {
+            return false;
+        }
+
+        row.PasswordHash = passwordHasher.HashPassword(row, request.Password);
+        row.PasswordSetupRequired = false;
+        await CustomerPasswordSetupState.ClearMarkersAsync(identity, row.Id, cancellationToken);
+        row.AccessFailedCount = 0;
+        row.LockoutEnd = null;
+        RotateSecurityStamp(row);
+        await identity.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        SynchronizeCommittedPasswordRow(row);
+        await RevokeRefreshSessionsAsync(row.Id, cancellationToken);
+        await SupersedeActiveChallengesAsync(row.Id, InitialPassword, timeProvider.GetUtcNow(), cancellationToken);
+        return true;
+    }
+    /// <summary>Confirms an email using a single-use challenge.</summary>
+    public async Task<bool> ConfirmEmailAsync(CompleteCustomerActionRequest request, CancellationToken cancellationToken)
+    {
+        var action = await FindActionAsync(EmailConfirmation, request.Email, request.Token, cancellationToken);
+        if (action is null)
+        {
+            return false;
+        }
+
+        await using var identity = NewIdentityWriteContext();
+        await using var transaction = await identity.Database.BeginTransactionAsync(cancellationToken);
+        var row = await identity.Users.FromSqlInterpolated(
+            $"SELECT * FROM \"AspNetUsers\" WHERE \"Id\" = {action.IdentityId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken);
+        if (row is null || !EmailMatches(row.Email, request.Email) || !CustomerEmailGenerationMatches(action, row))
+        {
+            return false;
+        }
+
+        if (!await TryConsumeAsync(action, cancellationToken))
+        {
+            return false;
+        }
+
+        row.EmailConfirmed = true;
+        RotateSecurityStamp(row);
+        await identity.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        SynchronizeCommittedPasswordRow(row);
+        return true;
+    }
+    /// <summary>Replaces a password using a single-use challenge.</summary>
+    public async Task<bool> CompletePasswordResetAsync(CompletePasswordResetRequest request, CancellationToken cancellationToken)
+    {
+        var action = await FindSecurityStampBoundActionAsync(PasswordReset, request.Email, request.Token, cancellationToken);
+        if (action is null || !EmailMatches(action.TargetEmail, request.Email))
+        {
+            return false;
+        }
+
+        await using var identity = NewIdentityWriteContext();
+        await using var transaction = await identity.Database.BeginTransactionAsync(cancellationToken);
+        var row = await identity.Users.FromSqlInterpolated(
+            $"SELECT * FROM \"AspNetUsers\" WHERE \"Id\" = {action.IdentityId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken);
+        if (row is null || !EmailMatches(row.Email, request.Email)
+            || string.IsNullOrWhiteSpace(row.SecurityStamp)
+            || !string.Equals(action.TokenHash, HashBoundToken(request.Token, row.SecurityStamp), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!await TryConsumeAsync(action, cancellationToken))
+        {
+            return false;
+        }
+
+        row.PasswordHash = passwordHasher.HashPassword(row, request.Password);
+        row.PasswordSetupRequired = false;
+        await CustomerPasswordSetupState.ClearMarkersAsync(identity, row.Id, cancellationToken);
+        row.AccessFailedCount = 0;
+        row.LockoutEnd = null;
+        RotateSecurityStamp(row);
+        await identity.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        SynchronizeCommittedPasswordRow(row);
+        await RevokeRefreshSessionsAsync(row.Id, cancellationToken);
+        await SupersedeActiveChallengesAsync(row.Id, InitialPassword, timeProvider.GetUtcNow(), cancellationToken);
+        return true;
+    }
+
+    /// <summary>Changes an authenticated customer's email after current-password verification.</summary>
+    public async Task<CustomerActionChallenge?> ChangeEmailAsync(
+        string identityId,
+        ChangeCustomerEmailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var row = await customers.Users.SingleOrDefaultAsync(
+            value => value.Id == identityId,
+            cancellationToken);
+        if (row?.PasswordHash is null)
+        {
+            return null;
+        }
+
+        var verification = passwordHasher.VerifyHashedPassword(row, row.PasswordHash, request.CurrentPassword);
+        if (verification == PasswordVerificationResult.Failed)
+        {
+            return null;
+        }
+
+        if (!WebIdentityEmailPolicy.Accepts(request.NewEmail)) return null;
+        var email = request.NewEmail.Trim();
+        var normalized = email.ToUpperInvariant();
+        if (string.Equals(row.NormalizedEmail, normalized, StringComparison.Ordinal))
+        {
+            return null;
+        }
+        if (await customers.Users.AnyAsync(value => value.Id != identityId &&
+                value.NormalizedUserName == normalized, cancellationToken) ||
+            await LegacyIdentityKeyOwnership.HasOtherUserNameOwnerAsync(customers, email, identityId, cancellationToken) ||
+            await LegacyIdentityKeyOwnership.HasOtherOwnerAsync(customers, email, identityId, cancellationToken)) return null;
+
+        var challenge = await CreateChallengeForIdentityAsync(
+            row.Id,
+            EmailChange,
+            email,
+            cancellationToken);
+        if (verification == PasswordVerificationResult.SuccessRehashNeeded)
+        {
+            row.PasswordHash = passwordHasher.HashPassword(row, request.CurrentPassword);
+            row.ConcurrencyStamp = Guid.NewGuid().ToString();
+        }
+
+        try { await customers.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateConcurrencyException)
+        {
+            customers.Entry(row).State = EntityState.Detached;
+            return null;
+        }
+        return challenge;
+    }
+
+    /// <summary>Validates a pending email change without consuming its single-use challenge.</summary>
+    public async Task<CustomerEmailChangeValidation?> ValidateEmailChangeAsync(
+        CompleteCustomerActionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var action = await FindEmailChangeActionAsync(request, cancellationToken);
+        if (action is null || string.IsNullOrWhiteSpace(action.TargetEmail))
+        {
+            return null;
+        }
+
+        // Completed history remains replayable; pending values must be safe before the BFF updates CRM.
+        if (action.ConsumedAt is null && !AdministrativeIdentityPolicy.Accepts(action.TargetEmail, action.TargetEmail)) return null;
+
+        var row = await customers.Users.AsNoTracking().SingleOrDefaultAsync(
+            value => value.Id == action.IdentityId,
+            cancellationToken);
+        if (row is not null && action.ConsumedAt is null &&
+            (await LegacyIdentityKeyOwnership.HasOtherUserNameOwnerAsync(customers, action.TargetEmail, row.Id, cancellationToken) ||
+             await LegacyIdentityKeyOwnership.HasOtherOwnerAsync(customers, action.TargetEmail, row.Id, cancellationToken))) return null;
+        return row is null
+            || row.DatabaseID is not > 0
+            || string.IsNullOrWhiteSpace(row.Email)
+            ? null
+            : new CustomerEmailChangeValidation(
+                row.DatabaseID.Value,
+                row.Email,
+                action.TargetEmail,
+                action.ConsumedAt is not null);
+    }
+
+    /// <summary>Consumes a pending email change and rotates the identity security state.</summary>
+    public async Task<bool> CompleteEmailChangeAsync(
+        CompleteCustomerActionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var action = await FindActionAsync(EmailChange, request.Email, request.Token, cancellationToken);
+        if (action is null || string.IsNullOrWhiteSpace(action.TargetEmail))
+        {
+            return false;
+        }
+
+        var row = await customers.Users.SingleOrDefaultAsync(
+            value => value.Id == action.IdentityId,
+            cancellationToken);
+        if (row is null)
+        {
+            return false;
+        }
+
+        if (!AdministrativeIdentityPolicy.Accepts(action.TargetEmail, action.TargetEmail)) return false;
+        var normalized = LegacyIdentityKeyOwnership.CanonicalKey(action.TargetEmail);
+        // The existing challenge remains bound to its raw ceg1 frame. Only the identity key is canonical.
+        await using var identity = NewIdentityWriteContext();
+        await using var identityTransaction = await identity.Database.BeginTransactionAsync(cancellationToken);
+        // Match administrative writer order: identity row before target email. Revalidate before consuming Auth state.
+        var current = await identity.Users.FromSqlInterpolated(
+            $"SELECT * FROM \"AspNetUsers\" WHERE \"Id\" = {row.Id} FOR UPDATE").SingleOrDefaultAsync(cancellationToken);
+        if (current is null || current.SecurityStamp != row.SecurityStamp || current.Email != row.Email) return false;
+        await LegacyIdentityKeyOwnership.LockAsync(identity, action.TargetEmail, cancellationToken);
+        await LegacyIdentityKeyOwnership.LockUserNameAsync(identity, action.TargetEmail, cancellationToken);
+        if (await identity.Users.AnyAsync(value => value.Id != row.Id &&
+                value.NormalizedUserName == normalized, cancellationToken) ||
+            await LegacyIdentityKeyOwnership.HasOtherUserNameOwnerAsync(identity, action.TargetEmail, row.Id, cancellationToken) ||
+            await LegacyIdentityKeyOwnership.HasOtherOwnerAsync(identity, action.TargetEmail, row.Id, cancellationToken)) return false;
+        if (!await TryConsumeAsync(action, cancellationToken)) return false;
+
+        current.Email = action.TargetEmail;
+        current.NormalizedEmail = normalized;
+        current.UserName = action.TargetEmail;
+        current.NormalizedUserName = normalized;
+        current.EmailConfirmed = true;
+        RotateSecurityStamp(current);
+        await identity.SaveChangesAsync(cancellationToken);
+        await identityTransaction.CommitAsync(cancellationToken);
+        customers.Entry(row).State = EntityState.Detached;
+        await RevokeRefreshSessionsAsync(row.Id, cancellationToken);
+        await SupersedeActiveChallengesAsync(row.Id, InitialPassword, timeProvider.GetUtcNow(), cancellationToken);
+        return true;
+    }
+
+    /// <summary>Changes an authenticated customer's password and revokes all refresh sessions.</summary>
+    public async Task<bool> ChangePasswordAsync(
+        string identityId,
+        ChangeCustomerPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var identity = NewIdentityWriteContext();
+        await using var transaction = await identity.Database.BeginTransactionAsync(cancellationToken);
+        var row = await identity.Users.FromSqlInterpolated(
+            $"SELECT * FROM \"AspNetUsers\" WHERE \"Id\" = {identityId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken);
+        if (row?.PasswordHash is null
+            || passwordHasher.VerifyHashedPassword(row, row.PasswordHash, request.CurrentPassword)
+                == PasswordVerificationResult.Failed)
+        {
+            return false;
+        }
+
+        row.PasswordHash = passwordHasher.HashPassword(row, request.NewPassword);
+        row.AccessFailedCount = 0;
+        row.LockoutEnd = null;
+        RotateSecurityStamp(row);
+        await identity.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        SynchronizeCommittedPasswordRow(row);
+        await RevokeRefreshSessionsAsync(row.Id, cancellationToken);
+        await SupersedeActiveChallengesAsync(row.Id, InitialPassword, timeProvider.GetUtcNow(), cancellationToken);
+        return true;
+    }
+
+    /// <summary>Adds the first password to an authenticated passwordless customer and revokes all sessions.</summary>
+    public async Task<CreateCustomerPasswordResult> CreatePasswordAsync(
+        string identityId,
+        CreateCustomerPasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        await using var identity = NewIdentityWriteContext();
+        await using var transaction = await identity.Database.BeginTransactionAsync(cancellationToken);
+        var row = await identity.Users.FromSqlInterpolated(
+            $"SELECT * FROM \"AspNetUsers\" WHERE \"Id\" = {identityId} FOR UPDATE").SingleOrDefaultAsync(cancellationToken);
+        if (row is null)
+        {
+            return CreateCustomerPasswordResult.IdentityNotFound;
+        }
+
+        if (!string.IsNullOrEmpty(row.PasswordHash))
+        {
+            return CreateCustomerPasswordResult.AlreadyExists;
+        }
+
+        row.PasswordHash = passwordHasher.HashPassword(row, request.NewPassword);
+        row.AccessFailedCount = 0;
+        row.LockoutEnd = null;
+        RotateSecurityStamp(row);
+        await identity.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        SynchronizeCommittedPasswordRow(row);
+        await RevokeRefreshSessionsAsync(row.Id, cancellationToken);
+        return CreateCustomerPasswordResult.Created;
+    }
+
+    private void SynchronizeCommittedPasswordRow(LegacyIdentityRow row)
+    {
+        // Keep an already-read scoped row current without overwriting unrelated pending tracked changes.
+        foreach (var entry in customers.ChangeTracker.Entries<LegacyIdentityRow>()
+            .Where(entry => entry.Entity.Id == row.Id && entry.State == EntityState.Unchanged))
+        {
+            entry.CurrentValues.SetValues(row);
+            entry.OriginalValues.SetValues(row);
+            entry.State = EntityState.Unchanged;
+        }
+    }
+
+    private async Task<CustomerActionChallenge> CreateChallengeAsync(string email, string purpose, bool requireUnconfirmed, CancellationToken cancellationToken)
+    {
+        var row = await FindAsync(email, cancellationToken);
+        if (row is null || (requireUnconfirmed && row.EmailConfirmed))
+        {
+            return new(true, null);
+        }
+
+        return string.IsNullOrWhiteSpace(row.Email)
+            ? new CustomerActionChallenge(true, null)
+            : await CreateChallengeForIdentityAsync(row.Id, purpose, row.Email, cancellationToken);
+    }
+
+    private async Task<CustomerActionChallenge> CreateChallengeForIdentityAsync(
+        string identityId,
+        string purpose,
+        string targetEmail,
+        CancellationToken cancellationToken,
+        TimeSpan? lifetime = null)
+    {
+        var identity = await customers.Users.AsNoTracking().SingleOrDefaultAsync(
+            value => value.Id == identityId,
+            cancellationToken);
+        if (identity is null || string.IsNullOrWhiteSpace(identity.Email))
+        {
+            return new(true, null);
+        }
+
+        var token = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+        var now = timeProvider.GetUtcNow();
+        await SupersedeActiveChallengesAsync(identityId, purpose, now, cancellationToken);
+        state.IdentityActionTokens.Add(new()
+        {
+            Id = Guid.NewGuid(),
+            IdentityId = identityId,
+            Purpose = purpose,
+            TargetEmail = targetEmail.Trim(),
+            TokenHash = Hash(token),
+            BoundSecurityStamp = CreateCustomerEmailGenerationBinding(purpose, identity, targetEmail),
+            CreatedAt = now,
+            ExpiresAt = now.Add(lifetime ?? ActionLifetime),
+        });
+        await state.SaveChangesAsync(cancellationToken);
+        return new(true, token);
+    }
+
+    private async Task<CustomerActionChallenge> CreateSecurityStampBoundChallengeAsync(
+        string identityId,
+        string purpose,
+        string targetEmail,
+        string securityStamp,
+        CancellationToken cancellationToken,
+        TimeSpan lifetime)
+    {
+        var token = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+        var now = timeProvider.GetUtcNow();
+        await SupersedeActiveChallengesAsync(identityId, purpose, now, cancellationToken);
+        state.IdentityActionTokens.Add(new()
+        {
+            Id = Guid.NewGuid(),
+            IdentityId = identityId,
+            Purpose = purpose,
+            TargetEmail = targetEmail.Trim(),
+            TokenHash = HashBoundToken(token, securityStamp),
+            CreatedAt = now,
+            ExpiresAt = now.Add(lifetime),
+        });
+        await state.SaveChangesAsync(cancellationToken);
+        return new(true, token);
+    }
+
+    private async Task RevokeRefreshSessionsAsync(string identityId, CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow();
+        var active = state.RefreshSessions.Where(value =>
+            value.IdentityId == identityId
+            && value.IdentityKind == IdentityKind.Customer
+            && value.RevokedAt == null);
+        if (state.Database.IsRelational())
+        {
+            await active.ExecuteUpdateAsync(
+                setters => setters.SetProperty(value => value.RevokedAt, now),
+                cancellationToken);
+            return;
+        }
+
+        foreach (var session in await active.ToListAsync(cancellationToken))
+        {
+            session.RevokedAt = now;
+        }
+
+        await state.SaveChangesAsync(cancellationToken);
+    }
+
+    private async Task SupersedeActiveChallengesAsync(
+        string identityId,
+        string purpose,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var active = state.IdentityActionTokens.Where(value =>
+            value.IdentityId == identityId
+            && value.Purpose == purpose
+            && value.ConsumedAt == null);
+        if (state.Database.IsRelational())
+        {
+            await active.ExecuteUpdateAsync(
+                setters => setters.SetProperty(value => value.ConsumedAt, now),
+                cancellationToken);
+            return;
+        }
+
+        foreach (var challenge in await active.ToListAsync(cancellationToken))
+        {
+            challenge.ConsumedAt = now;
+        }
+    }
+
+    private Task<LegacyIdentityRow?> FindAsync(string email, CancellationToken cancellationToken)
+    {
+        var normalized = LegacyIdentityKeyOwnership.CanonicalKey(email);
+        var retained = email.Trim().ToUpperInvariant();
+        return customers.Users.SingleOrDefaultAsync(
+            value => value.NormalizedEmail == normalized || value.NormalizedEmail == retained,
+            cancellationToken);
+    }
+    private async Task<IdentityActionToken?> FindActionAsync(
+        string purpose,
+        string email,
+        string token,
+        CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow();
+        var hash = Hash(token);
+        var action = await state.IdentityActionTokens.AsNoTracking().SingleOrDefaultAsync(value =>
+            value.Purpose == purpose
+            && value.TokenHash == hash
+            && value.ConsumedAt == null
+            && value.ExpiresAt > now,
+            cancellationToken);
+        if (action is null)
+        {
+            return null;
+        }
+
+        if (!EmailMatches(action.TargetEmail, email))
+        {
+            return null;
+        }
+
+        var identity = await customers.Users.AsNoTracking().SingleOrDefaultAsync(
+            value => value.Id == action.IdentityId,
+            cancellationToken);
+        return identity is not null && CustomerEmailGenerationMatches(action, identity)
+            ? action
+            : null;
+    }
+
+    private async Task<IdentityActionToken?> FindEmailChangeActionAsync(
+        CompleteCustomerActionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var action = await state.IdentityActionTokens.AsNoTracking().SingleOrDefaultAsync(value =>
+            value.Purpose == EmailChange
+            && value.TokenHash == Hash(request.Token),
+            cancellationToken);
+        if (action is null || !EmailMatches(action.TargetEmail, request.Email))
+        {
+            return null;
+        }
+
+        if (action.ConsumedAt is not null)
+        {
+            var completedIdentity = await customers.Users.AsNoTracking().SingleOrDefaultAsync(
+                value => value.Id == action.IdentityId,
+                cancellationToken);
+            return completedIdentity is not null
+                && action.TargetEmail is not null
+                && EmailMatches(completedIdentity.Email, action.TargetEmail)
+                ? action
+                : null;
+        }
+
+        var pendingIdentity = await customers.Users.AsNoTracking().SingleOrDefaultAsync(
+            value => value.Id == action.IdentityId,
+            cancellationToken);
+        return action.ExpiresAt > timeProvider.GetUtcNow()
+            && pendingIdentity is not null
+            && CustomerEmailGenerationMatches(action, pendingIdentity)
+            ? action
+            : null;
+    }
+
+    private async Task<IdentityActionToken?> FindSecurityStampBoundActionAsync(
+        string purpose,
+        string email,
+        string token,
+        CancellationToken cancellationToken)
+    {
+        var identity = await FindAsync(email, cancellationToken);
+        if (identity is null || string.IsNullOrWhiteSpace(identity.SecurityStamp))
+        {
+            return null;
+        }
+
+        var now = timeProvider.GetUtcNow();
+        return await state.IdentityActionTokens.AsNoTracking().SingleOrDefaultAsync(value =>
+            value.IdentityId == identity.Id
+            && value.Purpose == purpose
+            && value.TokenHash == HashBoundToken(token, identity.SecurityStamp)
+            && value.ConsumedAt == null
+            && value.ExpiresAt > now,
+            cancellationToken);
+    }
+
+    private async Task<bool> TryConsumeAsync(
+        IdentityActionToken action,
+        CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow();
+        var query = state.IdentityActionTokens.Where(value =>
+            value.Id == action.Id
+            && value.ConsumedAt == null
+            && value.ExpiresAt > now);
+        if (state.Database.IsRelational())
+        {
+            return await query.ExecuteUpdateAsync(
+                setters => setters.SetProperty(value => value.ConsumedAt, now),
+                cancellationToken) == 1;
+        }
+
+        var stored = await query.SingleOrDefaultAsync(cancellationToken);
+        if (stored is null)
+        {
+            return false;
+        }
+
+        stored.ConsumedAt = now;
+        await state.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+    private static bool EmailMatches(string? actual, string expected) =>
+        !string.IsNullOrWhiteSpace(actual)
+        && string.Equals(actual.Trim(), expected.Trim(), StringComparison.OrdinalIgnoreCase);
+    private static string Hash(string token) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+    private static string HashBoundToken(string token, string securityStamp) => Hash($"{token}:{securityStamp}");
+    private static string CreateCustomerEmailGenerationBinding(
+        string purpose, LegacyIdentityRow identity, string targetEmail)
+    {
+        if (purpose is not EmailConfirmation and not EmailChange)
+        {
+            throw new ArgumentOutOfRangeException(nameof(purpose));
+        }
+
+        var frame = JsonSerializer.SerializeToUtf8Bytes(new object?[]
+        {
+            "legacy-auth/customer-email-generation", 1, purpose, identity.Id,
+            identity.Email!.Trim().ToUpperInvariant(), targetEmail.Trim().ToUpperInvariant(),
+            identity.SecurityStamp,
+        });
+        return "ceg1:" + Convert.ToHexStringLower(SHA256.HashData(frame));
+    }
+
+    private static bool CustomerEmailGenerationMatches(
+        IdentityActionToken action, LegacyIdentityRow currentIdentity)
+    {
+        var binding = action.BoundSecurityStamp;
+        if (action.Purpose is not EmailConfirmation and not EmailChange
+            || string.IsNullOrWhiteSpace(currentIdentity.Email)
+            || string.IsNullOrWhiteSpace(action.TargetEmail)
+            || binding is null || binding.Length != 69
+            || !binding.StartsWith("ceg1:", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        foreach (var character in binding.AsSpan(5))
+        {
+            if (character is not (>= '0' and <= '9') and not (>= 'a' and <= 'f'))
+            {
+                return false;
+            }
+        }
+
+        var expected = CreateCustomerEmailGenerationBinding(action.Purpose, currentIdentity, action.TargetEmail);
+        return CryptographicOperations.FixedTimeEquals(
+            Convert.FromHexString(binding.AsSpan(5)), Convert.FromHexString(expected.AsSpan(5)));
+    }
+    private static void RotateSecurityStamp(LegacyIdentityRow row)
+    {
+        row.SecurityStamp = Guid.NewGuid().ToString();
+        row.ConcurrencyStamp = Guid.NewGuid().ToString();
+    }
+}

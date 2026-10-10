@@ -10,3 +10,5 @@ eng/customer-refresh-owner-caller/** -text
 eng/customer-self-identity-intake/** -text
 
 eng/customer-self-identity-validation/** -text
+
+eng/auth-composed-carrier/** -text

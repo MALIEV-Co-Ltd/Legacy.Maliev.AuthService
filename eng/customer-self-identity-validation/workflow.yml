@@ -1,9 +1,9 @@
-name: Auth exact customer identity validation
+name: Auth exact composed source validation
 on:
   workflow_dispatch:
     inputs:
       request_base64:
-        description: Root-reviewed fresh one-run Auth request
+        description: Root-reviewed fresh one-run composed Auth request
         required: true
         type: string
       request_sha256:
@@ -48,7 +48,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: MALIEV-Co-Ltd/Legacy.Maliev.AuthService
-          ref: ee0e314ce37a127e6e3dd45d659b5d7ba95b3a9b
+          ref: 2bd6a61bfce1d19310209c0d00b56d92f0abea91
           fetch-depth: 0
           path: .source-checkouts/Legacy.Maliev.AuthService
           persist-credentials: false

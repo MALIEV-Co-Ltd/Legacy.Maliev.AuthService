@@ -1,0 +1,343 @@
+{
+  "base": "2bd6a61bfce1d19310209c0d00b56d92f0abea91",
+  "backendPath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\work\\cv9\\eng\\customer-refresh-intake\\controls\\intake.py",
+  "backendSha256": "46968d644d26bbf11d800b47771c4ebf1ea71bb726bbe80de9b6168bc08afa97",
+  "parents": [
+    {
+      "path": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010",
+      "sealSha256": "4743b495f87eac7c8e20678b0c52bdbf9dc85989e0245f3f66641cad4f70faca"
+    },
+    {
+      "path": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-customer-legacy-marker-source-v2-20261010",
+      "sealSha256": "9a5e6b01b89ffba62d5966dfc5f2f225f97e8958b8cc6a81c8c60dda1a147d21"
+    },
+    {
+      "path": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-user-concurrency-source-v2-20261010",
+      "sealSha256": "e1db77891b35f9018659d96def42dde54e73b9ea428aabe2a558197a4ebf3d11"
+    },
+    {
+      "path": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-customer-delete-fence-source-v1-20261010",
+      "sealSha256": "790b358c00a7bea155c84b8acb36609445227a876fa5822b25815e5cbdf0529e"
+    }
+  ],
+  "files": [
+    {
+      "path": "Legacy.Maliev.AuthService.Api/Controllers/AuthenticationController.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Api\\Controllers\\AuthenticationController.cs",
+      "bytes": 8829,
+      "sha256": "a1df5b77174c0da51c4a3b14d58d4704387e2925ba5e1ca09eeef10d3c7a18af",
+      "gitBaseParentSha256": "da98a12ab7b7d41b0d6565e7c8d4aa748274c76308155eea5a82162e3584e929"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Api/Program.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Api\\Program.cs",
+      "bytes": 5549,
+      "sha256": "c7d6907909c2c4384cf299a7dceac99f6ca7739eef480dc95af5a53841f2d912",
+      "gitBaseParentSha256": "c3496610a97ffcd6e4d2b13efd8474dc8cdf472c64c04dd5f9fc6382f8bfb2ff"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Application/AuthContracts.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Application\\AuthContracts.cs",
+      "bytes": 2317,
+      "sha256": "490ed862089c6a8ebfeedb44705016f920a411966c414098fb2ca5b3c8ee0bdf",
+      "gitBaseParentSha256": "89e877d3fb35a6cc3648c5f95ace9ffd5309630d745c348d5da14a652765b80e"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Application/AuthenticationAbstractions.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Application\\AuthenticationAbstractions.cs",
+      "bytes": 4892,
+      "sha256": "5cb4acedbb960dcca82f4cf6dc605f2585b0485fedfda208f661f1e0e4a2cad7",
+      "gitBaseParentSha256": "42c77391b50459bec7db024c2b392e38441dde41d1b9a05365404ecedc71f3e4"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Application/AuthenticationService.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Application\\AuthenticationService.cs",
+      "bytes": 6422,
+      "sha256": "60edb65d85483d506f8d03bdb7dbe91cf171b02c15167ee0f6780c707a0904e1",
+      "gitBaseParentSha256": "2a058a79c552fe1d2a1fcb07c0af935e3504f04f2957daf3b9753156e99b3879"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/CustomerIdentityAdminService.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-customer-delete-fence-source-v1-20261010\\files\\Legacy.Maliev.AuthService.Infrastructure\\CustomerIdentityAdminService.cs",
+      "bytes": 16700,
+      "sha256": "09a154929ab5422dba84b406ebd7938dc7007695ef8866008ecfacfc53b61640",
+      "gitBaseParentSha256": "4f7fdb197fdb36731c9f3a95e92fb39bd81cb5cf0811c1dfc98b49e20e1d0932"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/CustomerPasswordSetupState.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-customer-legacy-marker-source-v2-20261010\\files\\Legacy.Maliev.AuthService.Infrastructure\\CustomerPasswordSetupState.cs",
+      "bytes": 1249,
+      "sha256": "1b813602ade333a0e52726469b212e3c23487d7de3d816adaf18f2ea461015d0",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/CustomerSelfIdentityReader.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-customer-legacy-marker-source-v2-20261010\\files\\Legacy.Maliev.AuthService.Infrastructure\\CustomerSelfIdentityReader.cs",
+      "bytes": 1851,
+      "sha256": "92b409ec22fe59b4cd107564fd2513d99bacd84e9caa2de1d5ae8fd3f643465f",
+      "gitBaseParentSha256": "fbebc8b26af2fe07cadc85630e67813d476791e8199017e2d50aa891493f7037"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/CustomerSelfService.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-user-concurrency-source-v2-20261010\\files\\Legacy.Maliev.AuthService.Infrastructure\\CustomerSelfService.cs",
+      "bytes": 39445,
+      "sha256": "549db5847146fd35e0245058430db2a0c3e88f49b1c503e0be5ef2574abc90cc",
+      "gitBaseParentSha256": "764e3e0f4e0d2dd762ad36c95f37c77ddb5a4b1e45b28670f2d624c79d3730ac"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/EmployeeDataProtectionXmlRepository.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Infrastructure\\EmployeeDataProtectionXmlRepository.cs",
+      "bytes": 3050,
+      "sha256": "55f2aeb0554cd969dbf1137f76cb287f76ee763caec8ed439505847afef710b9",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/EmployeePasswordTwoFactorPolicy.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Infrastructure\\EmployeePasswordTwoFactorPolicy.cs",
+      "bytes": 8881,
+      "sha256": "8fc165593091da40e0715f97715c5b7eb4161d8ee4277f855c9bf7ecb1f2f53e",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/EmployeeRememberedClientDataProtection.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Infrastructure\\EmployeeRememberedClientDataProtection.cs",
+      "bytes": 5725,
+      "sha256": "524fa269d33c23f67160890919d05eaa4f70c2401826b73a4d6cd9fd333ee784",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/InteractiveLegacyCredentialValidator.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-customer-legacy-marker-source-v2-20261010\\files\\Legacy.Maliev.AuthService.Infrastructure\\InteractiveLegacyCredentialValidator.cs",
+      "bytes": 5467,
+      "sha256": "aa1c58be31dad27305ef9b0ece68d6f1fa21663eae2f8c0a5a428ac6978ef3f6",
+      "gitBaseParentSha256": "74c4457544033aef4ae34a1de077a91a2f4a2b19c7730833c4042030956a6ca7"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityAncillaryModel.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Infrastructure\\LegacyIdentityAncillaryModel.cs",
+      "bytes": 3063,
+      "sha256": "2adc7389c66aeb8ac7604f164bea08c3261e4e3a9694035cbf8b1da9bdc30176",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityContexts.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-user-concurrency-source-v2-20261010\\files\\Legacy.Maliev.AuthService.Infrastructure\\LegacyIdentityContexts.cs",
+      "bytes": 7757,
+      "sha256": "2f8b981a225c77f509fe695067e7efea79d265241ff9447145e408d45f0aad1c",
+      "gitBaseParentSha256": "bbdb2d3a069cdf7f9de495a36e4ea0e199cb3ec69f6c3cdb6978708913f92c27"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityReader.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-customer-legacy-marker-source-v2-20261010\\files\\Legacy.Maliev.AuthService.Infrastructure\\LegacyIdentityReader.cs",
+      "bytes": 5391,
+      "sha256": "0f051b5b33c5abd2a60c97c8159432ae14fd6a08da70d2ae3d8108bdba20b2cb",
+      "gitBaseParentSha256": "e40f72c5c2545f3a78031c7e2c772cc26f2ace11e899ad28ed101fdf222bd2f7"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/Migrations/CustomerIdentityPostgres/202610100001_RestoreCustomerIdentityAncillaryStore.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Infrastructure\\Migrations\\CustomerIdentityPostgres\\202610100001_RestoreCustomerIdentityAncillaryStore.cs",
+      "bytes": 912,
+      "sha256": "985bdd1de1741f97f46b8378ff5a7ff607a3760e8f19eb1c1b6d378b3f23486d",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/Migrations/EmployeeIdentityPostgres/202610090001_RestoreEmployeeIdentityTokenStore.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Infrastructure\\Migrations\\EmployeeIdentityPostgres\\202610090001_RestoreEmployeeIdentityTokenStore.cs",
+      "bytes": 1306,
+      "sha256": "5cf927a2ab047eeb3ad491735b4ad3ac170e7e6fe0dc7da532cb1f39da4ad128",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/Migrations/EmployeeIdentityPostgres/202610100001_RestoreEmployeeIdentityAncillaryStore.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Infrastructure\\Migrations\\EmployeeIdentityPostgres\\202610100001_RestoreEmployeeIdentityAncillaryStore.cs",
+      "bytes": 1008,
+      "sha256": "11c6ac0fc954c766fe3fb7b01cfe1ef94308a1deae1bf826486a1e8f17360864",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/Migrations/LegacyIdentityAncillarySchema.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Infrastructure\\Migrations\\LegacyIdentityAncillarySchema.cs",
+      "bytes": 6245,
+      "sha256": "0a7574d225932c4736360ce2053260e0edc9ed733fd109469fb538e2d3a43099",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/ServiceCollectionExtensions.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Infrastructure\\ServiceCollectionExtensions.cs",
+      "bytes": 6700,
+      "sha256": "65a1de3cbc46289704e8b93c16d1687a92e32483b8a457382401323ef1adcc17",
+      "gitBaseParentSha256": "ac3e31768341be0ac982fb515680ed7caf915e0f5de769a49d6ede8567a6c087"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/CustomerIdentityAdminTests.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-customer-delete-fence-source-v1-20261010\\files\\Legacy.Maliev.AuthService.Tests\\CustomerIdentityAdminTests.cs",
+      "bytes": 18947,
+      "sha256": "9857b02ea25d103e388e314e1c31eb02a14af7567eb3ff11f0e7e7f720e8b48b",
+      "gitBaseParentSha256": "81149054cddda83a8e2004b63f420cec7e7b4d2cc579065b32a1f2e27fb620d8"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/CustomerRefreshAdmissionTests.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Tests\\CustomerRefreshAdmissionTests.cs",
+      "bytes": 3791,
+      "sha256": "34842005117cdd4c4af45b6d9b7b6768d10910a265748b63fbcb3815c84f44c7",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/CustomerSelfIdentityTests.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-customer-legacy-marker-source-v2-20261010\\files\\Legacy.Maliev.AuthService.Tests\\CustomerSelfIdentityTests.cs",
+      "bytes": 12171,
+      "sha256": "ee677e59507e54272865364f3624080618be8c08bc645acfac43fd1e5a595b8d",
+      "gitBaseParentSha256": "9b175cdde26cd3c128c940ad2a45d7aac36592368802ac832b7aad1a230708a7"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeeDataProtectionCustodyTests.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Tests\\EmployeeDataProtectionCustodyTests.cs",
+      "bytes": 829,
+      "sha256": "b0dca37db1ea55091197906fb63a302ae1f70a84cfb98194655567d0104bd7ca",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeeDataProtectionPostgresTests.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Tests\\EmployeeDataProtectionPostgresTests.cs",
+      "bytes": 6175,
+      "sha256": "193ea4f3d0d8e2ef739e173cdf87d66392839ac1b36aa79999df87fae530ad78",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeePasswordTwoFactorPolicyTests.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Tests\\EmployeePasswordTwoFactorPolicyTests.cs",
+      "bytes": 5807,
+      "sha256": "60bf6d5ab48d8c3e1ae79b3ba3be7775948931ff0da9c06332c49986e1259959",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeeRememberedCustodyHttpTests.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Tests\\EmployeeRememberedCustodyHttpTests.cs",
+      "bytes": 4606,
+      "sha256": "289efe83d41e7b193ac63b5762cefdd4c3a69136348f00997c46d9187c21e4c2",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeeRememberedKeyRingFixture.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Tests\\EmployeeRememberedKeyRingFixture.cs",
+      "bytes": 6483,
+      "sha256": "5f82a24ebf09890da23cc22f1831cf86d049677c1409670ce2e6ace5c45bd8bb",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeeSessionIssuanceHttpTests.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Tests\\EmployeeSessionIssuanceHttpTests.cs",
+      "bytes": 162772,
+      "sha256": "9b78da9c6b8f8b9d9400cf398bf0565a58e9d9c7bfc71fb3a7cda194b832f128",
+      "gitBaseParentSha256": "723a449058ccf353dc052468b215915fdeafc2a2d3e890f914fd1d48f80b9e85"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/InheritedIdentityStoreTests.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Tests\\InheritedIdentityStoreTests.cs",
+      "bytes": 10251,
+      "sha256": "d787fecc76a4dba357d25eaf2c889b834ee265fb88c5d350ca46bcfd55e6b717",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/InvoiceDelegationCurrentSessionHttpTests.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Tests\\InvoiceDelegationCurrentSessionHttpTests.cs",
+      "bytes": 25819,
+      "sha256": "18e847b5b82d1b2777df50e39c48edde63dd1d57a5d54d895235b72bdb226c47",
+      "gitBaseParentSha256": "b944dc5e487fc416ca50f17df95eb830e632d4feb0c42287df4d4d8e5635f9e8"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Tests\\Legacy.Maliev.AuthService.Tests.csproj",
+      "bytes": 2847,
+      "sha256": "4818e77830ce0fcaf1e968201a287b4e1c3305897110ee983c74fc9befd9c359",
+      "gitBaseParentSha256": "c49da484df6bb5bfa369efa8957a8b940a6f18ea0ac7a543b52f163d9b991169"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/LegacyIdentityReaderTests.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\Legacy.Maliev.AuthService.Tests\\LegacyIdentityReaderTests.cs",
+      "bytes": 11560,
+      "sha256": "4869d60ebc06fd8eeb22aaa9baa38263ecfbbccd35eef4c8de75693bce133809",
+      "gitBaseParentSha256": "f82b429aee842c1b09ecfb3ec9c87a5523d8ccf264cc782b26053785722993bd"
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/OriginalUserConcurrencyTests.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-user-concurrency-source-v2-20261010\\files\\Legacy.Maliev.AuthService.Tests\\OriginalUserConcurrencyTests.cs",
+      "bytes": 16660,
+      "sha256": "aaae201fe9fc039bdbf27d0a17c24223721e04eefdeeeb05655b72f5daecd6fd",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/RefreshSessionIdentityBoundaryHttpTests.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-customer-legacy-marker-source-v2-20261010\\files\\Legacy.Maliev.AuthService.Tests\\RefreshSessionIdentityBoundaryHttpTests.cs",
+      "bytes": 42836,
+      "sha256": "3eb0378232e3a543d7b777bd682ed02fb96e4fcead952590f9bae33a1b9bf655",
+      "gitBaseParentSha256": "b47e651309e23db265e1f644312938bc3c3a772a06c666d94cebf188d18f0216"
+    },
+    {
+      "path": "acceptance/EmployeeLockoutSwitch/EmployeeLockoutSwitchAcceptanceTests.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\acceptance\\EmployeeLockoutSwitch\\EmployeeLockoutSwitchAcceptanceTests.cs",
+      "bytes": 3683,
+      "sha256": "cde59f1524f48ddba3c6c26738c85fc40b2efe5b1c8014fe866c94538d0e2fbf",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "acceptance/EmployeeLockoutSwitch/Legacy.Maliev.EmployeeLockoutSwitch.Acceptance.csproj",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\acceptance\\EmployeeLockoutSwitch\\Legacy.Maliev.EmployeeLockoutSwitch.Acceptance.csproj",
+      "bytes": 804,
+      "sha256": "7f263f6dda0bc465b70369cd68650d94866a7b17327610ba13c87679f39d6c25",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "acceptance/EmployeeRememberedCookie/EmployeeRememberedCookieAcceptanceTests.cs",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\acceptance\\EmployeeRememberedCookie\\EmployeeRememberedCookieAcceptanceTests.cs",
+      "bytes": 11959,
+      "sha256": "3ade31aae46bd9bbd825a539c9552baa15a8262a9ce0204e3af9d83505c94eb2",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "acceptance/EmployeeRememberedCookie/Legacy.Maliev.EmployeeRememberedCookie.Acceptance.csproj",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\acceptance\\EmployeeRememberedCookie\\Legacy.Maliev.EmployeeRememberedCookie.Acceptance.csproj",
+      "bytes": 963,
+      "sha256": "37d57d9dd90030a78af6514b7949e136f6d5d6f081b817fc62e1c23d8a8c7e0b",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "docs/employee-data-protection-postgres-schema.sql",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\docs\\employee-data-protection-postgres-schema.sql",
+      "bytes": 503,
+      "sha256": "7cac83166f2458bdf06ef12e638e9d2fc127946fef5468cbdf58d71ffb1a0921",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "docs/employee-remembered-cookie-compatibility.md",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\docs\\employee-remembered-cookie-compatibility.md",
+      "bytes": 4495,
+      "sha256": "23a1fda266b6152557341de8685e064018d0c57f4af307eeb29af65b35d34929",
+      "gitBaseParentSha256": null
+    },
+    {
+      "path": "docs/interactive-password-attempt-accounting.md",
+      "sourcePath": "D:\\codex-temp\\2026-10-03\\legacy-code-auth-20261003\\outputs\\auth-refresh-remembered-inherited-combined-source-v5-20261010\\files\\Auth\\docs\\interactive-password-attempt-accounting.md",
+      "bytes": 6122,
+      "sha256": "8cd2a2ee65b234929e7e430eb2b352cf8bd6f171ca1aa3e29003d218f85e6644",
+      "gitBaseParentSha256": "f148f8a524fc9c4a395bdfb4805a36717b93ebb9f9a5524f343a8739779cfc7b"
+    }
+  ],
+  "custodyReceiptSha256": "179a85a5fddd49e1683f4d4f5248dbfba2eeb6ef2d6b67ec6787e1e7bcd15444",
+  "newCaseMethods": [
+    {
+      "class": "Legacy.Maliev.AuthService.Tests.CustomerIdentityAdminTests",
+      "method": "Delete_WaitsForCurrentOwnerAndPreservesExistingControllerOutcomes",
+      "arguments": [
+        "update",
+        "delete"
+      ]
+    },
+    {
+      "class": "Legacy.Maliev.AuthService.Tests.CustomerIdentityAdminTests",
+      "method": "Delete_PreservesExistingPermissionEmployeePolicyAndRoute",
+      "arguments": []
+    }
+  ],
+  "qualification": "Release build zero warnings/errors before compiled discovery; exact three focused cases with full TRX definition/result/execution joins; full and coverage roster from compiled actual discovery, never authored-count arithmetic; preserve preexisting approved collision roster only with exact source witness; full Auth suite, format/contracts and existing resource cleanup. No C# cases executed."
+}

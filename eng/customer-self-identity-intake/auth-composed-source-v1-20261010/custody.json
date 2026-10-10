@@ -1,0 +1,180 @@
+{
+  "priorPatchPaths": 41,
+  "currentPatchPaths": 43,
+  "priorPatchRawIdentical": 24,
+  "priorPatchRawChanged": 17,
+  "currentVsAcceptedParentRawMismatches": [],
+  "changes": [
+    {
+      "path": "Legacy.Maliev.AuthService.Api/Program.cs",
+      "priorPatchSha256": "164bb3ae96639bf3274318c1bae7989edd6dc44030d80ad1615669bdb06de553",
+      "currentPatchSha256": "c7d6907909c2c4384cf299a7dceac99f6ca7739eef480dc95af5a53841f2d912",
+      "acceptedParentRawSha256": "c7d6907909c2c4384cf299a7dceac99f6ca7739eef480dc95af5a53841f2d912",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 119
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Application/AuthenticationService.cs",
+      "priorPatchSha256": "333460e897f5614cc3723d110f4405e797b7aaa41eb454e4bc768947b28f16b9",
+      "currentPatchSha256": "60edb65d85483d506f8d03bdb7dbe91cf171b02c15167ee0f6780c707a0904e1",
+      "acceptedParentRawSha256": "60edb65d85483d506f8d03bdb7dbe91cf171b02c15167ee0f6780c707a0904e1",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 2
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/EmployeeDataProtectionXmlRepository.cs",
+      "priorPatchSha256": "bdc81971198a46679753ac1e1d49576c4dd93f64e06cfaab7ef827b552a55957",
+      "currentPatchSha256": "55f2aeb0554cd969dbf1137f76cb287f76ee763caec8ed439505847afef710b9",
+      "acceptedParentRawSha256": "55f2aeb0554cd969dbf1137f76cb287f76ee763caec8ed439505847afef710b9",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 57
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/EmployeePasswordTwoFactorPolicy.cs",
+      "priorPatchSha256": "5ad17412cb3b61a1139fe4e9d91e511c45b42302dd33a70c915ade924ee0421d",
+      "currentPatchSha256": "8fc165593091da40e0715f97715c5b7eb4161d8ee4277f855c9bf7ecb1f2f53e",
+      "acceptedParentRawSha256": "8fc165593091da40e0715f97715c5b7eb4161d8ee4277f855c9bf7ecb1f2f53e",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 114
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/EmployeeRememberedClientDataProtection.cs",
+      "priorPatchSha256": "2dd513d6784b5ed25e92beda61ec7f87568b61387b1a0fb08448bcecf5830c06",
+      "currentPatchSha256": "524fa269d33c23f67160890919d05eaa4f70c2401826b73a4d6cd9fd333ee784",
+      "acceptedParentRawSha256": "524fa269d33c23f67160890919d05eaa4f70c2401826b73a4d6cd9fd333ee784",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 105
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityReader.cs",
+      "priorPatchSha256": "fdc6e2e7260cf398001385c0252ad9a22a331fbb453887a4b64fe79a5dff4f82",
+      "currentPatchSha256": "0f051b5b33c5abd2a60c97c8159432ae14fd6a08da70d2ae3d8108bdba20b2cb",
+      "acceptedParentRawSha256": "0f051b5b33c5abd2a60c97c8159432ae14fd6a08da70d2ae3d8108bdba20b2cb",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 122
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeeDataProtectionCustodyTests.cs",
+      "priorPatchSha256": "caff2f7ebf0a9910c798e7401128ea02dabd84c6a74ed9e6257ca73177c5f270",
+      "currentPatchSha256": "b0dca37db1ea55091197906fb63a302ae1f70a84cfb98194655567d0104bd7ca",
+      "acceptedParentRawSha256": "b0dca37db1ea55091197906fb63a302ae1f70a84cfb98194655567d0104bd7ca",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 18
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeeDataProtectionPostgresTests.cs",
+      "priorPatchSha256": "d685196e7ddcd362cae5ea3fe4efbad4147b2aa37e692ce421edf0010ee57bdf",
+      "currentPatchSha256": "193ea4f3d0d8e2ef739e173cdf87d66392839ac1b36aa79999df87fae530ad78",
+      "acceptedParentRawSha256": "193ea4f3d0d8e2ef739e173cdf87d66392839ac1b36aa79999df87fae530ad78",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 106
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeeRememberedKeyRingFixture.cs",
+      "priorPatchSha256": "10975ffb6599318e56d9e28805a85846610eeb21fe6d9850b2fc1912c6b20ead",
+      "currentPatchSha256": "5f82a24ebf09890da23cc22f1831cf86d049677c1409670ce2e6ace5c45bd8bb",
+      "acceptedParentRawSha256": "5f82a24ebf09890da23cc22f1831cf86d049677c1409670ce2e6ace5c45bd8bb",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 110
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/EmployeeSessionIssuanceHttpTests.cs",
+      "priorPatchSha256": "0393ff6cda03d3d9197498e800faef83c50a8fd6bf4789aab09954b5dd329b80",
+      "currentPatchSha256": "9b78da9c6b8f8b9d9400cf398bf0565a58e9d9c7bfc71fb3a7cda194b832f128",
+      "acceptedParentRawSha256": "9b78da9c6b8f8b9d9400cf398bf0565a58e9d9c7bfc71fb3a7cda194b832f128",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 2524
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj",
+      "priorPatchSha256": "f1eb18a437687ace7df7284eaa4fdb3edcb8b3bcc67d9b4a72ec94b92927f0c5",
+      "currentPatchSha256": "4818e77830ce0fcaf1e968201a287b4e1c3305897110ee983c74fc9befd9c359",
+      "acceptedParentRawSha256": "4818e77830ce0fcaf1e968201a287b4e1c3305897110ee983c74fc9befd9c359",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 41
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/LegacyIdentityReaderTests.cs",
+      "priorPatchSha256": "b1c527a7aa5e44fa988df4c62efc5f5f17d7766d8968276d8978164846172050",
+      "currentPatchSha256": "4869d60ebc06fd8eeb22aaa9baa38263ecfbbccd35eef4c8de75693bce133809",
+      "acceptedParentRawSha256": "4869d60ebc06fd8eeb22aaa9baa38263ecfbbccd35eef4c8de75693bce133809",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 269
+    },
+    {
+      "path": "Legacy.Maliev.AuthService.Tests/RefreshSessionIdentityBoundaryHttpTests.cs",
+      "priorPatchSha256": "62b8cf1a5e58c6bf7964a02f20ee9474627ba2fcf8ddda6e9018df442b6745c2",
+      "currentPatchSha256": "3eb0378232e3a543d7b777bd682ed02fb96e4fcead952590f9bae33a1b9bf655",
+      "acceptedParentRawSha256": "3eb0378232e3a543d7b777bd682ed02fb96e4fcead952590f9bae33a1b9bf655",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 621
+    },
+    {
+      "path": "acceptance/EmployeeRememberedCookie/EmployeeRememberedCookieAcceptanceTests.cs",
+      "priorPatchSha256": "bb4f1aeccaa08a76fffdb85f3604c2f4640ddc63fac1fe59785a732e8cc620ad",
+      "currentPatchSha256": "3ade31aae46bd9bbd825a539c9552baa15a8262a9ce0204e3af9d83505c94eb2",
+      "acceptedParentRawSha256": "3ade31aae46bd9bbd825a539c9552baa15a8262a9ce0204e3af9d83505c94eb2",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 187
+    },
+    {
+      "path": "acceptance/EmployeeRememberedCookie/Legacy.Maliev.EmployeeRememberedCookie.Acceptance.csproj",
+      "priorPatchSha256": "72eb8e9ea49fa18eee46721c67dcfada1c64530deb276acee8fa5b15a17a5375",
+      "currentPatchSha256": "37d57d9dd90030a78af6514b7949e136f6d5d6f081b817fc62e1c23d8a8c7e0b",
+      "acceptedParentRawSha256": "37d57d9dd90030a78af6514b7949e136f6d5d6f081b817fc62e1c23d8a8c7e0b",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 18
+    },
+    {
+      "path": "docs/employee-data-protection-postgres-schema.sql",
+      "priorPatchSha256": "8d08615e4569185308bb3598f8d57dce1b40bd56bbc1ac3a0c2ae39be7b1ca75",
+      "currentPatchSha256": "7cac83166f2458bdf06ef12e638e9d2fc127946fef5468cbdf58d71ffb1a0921",
+      "acceptedParentRawSha256": "7cac83166f2458bdf06ef12e638e9d2fc127946fef5468cbdf58d71ffb1a0921",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 9
+    },
+    {
+      "path": "docs/employee-remembered-cookie-compatibility.md",
+      "priorPatchSha256": "d940def8fbaf3c43be808de4c7e42dcf2e798e95e986bc961a8cd73bca3bc2ab",
+      "currentPatchSha256": "23a1fda266b6152557341de8685e064018d0c57f4af307eeb29af65b35d34929",
+      "acceptedParentRawSha256": "23a1fda266b6152557341de8685e064018d0c57f4af307eeb29af65b35d34929",
+      "currentEqualsAcceptedRaw": true,
+      "lineEndingsOnly": true,
+      "priorCRLF": 0,
+      "currentCRLF": 58
+    }
+  ],
+  "correction": "Earlier all41 identical statement applies to accepted parent raw postimages, not predecessor completepatch reconstruction."
+}
