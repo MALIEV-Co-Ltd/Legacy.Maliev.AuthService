@@ -16,7 +16,7 @@ $packages = foreach ($assembly in $owned) {
     '<package name="{0}"><classes>{1}</classes></package>' -f $assembly, $classes
 }
 $coverage = '<coverage line-rate="0.5"><sources><source>C:/Users/PRIVATE_SUBJECT/work</source></sources><packages>' + ($packages -join '') + '</packages></coverage>'
-$trx = '<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010" name="PRIVATE_SUBJECT"><Results><UnitTestResult testName="Auth.Tests.Failed(secret:PRIVATE_TOKEN)" outcome="Failed" duration="00:00:01"><Output><ErrorInfo><Message>PRIVATE_TOKEN</Message><StackTrace>PRIVATE_SUBJECT</StackTrace></ErrorInfo><StdOut>PRIVATE_TOKEN</StdOut></Output></UnitTestResult><UnitTestResult testName="Auth.Tests.Passed" outcome="Passed" duration="00:00:02" /></Results><ResultSummary><Counters total="2" executed="2" passed="1" failed="1" /></ResultSummary></TestRun>'
+$trx = '<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010" name="PRIVATE_SUBJECT"><Results><UnitTestResult testId="00000000-0000-0000-0000-000000000001" executionId="00000000-0000-0000-0000-000000000003" testName="Auth.Tests.Failed(secret:PRIVATE_TOKEN)" outcome="Failed" duration="00:00:01"><Output><ErrorInfo><Message>PRIVATE_TOKEN</Message><StackTrace>PRIVATE_SUBJECT</StackTrace></ErrorInfo><StdOut>PRIVATE_TOKEN</StdOut></Output></UnitTestResult><UnitTestResult testId="00000000-0000-0000-0000-000000000002" executionId="00000000-0000-0000-0000-000000000004" testName="Auth.Tests.Passed" outcome="Passed" duration="00:00:02" /></Results><TestDefinitions><UnitTest id="00000000-0000-0000-0000-000000000001" name="Auth.Tests.Failed(secret:PRIVATE_TOKEN)"><Execution id="00000000-0000-0000-0000-000000000003" /><TestMethod className="Auth.Tests" name="Failed" codeBase="PRIVATE_SUBJECT" /></UnitTest><UnitTest id="00000000-0000-0000-0000-000000000002" name="Auth.Tests.Passed"><Execution id="00000000-0000-0000-0000-000000000004" /><TestMethod className="Auth.Tests" name="Passed" /></UnitTest></TestDefinitions><TestEntries><TestEntry testId="00000000-0000-0000-0000-000000000001" executionId="00000000-0000-0000-0000-000000000003" /><TestEntry testId="00000000-0000-0000-0000-000000000002" executionId="00000000-0000-0000-0000-000000000004" /></TestEntries><ResultSummary><Counters total="2" executed="2" passed="1" failed="1" /></ResultSummary></TestRun>'
 [IO.File]::WriteAllText((Join-Path $fixture 'coverage.cobertura.xml'), $coverage)
 [IO.File]::WriteAllText((Join-Path $fixture 'original.trx'), $trx)
 $alias = Join-Path $fixture 'trx-attachment'
@@ -78,6 +78,55 @@ try {
     $rejected = $true
 }
 if (-not $rejected) { throw 'Distinct physical source paths collapsed without rejection.' }
+$identities = Get-Content -LiteralPath (Join-Path $output 'test-identities.json') -Raw | ConvertFrom-Json
+if ($identities.SchemaVersion -ne 2 -or $identities.Cases.Count -ne 2 -or $identities.ParameterValuesRetained) { throw 'Identity schema unavailable or unsafe.' }
+if (@($safeTrx.TestRun.TestDefinitions.UnitTest).Count -ne 2 -or @($safeTrx.TestRun.TestEntries.TestEntry).Count -ne 2) { throw 'Definition/entry joins not retained.' }
+[xml] $theory = $trx
+$theory.TestRun.TestDefinitions.UnitTest[1].TestMethod.name = 'Failed'
+$theory.TestRun.TestDefinitions.UnitTest[1].name = 'Auth.Tests.Failed(secret:PRIVATE_OTHER)'
+$theory.TestRun.Results.UnitTestResult[1].testName = 'Auth.Tests.Failed(secret:PRIVATE_OTHER)'
+$theoryInput = Join-Path $PSScriptRoot '../artifacts/evidence-controls/theory-input'
+New-Item -ItemType Directory -Path $theoryInput -Force | Out-Null
+$theory.Save((Join-Path $theoryInput 'theory.trx'))
+$theoryOutput = Join-Path $PSScriptRoot '../artifacts/evidence-controls/theory-output'
+& (Join-Path $PSScriptRoot 'Export-CoverageEvidence.ps1') -ResultsDirectory $theoryInput -OutputDirectory $theoryOutput
+$theoryIdentities = Get-Content -LiteralPath (Join-Path $theoryOutput 'test-identities.json') -Raw | ConvertFrom-Json
+if (@($theoryIdentities.Cases.DisplayCaseIdentitySha256 | Sort-Object -Unique).Count -ne 2) { throw 'Distinct theory display identities collapsed.' }
+if ((Get-Content -LiteralPath (Join-Path $theoryOutput 'test-identities.json') -Raw) -match 'PRIVATE_|secret:') { throw 'Private theory parameters leaked.' }
+foreach ($name in @('missing-definition', 'duplicate-definition', 'missing-entry', 'duplicate-result', 'wrong-execution', 'wrong-method', 'wrong-display', 'swapped-theory', 'wrong-total', 'wrong-outcome-counter')) {
+    [xml] $invalid = $trx
+    switch ($name) {
+        'missing-definition' { $null = $invalid.TestRun.TestDefinitions.RemoveChild($invalid.TestRun.TestDefinitions.UnitTest[0]) }
+        'duplicate-definition' { $null = $invalid.TestRun.TestDefinitions.AppendChild($invalid.TestRun.TestDefinitions.UnitTest[0].CloneNode($true)) }
+        'missing-entry' { $null = $invalid.TestRun.TestEntries.RemoveChild($invalid.TestRun.TestEntries.TestEntry[0]) }
+        'duplicate-result' { $null = $invalid.TestRun.Results.AppendChild($invalid.TestRun.Results.UnitTestResult[0].CloneNode($true)) }
+        'wrong-execution' { $invalid.TestRun.TestEntries.TestEntry[0].executionId = '00000000-0000-0000-0000-000000000009' }
+        'wrong-method' { $invalid.TestRun.TestDefinitions.UnitTest[0].TestMethod.name = 'Other' }
+        'wrong-display' { $invalid.TestRun.TestDefinitions.UnitTest[0].name = 'Auth.Tests.Failed(secret:PRIVATE_OTHER)' }
+        'swapped-theory' {
+            $invalid.TestRun.TestDefinitions.UnitTest[1].TestMethod.name = 'Failed'
+            $invalid.TestRun.TestDefinitions.UnitTest[1].name = 'Auth.Tests.Failed(secret:PRIVATE_OTHER)'
+            $invalid.TestRun.Results.UnitTestResult[1].testName = 'Auth.Tests.Failed(secret:PRIVATE_OTHER)'
+            $firstTestId = $invalid.TestRun.Results.UnitTestResult[0].testId
+            $firstExecutionId = $invalid.TestRun.Results.UnitTestResult[0].executionId
+            $invalid.TestRun.Results.UnitTestResult[0].testId = $invalid.TestRun.Results.UnitTestResult[1].testId
+            $invalid.TestRun.Results.UnitTestResult[0].executionId = $invalid.TestRun.Results.UnitTestResult[1].executionId
+            $invalid.TestRun.Results.UnitTestResult[1].testId = $firstTestId
+            $invalid.TestRun.Results.UnitTestResult[1].executionId = $firstExecutionId
+        }
+        'wrong-total' { $invalid.TestRun.ResultSummary.Counters.total = '3' }
+        'wrong-outcome-counter' { $invalid.TestRun.ResultSummary.Counters.passed = '2' }
+    }
+    $invalidInput = Join-Path $PSScriptRoot "../artifacts/evidence-controls/$name"
+    New-Item -ItemType Directory -Path $invalidInput -Force | Out-Null
+    $invalid.Save((Join-Path $invalidInput 'invalid.trx'))
+    $rejected = $false
+    try { & (Join-Path $PSScriptRoot 'Export-CoverageEvidence.ps1') -ResultsDirectory $invalidInput -OutputDirectory (Join-Path $invalidInput 'output') }
+    catch { if ($_.Exception.Message -notmatch 'test (definition|entry|result|execution|method|display|identity|outcome)|test identity roster') { throw }; $rejected = $true }
+    if (-not $rejected) { throw 'Invalid identity join was exported.' }
+}
+$identityText = Get-Content -LiteralPath (Join-Path $output 'test-identities.json') -Raw
+if ($identityText -match 'PRIVATE_|secret:|codeBase|StackTrace|StdOut') { throw 'Private case content leaked.' }
 $unavailable = Join-Path $PSScriptRoot '../artifacts/evidence-controls/unavailable'
 & (Join-Path $PSScriptRoot 'Export-CoverageEvidence.ps1') -ResultsDirectory (Join-Path $fixture 'not-present') -OutputDirectory $unavailable
 $availability = Get-Content -LiteralPath (Join-Path $unavailable 'availability.json') -Raw | ConvertFrom-Json
