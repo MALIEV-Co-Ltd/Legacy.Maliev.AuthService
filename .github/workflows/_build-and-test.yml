@@ -215,6 +215,16 @@ jobs:
             --configuration Release --no-build --no-restore -p:UseLocalMalievDependencies=true \
             --filter "FullyQualifiedName~NormalInvoiceBoundCapability_" \
             --logger "trx;LogFileName=invoice-bound-capability.trx" --results-directory artifacts/invoice-bound-capability
+      - name: Verify historical recovery email admission through normal HTTP
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          dotnet test Legacy.Maliev.AuthService.Tests/Legacy.Maliev.AuthService.Tests.csproj \
+            --configuration Release --no-build --no-restore \
+            -p:UseLocalMalievDependencies=true \
+            --filter "FullyQualifiedName=Legacy.Maliev.AuthService.Tests.EmployeeRecoveryHttpTests.RecoveryEmail_SyntaxMatchesHistoricalBareAddressPredicate|FullyQualifiedName=Legacy.Maliev.AuthService.Tests.EmployeeRecoveryHttpTests.RecoveryEmail_InvalidAdmissionPreservesRealChallengeAndStoredState" \
+            --collect "XPlat Code Coverage" --settings eng/coverage.runsettings \
+            --logger "trx;LogFileName=recovery-email-admission.trx" --results-directory artifacts/recovery-email-admission
       - name: Verify exact employee recovery callback token boundaries
         shell: bash
         run: |
@@ -369,6 +379,7 @@ jobs:
         run: |
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/owned-raw -OutputDirectory artifacts/coverage-evidence
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/recovery-callback -OutputDirectory artifacts/coverage-evidence/recovery-callback
+          & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/recovery-email-admission -OutputDirectory artifacts/coverage-evidence/recovery-email-admission
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-security -OutputDirectory artifacts/coverage-evidence/historical-security
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-password-formats -OutputDirectory artifacts/coverage-evidence/historical-password-formats
           & ./eng/Export-CoverageEvidence.ps1 -ResultsDirectory artifacts/historical-identity-normalization -OutputDirectory artifacts/coverage-evidence/historical-identity-normalization
