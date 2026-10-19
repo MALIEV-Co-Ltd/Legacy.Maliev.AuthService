@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
@@ -22,7 +23,8 @@ public sealed class PostgresFixtureConnectionLifetimeTests(PostgresFixture postg
         try
         {
             await context.Database.OpenConnectionAsync();
-            Assert.Equal(1, await postgres.CountDatabaseBackendsAsync(connectionString));
+            var connection = (NpgsqlConnection)context.Database.GetDbConnection();
+            Assert.Equal(1, await postgres.CountDatabaseBackendsAsync(connectionString, connection.ProcessID));
         }
         finally { await context.DisposeAsync(); }
 

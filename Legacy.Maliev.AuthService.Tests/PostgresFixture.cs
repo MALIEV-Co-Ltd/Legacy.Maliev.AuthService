@@ -87,7 +87,7 @@ public sealed class PostgresFixture : IAsyncLifetime
         }
     }
 
-    internal async Task<int> CountDatabaseBackendsAsync(string connectionString)
+    internal async Task<int> CountDatabaseBackendsAsync(string connectionString, int? backendProcessId = null)
     {
         var database = new NpgsqlConnectionStringBuilder(connectionString).Database;
         await using var connection = new NpgsqlConnection(
@@ -97,6 +97,11 @@ public sealed class PostgresFixture : IAsyncLifetime
         command.CommandTimeout = 5;
         command.CommandText = "SELECT count(*)::int FROM pg_stat_activity WHERE datname = @database";
         command.Parameters.AddWithValue("database", database!);
+        if (backendProcessId is { } processId)
+        {
+            command.CommandText += " AND pid = @pid";
+            command.Parameters.AddWithValue("pid", processId);
+        }
         return (int)(await command.ExecuteScalarAsync())!;
     }
 
