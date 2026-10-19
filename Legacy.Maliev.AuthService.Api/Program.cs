@@ -25,7 +25,8 @@ await PrivateStartupBoundary.RunAsync(async () =>
     builder.Services.AddOpenApi("v1");
 
     builder.Services.AddProblemDetails();
-    builder.Services.AddControllers();
+    builder.Services.AddControllers(options =>
+        options.InputFormatters.Insert(0, new Legacy.Maliev.AuthService.Api.LegacyCredentialValidationInputFormatter()));
     builder.Services.AddSingleton<LoginAttemptRateLimiter>();
     builder.Services.AddSingleton<LoginRateLimitFilter>();
     builder.Services.AddScoped<QualificationIntrospectionBoundaryFilter>();
