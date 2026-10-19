@@ -11,6 +11,8 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
+using System.IdentityModel.Tokens.Jwt;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -26,7 +28,6 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
     private const string CustomerIdentitiesRead = "legacy-auth.customer-identities.read";
     private const string CustomerIdentitiesUpdate = "legacy-auth.customer-identities.update";
     private const string CustomerIdentitiesDelete = "legacy-auth.customer-identities.delete";
-    private static readonly DateTimeOffset Now = DateTimeOffset.UtcNow;
     private readonly AuthApiFactory factory;
 
     public CustomerIdentityAuthorizationTests(AuthApiFactory factory) => this.factory = factory;
@@ -238,6 +239,35 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    [Theory]
+    [InlineData("employee")]
+    [InlineData("customer")]
+    [InlineData("service")]
+    public void FactoryTokens_AreIssuedAtCallTimeAfterEarlierTokensExpire(string kind)
+    {
+        var clock = new FakeTimeProvider(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
+        using var ownedFactory = new AuthApiFactory(clock);
+        Func<string> issue = kind switch
+        {
+            "employee" => ownedFactory.IssueEmployee,
+            "customer" => ownedFactory.IssueCustomer,
+            _ => () => ownedFactory.IssueService([]),
+        };
+        var handler = new JwtSecurityTokenHandler();
+        var first = handler.ReadJwtToken(issue());
+        Assert.Equal(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), first.ValidFrom);
+        Assert.Equal(new DateTime(2026, 1, 1, 0, 15, 0, DateTimeKind.Utc), first.ValidTo);
+
+        clock.Advance(TimeSpan.FromMinutes(16));
+        var renewed = handler.ReadJwtToken(issue());
+
+        Assert.Equal(new DateTime(2026, 1, 1, 0, 16, 0, DateTimeKind.Utc), renewed.ValidFrom);
+        Assert.Equal(new DateTime(2026, 1, 1, 0, 31, 0, DateTimeKind.Utc), renewed.ValidTo);
+        Assert.Equal("1767226560", Assert.Single(renewed.Claims, claim => claim.Type == "iat").Value);
+        Assert.True(first.ValidTo < renewed.ValidFrom);
+        Assert.Equal(TimeSpan.FromSeconds(900), renewed.ValidTo - renewed.ValidFrom);
+    }
+
     private static CreateCustomerIdentityRequest CreateRequest() => new(
         "customer@example.com",
         "customer@example.com",
@@ -251,9 +281,15 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
     {
         private readonly string privateKeyPem;
         private readonly RsaAccessTokenIssuer tokenIssuer;
+        private readonly TimeProvider clock;
 
-        public AuthApiFactory()
+        public AuthApiFactory() : this(TimeProvider.System)
         {
+        }
+
+        internal AuthApiFactory(TimeProvider clock)
+        {
+            this.clock = clock;
             privateKeyPem = CreatePrivateKeyPem();
             tokenIssuer = CreateIssuer(privateKeyPem);
         }
@@ -300,19 +336,19 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         {
             return tokenIssuer.Issue(
                 new LegacyIdentity("employee-7", "employee@maliev.com", "employee@maliev.com", IdentityKind.Employee, 7, "stamp"),
-                Now, Guid.Parse("3700f80a-311f-4844-b1c8-96cf737ef9cb")).Value;
+                clock.GetUtcNow(), Guid.Parse("3700f80a-311f-4844-b1c8-96cf737ef9cb")).Value;
         }
 
         public string IssueCustomer()
         {
             return tokenIssuer.Issue(
                 new LegacyIdentity("customer-42", "customer@maliev.com", "customer@maliev.com", IdentityKind.Customer, 42, "stamp"),
-                Now, null).Value;
+                clock.GetUtcNow(), null).Value;
         }
 
         public string IssueService(IReadOnlyList<string> permissions)
         {
-            return tokenIssuer.IssueService("legacy-intranet", permissions, Now).Value;
+            return tokenIssuer.IssueService("legacy-intranet", permissions, clock.GetUtcNow()).Value;
         }
 
         protected override void Dispose(bool disposing)
