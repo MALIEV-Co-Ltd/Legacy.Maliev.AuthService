@@ -12,6 +12,7 @@ await PrivateStartupBoundary.RunAsync(async () =>
     var builder = WebApplication.CreateBuilder(args);
 
     builder.AddServiceDefaults();
+    builder.AddPrivateRequestObservation("auth");
     builder.AddDefaultApiVersioning();
     builder.AddStandardCors();
     // RequestLoggingMiddleware emits raw URL paths, which can contain auth secrets.
