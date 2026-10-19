@@ -14,9 +14,23 @@ public sealed class PostgresCollection : ICollectionFixture<PostgresFixture>
 
 public sealed class PostgresFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer postgres = new PostgreSqlBuilder("postgres:18-alpine").Build();
+    private readonly PostgreSqlContainer postgres = new PostgreSqlBuilder("postgres:18-alpine")
+        .WithLabel("MALIEV_TEST_RUN_ID",
+            Environment.GetEnvironmentVariable("MALIEV_TEST_RUN_ID") is { Length: > 0 } runId
+                ? runId : Guid.NewGuid().ToString("N"))
+        .WithCreateParameterModifier(parameters =>
+        {
+            parameters.HostConfig ??= new();
+            parameters.HostConfig.Memory = 512L * 1024 * 1024;
+            parameters.HostConfig.NanoCPUs = 2_000_000_000L;
+        })
+        .Build();
 
-    public Task InitializeAsync() => postgres.StartAsync();
+    public async Task InitializeAsync()
+    {
+        using var startup = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await postgres.StartAsync(startup.Token);
+    }
 
     public async Task DisposeAsync()
     {
