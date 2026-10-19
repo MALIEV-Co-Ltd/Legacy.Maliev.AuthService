@@ -134,6 +134,7 @@ public sealed class JwtAccessTokenContractTests
             default);
 
         var token = fixture.ReadAndValidate(Assert.IsType<TokenResponse>(result.Tokens).AccessToken);
+        Assert.Equal(Now.AddMinutes(15).UtcDateTime, token.ValidTo);
         Assert.Equal([CatalogMaterialsRead, CatalogMaterialsCreate, CatalogMaterialsUpdate, CatalogCurrenciesRead, CustomersList, CustomersCreate, CustomersRead, CustomersUpdate, CustomerIdentitiesCreate, CustomerIdentitiesRead, CustomerIdentitiesUpdate, CustomerIdentitiesDelete, EmployeeIdentitiesCreate, EmployeeIdentitiesRead, EmployeeIdentitiesUpdate, EmployeeIdentitiesDelete, AccountingRead, .. EmployeeAccountingMutationPermissions, QuotationRequestsRead, QuotationRequestsUpdate, QuotationsRead, QuotationsCreate, QuotationsUpdate, QuotationLinesWrite, QuotationOrdersRead, QuotationOrdersWrite, QuotationFilesRead, EmployeesList, EmployeesCreate, EmployeesRead, EmployeesUpdate, EmployeeAddressesRead, EmployeeAddressesCreate, EmployeeAddressesUpdate, EmployeeRolesRead, OrdersRead, OrdersCreate, SuppliersRead, SuppliersCreate, SuppliersUpdate, SuppliersDelete, PurchaseOrdersRead, PurchaseOrdersCreate, PurchaseOrdersDelete, OrderCatalogRead, OrdersUpdate, OrderFilesRead, OrderFilesWrite, OrderFilesDelete, OrderStatusRead, OrderStatusWrite, FileUploadsCreate, FileUploadsRead, FileUploadsDelete], PermissionValues(token));
         AssertStableEmployeeContract(token, fixture.KeyId);
     }
@@ -185,6 +186,7 @@ public sealed class JwtAccessTokenContractTests
             default);
 
         var token = fixture.ReadAndValidate(Assert.IsType<TokenResponse>(result.Tokens).AccessToken);
+        Assert.Equal(Now.AddMinutes(15).UtcDateTime, token.ValidTo);
         Assert.DoesNotContain(CatalogMaterialsRead, PermissionValues(token));
         Assert.DoesNotContain(CatalogMaterialsCreate, PermissionValues(token));
         Assert.DoesNotContain(CatalogMaterialsUpdate, PermissionValues(token));
