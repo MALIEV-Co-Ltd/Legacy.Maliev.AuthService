@@ -88,15 +88,24 @@ public sealed class PostgresFixture : IAsyncLifetime
     /// Awaits idempotent stop and removal, reporting cleanup failure without suppressing its exception.
     /// </summary>
     /// <returns>A task that completes after owned-container cleanup or propagates its failure.</returns>
-    public async Task DisposeAsync()
+    public Task DisposeAsync() =>
+        AwaitContainerCleanupAsync(cleanup, () => postgres.Id, (exception, elapsed, containerId) =>
+            CleanupFailureObserver.Observe(exception, elapsed,
+                () => (int)postgres.State, Console.Error.WriteLine,
+                report => CleanupFailureObserver.WriteReceipt(report, containerId, Environment.GetEnvironmentVariable)));
+
+    internal static async Task AwaitContainerCleanupAsync(Lazy<Task> cleanup, Func<string> containerId,
+        Action<Exception, TimeSpan, string> observe)
     {
         var started = Stopwatch.GetTimestamp();
+        string capturedContainerId;
+        try { capturedContainerId = containerId(); }
+        catch { capturedContainerId = string.Empty; }
         try { await cleanup.Value; }
         catch (Exception exception)
         {
-            CleanupFailureObserver.Observe(exception, Stopwatch.GetElapsedTime(started),
-                () => (int)postgres.State, Console.Error.WriteLine,
-                report => CleanupFailureObserver.WriteReceipt(report, postgres.Id, Environment.GetEnvironmentVariable));
+            try { observe(exception, Stopwatch.GetElapsedTime(started), capturedContainerId); }
+            catch { /* Diagnostics must never replace the original cleanup exception. */ }
             throw;
         }
     }
