@@ -143,3 +143,27 @@ Authenticated `POST /auth/v1/customer-self-service/email/change` and
 access token. The identity ID comes only from its signed `sub` claim; callers
 cannot select another account in the body or route. Successful changes rotate
 the security stamp and revoke all refresh sessions, requiring a fresh login.
+
+## Generated XML documentation migration
+
+Original `03dc9a1271c16e6535934445e9dd6e3f30e8fffe` moved compiler XML
+documentation out of project source folders and removed stale XML copy items.
+The original test project was already nonpackable and still generated XML.
+Nonpackability is therefore not a reason to omit that original build output.
+
+The API, three active production libraries, and nonpackable test assembly emit
+compiler XML through SDK-managed build output. No source-root XML,
+`DocumentationFile` override, or stale XML `None Update` copy item is required.
+The test project's handwritten externally visible declarations are documented
+without suppressing compiler documentation warnings or weakening warning policy.
+
+The existing API and six library-manifest cases inspect real emitted XML,
+including the credential-validation request type and its username/password
+properties. The test-assembly regression likewise reads the XML beside its
+loaded assembly and requires its assembly identity and a documented public
+member. The project-isolation regression retains the nonpackable and no-source-
+artifact checks while requiring positive XML generation.
+
+This is the Auth-owned documentation-output facet of the original commit, not
+whole-commit or multi-repository acceptance. It does not change test behavior,
+container cleanup, delivery paths, or retired authentication behavior.

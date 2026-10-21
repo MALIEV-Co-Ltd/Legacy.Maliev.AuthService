@@ -32,6 +32,10 @@ using CustomerProgram = CustomerProducer::Program;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies customer profile authority, raw-submission binding, and replay behavior through actual hosts.
+/// </summary>
+/// <param name="postgres">The shared fixture that owns the disposable PostgreSQL container.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
 {
@@ -39,6 +43,11 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         "submitted-user@identity.test", "forged-valid@identity.test", "abcdef", true,
         "+6621111111", "submitted-fax", "submitted-mobile", PasswordSetupRequired: true);
 
+    /// <summary>
+    /// Verifies actual hosts copy stored profile authority while hashing only the raw submitted operation.
+    /// </summary>
+    /// <param name="reconcile">Whether the request uses reconciliation rather than initial identity creation.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -92,6 +101,11 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         Assert.DoesNotContain(Submitted.Password, body, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Verifies receipt-first replay and raw conflicts do not introduce another profile dependency.
+    /// </summary>
+    /// <param name="state">The existing receipt or raw-operation state used to exercise replay handling.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("drift")]
     [InlineData("missing")]
@@ -124,6 +138,11 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         Assert.Equal(before, await SnapshotAsync(stores));
     }
 
+    /// <summary>
+    /// Verifies omitted nullable fields are cleared and schema scalar bounds survive persistence.
+    /// </summary>
+    /// <param name="supplementary">Whether the case uses supplementary Unicode characters at the schema scalar boundary.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -167,6 +186,12 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         else Assert.Equal(512, stored.PhoneNumber!.Length);
     }
 
+    /// <summary>
+    /// Verifies failed profile authority creates no identity, receipt, or recovery effect.
+    /// </summary>
+    /// <param name="failure">The injected authority or credential failure tested by the case.</param>
+    /// <param name="status">The response status used by this regression case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("missing", 404)]
     [InlineData("unavailable", 503)]
@@ -242,6 +267,11 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         if (failure == "downstream-denied") Assert.Equal(HttpStatusCode.Forbidden, factory.LastDownstreamStatus);
     }
 
+    /// <summary>
+    /// Verifies a stored canonical collision is checked against authority before a new write.
+    /// </summary>
+    /// <param name="reconcile">Whether the request uses reconciliation rather than initial identity creation.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -269,6 +299,10 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         Assert.Equal(before, await SnapshotAsync(stores));
     }
 
+    /// <summary>
+    /// Verifies renewed employee and read-workload identities cannot escalate into customer writes.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task NormalCustomerProfileBinding_GenuineRenewedEmployeeAndReadWorkloadCannotEscalateCustomerOrOwnReadIntoWrites()
     {
@@ -307,6 +341,10 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         Assert.Equal(1, factory.ProfileReads);
     }
 
+    /// <summary>
+    /// Verifies a renewed workload without its read grant stops before transport or persistence.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task NormalCustomerProfileBinding_RenewedOwnWorkloadWithoutReadGrantStopsBeforeTransportOrWrite()
     {
@@ -333,6 +371,11 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         Assert.Equal(before, await SnapshotAsync(stores));
     }
 
+    /// <summary>
+    /// Verifies direct creation rejects missing or unavailable authority before persistence.
+    /// </summary>
+    /// <param name="missing">The missing authority or configuration condition tested by the case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -354,6 +397,10 @@ public sealed class CustomerProfileBindingHttpTests(PostgresFixture postgres)
         Assert.Equal(before, await SnapshotAsync(stores));
     }
 
+    /// <summary>
+    /// Verifies concurrent identical raw operations read the profile once and reconcile the locked receipt.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task NormalCustomerProfileBinding_ConcurrentSameRawOperationReadsProfileOnceAndReconcilesLockedReceipt()
     {

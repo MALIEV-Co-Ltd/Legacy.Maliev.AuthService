@@ -24,8 +24,15 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies private bounded login partitions and concurrent rate-limit behavior.
+/// </summary>
 public sealed class LoginRateLimitContractTests
 {
+    /// <summary>
+    /// Verifies historical canonical identity aliases share one private rate-limit partition.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task NormalHistoricalIdentityNormalization_CanonicalAliasesShareOnePrivateRateLimitPartition()
     {
@@ -54,6 +61,10 @@ public sealed class LoginRateLimitContractTests
         Assert.Equal(LoginAttemptRateLimiter.PermitLimit + 2, executed);
     }
 
+    /// <summary>
+    /// Verifies an undefined numeric identity kind is rejected before credential verification.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task UndefinedNumericIdentityKind_IsRejectedByHttpPipelineBeforeCredentialVerification()
     {
@@ -76,6 +87,10 @@ public sealed class LoginRateLimitContractTests
         Assert.Equal(0, limiter.TrackedPartitionCount);
     }
 
+    /// <summary>
+    /// Verifies concurrent expiry cleanup does not split one identity across orphaned and replacement windows.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task ConcurrentExpiryCleanup_DoesNotSplitOneIdentityAcrossOrphanAndReplacementWindows()
     {
@@ -144,6 +159,10 @@ public sealed class LoginRateLimitContractTests
         Assert.Equal(LoginAttemptRateLimiter.PermitLimit, executed);
     }
 
+    /// <summary>
+    /// Verifies identifier spraying cannot retain an unbounded number of partitions.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task IdentifierSpray_IsGloballyBoundedWithoutRetainingUnboundedPartitions()
     {
@@ -167,6 +186,10 @@ public sealed class LoginRateLimitContractTests
             LoginAttemptRateLimiter.GlobalPermitLimit);
     }
 
+    /// <summary>
+    /// Verifies distinct employees behind one BFF address do not share an account bucket.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task DifferentEmployeeIdentifiersBehindOneBffIp_DoNotShareTheAccountBucket()
     {
@@ -189,6 +212,10 @@ public sealed class LoginRateLimitContractTests
         Assert.Equal(LoginAttemptRateLimiter.PermitLimit + 1, executed);
     }
 
+    /// <summary>
+    /// Verifies whitespace, casing, and spoofed forwarding headers cannot evade the normalized identity limit.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task SameNormalizedIdentifier_IsBoundedAcrossWhitespaceCasingAndSpoofedForwardingHeaders()
     {
@@ -219,6 +246,10 @@ public sealed class LoginRateLimitContractTests
         Assert.InRange(retryAfterSeconds, 1, 60);
     }
 
+    /// <summary>
+    /// Verifies employee and customer identities with the same identifier use distinct composite partitions.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task EmployeeAndCustomerWithSameIdentifier_UseSeparateCompositePartitions()
     {
@@ -240,6 +271,10 @@ public sealed class LoginRateLimitContractTests
         Assert.Null(customer.Result);
     }
 
+    /// <summary>
+    /// Verifies a rejected request does not disclose the sensitive identifier.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Rejection_DoesNotExposeTheSensitiveIdentifier()
     {

@@ -27,6 +27,9 @@ using System.Collections.Concurrent;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises Google sign-in HTTP admission, privacy, ordering, and session binding without contacting Google.
+/// </summary>
 public sealed class GoogleIdentityHttpBoundaryTests
 {
     private const string NonceRoute = "/auth/v1/exchange/google/nonce";
@@ -34,6 +37,10 @@ public sealed class GoogleIdentityHttpBoundaryTests
     private const string Credential = "synthetic-google-credential";
     private static readonly string Nonce = new('n', 64);
 
+    /// <summary>
+    /// Checks that an unhandled production nonce failure emits one sanitized critical incident and a private public response.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalProgramUnhandledFailure_GoogleNonceEmitsOneSanitizedCriticalIncident()
     {
@@ -92,6 +99,12 @@ public sealed class GoogleIdentityHttpBoundaryTests
         Assert.Null(state.Created);
     }
 
+    /// <summary>
+    /// Checks anonymous, unprivileged, customer, and employee callers cannot reach Google nonce or exchange services.
+    /// </summary>
+    /// <param name="actor">The untrusted caller identity presented to both endpoints.</param>
+    /// <param name="expected">The authentication or authorization denial required for that caller.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData("anonymous", HttpStatusCode.Unauthorized)]
     [InlineData("unprivileged-service", HttpStatusCode.Forbidden)]
@@ -117,6 +130,11 @@ public sealed class GoogleIdentityHttpBoundaryTests
         Assert.Null(state.Created);
     }
 
+    /// <summary>
+    /// Checks a signed machine token without a service name is denied before upstream access.
+    /// </summary>
+    /// <param name="route">The nonce or exchange endpoint receiving the incomplete machine identity.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(NonceRoute)]
     [InlineData(ExchangeRoute)]
@@ -133,6 +151,12 @@ public sealed class GoogleIdentityHttpBoundaryTests
         Assert.Null(state.Created);
     }
 
+    /// <summary>
+    /// Checks invalid request fields are rejected before Google validation or session access.
+    /// </summary>
+    /// <param name="route">The nonce or exchange endpoint under test.</param>
+    /// <param name="field">The application, credential, or nonce field made invalid.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(NonceRoute, "application")]
     [InlineData(ExchangeRoute, "credential")]
@@ -151,6 +175,11 @@ public sealed class GoogleIdentityHttpBoundaryTests
         Assert.Null(state.Created);
     }
 
+    /// <summary>
+    /// Checks unsupported application names are rejected before nonce or credential access.
+    /// </summary>
+    /// <param name="route">The nonce or exchange endpoint receiving the unsupported application.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(NonceRoute)]
     [InlineData(ExchangeRoute)]
@@ -167,6 +196,10 @@ public sealed class GoogleIdentityHttpBoundaryTests
         Assert.Null(state.Created);
     }
 
+    /// <summary>
+    /// Checks the nonce response exposes only browser-safe values bound to the authenticated service and application.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NonceResponse_IsBrowserSafeAndBoundToTheAuthenticatedService()
     {
@@ -185,6 +218,12 @@ public sealed class GoogleIdentityHttpBoundaryTests
         Assert.Null(state.Created);
     }
 
+    /// <summary>
+    /// Checks failed exchange maps to its public status without persisting a session or disclosing submitted credentials.
+    /// </summary>
+    /// <param name="mode">The nonce, Google validation, domain, lookup, or upstream failure injected.</param>
+    /// <param name="expected">The public HTTP status required for that failure.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData("invalid_nonce", HttpStatusCode.Unauthorized)]
     [InlineData("invalid_google_credential", HttpStatusCode.Unauthorized)]
@@ -220,6 +259,10 @@ public sealed class GoogleIdentityHttpBoundaryTests
         if (mode == "invalid_nonce") Assert.Equal(new[] { "consume" }, state.Events);
     }
 
+    /// <summary>
+    /// Checks nonce upstream timeout maps to unavailability without exposing failure text.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NonceUpstreamTimeout_ReturnsUnavailableWithoutLeakingFailureText()
     {
@@ -233,6 +276,10 @@ public sealed class GoogleIdentityHttpBoundaryTests
         Assert.Null(state.Created);
     }
 
+    /// <summary>
+    /// Checks successful Google exchange binds an employee token to the hashed refresh session and rejects nonce replay.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task SuccessfulExchange_BindsEmployeeJwtToHashedRefreshSessionAndRejectsNonceReplay()
     {

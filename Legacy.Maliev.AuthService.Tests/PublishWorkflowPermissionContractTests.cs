@@ -2,8 +2,14 @@ using System.Text.RegularExpressions;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies publisher permission scope and source-artifact isolation without executing publishing.
+/// </summary>
 public sealed class PublishWorkflowPermissionContractTests
 {
+    /// <summary>
+    /// Verifies validation uses the redacted JWT resource scanner.
+    /// </summary>
     [Fact]
     public void ValidationWorkflow_UsesRedactedJwtResourceScanner()
     {
@@ -18,6 +24,9 @@ public sealed class PublishWorkflowPermissionContractTests
             StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Verifies stale JWT XML documentation is absent from source.
+    /// </summary>
     [Fact]
     public void SourceE2f_StaleJwtXmlDocumentationIsAbsent()
     {
@@ -26,6 +35,9 @@ public sealed class PublishWorkflowPermissionContractTests
         Assert.False(File.Exists(Path.Combine(root, "Maliev.JwtSecurity.xml")));
     }
 
+    /// <summary>
+    /// Verifies OpenID Connect permissions are restricted to publisher jobs.
+    /// </summary>
     [Fact]
     public void PublishWorkflow_ScopesOidcToPublishJobs()
     {
@@ -44,6 +56,7 @@ public sealed class PublishWorkflowPermissionContractTests
         Assert.Contains("permissions:", workflowHeader, StringComparison.Ordinal);
         Assert.Contains("  contents: read", workflowHeader, StringComparison.Ordinal);
         Assert.DoesNotContain("id-token: write", workflowHeader, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("actions: read", workflowHeader, StringComparison.OrdinalIgnoreCase);
 
         var publishJobs = Regex.Matches(
             source,
@@ -54,6 +67,7 @@ public sealed class PublishWorkflowPermissionContractTests
             var job = publishJob.Groups["body"].Value;
             Assert.Contains("permissions:", job, StringComparison.Ordinal);
             Assert.Contains("contents: read", job, StringComparison.Ordinal);
+            Assert.Contains("actions: read", job, StringComparison.Ordinal);
             Assert.Contains("id-token: write", job, StringComparison.Ordinal);
         }
 
@@ -63,6 +77,7 @@ public sealed class PublishWorkflowPermissionContractTests
         if (deploymentGate.Success)
         {
             Assert.DoesNotContain("id-token: write", deploymentGate.Groups["body"].Value, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("actions: read", deploymentGate.Groups["body"].Value, StringComparison.OrdinalIgnoreCase);
         }
     }
 

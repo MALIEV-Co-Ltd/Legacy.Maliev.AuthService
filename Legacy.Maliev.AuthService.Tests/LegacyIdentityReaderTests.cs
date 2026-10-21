@@ -6,11 +6,19 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises legacy password validation, lifecycle eligibility, and isolated customer and employee model mappings.
+/// </summary>
+/// <param name="postgres">The collection-owned fixture that creates isolated PostgreSQL stores for each case.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 15, 0, 0, 0, TimeSpan.Zero);
 
+    /// <summary>
+    /// Checks that an identity ID is not accepted as the employee's password.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Validate_ExistingIdentityIdUsedAsPassword_IsRejected()
     {
@@ -26,6 +34,10 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
         Assert.Null(result);
     }
 
+    /// <summary>
+    /// Checks that a valid legacy password projects the linked customer identity and lifecycle flags.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Validate_CorrectAspNetIdentityPassword_ReturnsProjectedIdentity()
     {
@@ -48,6 +60,10 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
         Assert.False(result.RequiresInitialPassword);
     }
 
+    /// <summary>
+    /// Checks that explicit customer bootstrap state does not impose password setup on employees.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Validate_ExplicitCustomerLifecycle_RequiresInitialPasswordWithoutAffectingEmployees()
     {
@@ -73,6 +89,10 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
         Assert.False(employeeResult?.RequiresInitialPassword);
     }
 
+    /// <summary>
+    /// Checks that a customer-owned password matching an old heuristic does not re-enable bootstrap setup.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Validate_CustomerOwnedPasswordMatchingOldHeuristic_DoesNotRetriggerSetup()
     {
@@ -91,6 +111,10 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
         Assert.False(result.RequiresInitialPassword);
     }
 
+    /// <summary>
+    /// Checks that current lockout rejects an otherwise correct password.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Validate_LockedIdentity_IsRejectedEvenWithCorrectPassword()
     {
@@ -108,6 +132,10 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
         Assert.Null(result);
     }
 
+    /// <summary>
+    /// Checks that password validation preserves an unconfirmed customer's recovery eligibility.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Validate_UnconfirmedCustomer_ReturnsRecoveryEligibleIdentityWithoutSessionEligibility()
     {
@@ -125,6 +153,10 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
         Assert.False(result.EmailConfirmed);
     }
 
+    /// <summary>
+    /// Checks that an unconfirmed customer cannot satisfy active-session lookup.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task FindActive_UnconfirmedCustomer_IsRejectedForRefreshValidation()
     {
@@ -140,6 +172,10 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
         Assert.Null(result);
     }
 
+    /// <summary>
+    /// Checks that an unconfirmed employee's password result retains its flag while active-session lookups reject it.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task UnconfirmedEmployee_PasswordValidationPreservesFlagButActiveSessionLookupsRejectIt()
     {
@@ -161,6 +197,10 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
         Assert.Null(activeByEmail);
     }
 
+    /// <summary>
+    /// Checks confirmed employee lookup by both identity ID and email.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ConfirmedEmployee_RemainsEligibleForSessionLookups()
     {
@@ -174,6 +214,10 @@ public sealed class LegacyIdentityReaderTests(PostgresFixture postgres)
         Assert.NotNull(await reader.FindActiveEmployeeByEmailAsync(user.Email!, default));
     }
 
+    /// <summary>
+    /// Checks that fax, mobile, and bootstrap properties map only in the customer identity database.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ContextModels_MapCustomerOnlyColumnsOnlyInCustomerDatabase()
     {

@@ -1,7 +1,13 @@
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Checks repository delivery contracts without publishing images or applying deployment resources.
+/// </summary>
 public sealed class DeliveryContractTests
 {
+    /// <summary>
+    /// Checks that the Docker context excludes repository metadata, build output, and test artifacts.
+    /// </summary>
     [Fact]
     public void DockerContext_ExcludesBuildAndRepositoryArtifacts()
     {
@@ -80,6 +86,9 @@ public sealed class DeliveryContractTests
             File.Exists(Path.Combine(root, relativePath)), $"Required Docker build input is missing: {relativePath}"));
     }
 
+    /// <summary>
+    /// Checks that deployment manifests remain in the legacy namespace and do not provision infrastructure.
+    /// </summary>
     [Fact]
     public void KubernetesResources_AreConfinedToLegacyNamespaceAndDoNotProvisionInfrastructure()
     {
@@ -96,6 +105,9 @@ public sealed class DeliveryContractTests
             path => Assert.Contains("namespace: maliev-legacy", File.ReadAllText(path), StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// Checks bounded non-root deployment settings and runtime secret projection.
+    /// </summary>
     [Fact]
     public void Deployment_IsResourceBoundedNonRootAndUsesRuntimeSecretProjection()
     {
@@ -111,6 +123,9 @@ public sealed class DeliveryContractTests
         Assert.Contains("limits:", deployment, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Checks the HTTPS egress rule used to refresh Google identity certificates.
+    /// </summary>
     [Fact]
     public void NetworkPolicy_AllowsOnlyHttpsForGoogleIdentityCertificateRefresh()
     {
@@ -121,6 +136,9 @@ public sealed class DeliveryContractTests
         Assert.Contains("- protocol: TCP\n          port: 443", policy, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Checks readiness registration for the customer, employee, and refresh-session PostgreSQL stores.
+    /// </summary>
     [Fact]
     public void Readiness_ProbesEveryAuthPostgresStore()
     {
@@ -141,6 +159,9 @@ public sealed class DeliveryContractTests
             StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Checks the explicit deployment enablement, protected environment, and pinned publication workflow.
+    /// </summary>
     [Fact]
     public void PublishWorkflow_IsProtectedByExplicitCostAndMigrationGate()
     {
@@ -148,11 +169,14 @@ public sealed class DeliveryContractTests
             Path.Combine(FindRepositoryRoot(), ".github", "workflows", "publish-image.yml"));
 
         Assert.Contains("vars.LEGACY_DEPLOY_ENABLED == 'true'", workflow, StringComparison.Ordinal);
-        Assert.Contains("Legacy.Maliev.Workflows/.github/workflows/publish-image.yml@6017816", workflow, StringComparison.Ordinal);
+        Assert.Contains("Legacy.Maliev.Workflows/.github/workflows/publish-image.yml@d583f55473f47f72d33b51060fa5d14e0974daf5", workflow, StringComparison.Ordinal);
         Assert.Contains("legacy-production", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("kubectl apply", workflow, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Checks .NET 10 image inputs, non-root execution, and pinned shared dependency checkouts.
+    /// </summary>
     [Fact]
     public void Dockerfile_UsesDotNet10AndRunsAsNonRoot()
     {
@@ -167,6 +191,9 @@ public sealed class DeliveryContractTests
 
     }
 
+    /// <summary>
+    /// Checks that build and delivery references use public legacy dependency identities rather than original repositories.
+    /// </summary>
     [Fact]
     public void SharedDependencies_UseOnlyPublicLegacyRepositoryAndPackageIdentities()
     {
@@ -191,6 +218,9 @@ public sealed class DeliveryContractTests
         Assert.DoesNotContain("Include=\"Maliev.Aspire.ServiceDefaults\"", apiProject, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Checks explicit test discovery and the cross-platform coverage collector reference.
+    /// </summary>
     [Fact]
     public void TestProject_IsDiscoverableAndPublishesXplatCoverage()
     {
@@ -201,6 +231,9 @@ public sealed class DeliveryContractTests
         Assert.Contains("<PackageReference Include=\"coverlet.collector\" Version=\"6.0.4\" />", testProject, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Checks the exact documented legacy-web service permission list.
+    /// </summary>
     [Fact]
     public void DeploymentContract_ListsTheExactLegacyWebServicePermissions()
     {
@@ -243,6 +276,9 @@ public sealed class DeliveryContractTests
             permissions);
     }
 
+    /// <summary>
+    /// Checks that the documented source-owned addition is only the legacy-web currency-read grant.
+    /// </summary>
     [Fact]
     public void DeploymentContract_RegistersOnlyWebCurrencyReadAsSourceOwnedGrant()
     {

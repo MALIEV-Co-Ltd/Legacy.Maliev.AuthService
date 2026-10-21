@@ -20,9 +20,17 @@ using System.Text.Json;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises the source-owned legacy-web currency grant through normal signed service login.
+/// </summary>
+/// <param name="postgres">The collection-owned fixture that creates isolated PostgreSQL stores for each case.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class LegacyWebCurrencyPermissionHttpTests(PostgresFixture postgres)
 {
+    /// <summary>
+    /// Checks that normal web login signs the currency grant without modifying configured grants or exposing secret material.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task NormalLogin_SourceOwnedWebReadGrant_IsSignedAndDoesNotMutateConfiguration()
     {
@@ -44,6 +52,11 @@ public sealed class LegacyWebCurrencyPermissionHttpTests(PostgresFixture postgre
         Assert.Equal(["legacy-contact.messages.create"], configured);
     }
 
+    /// <summary>
+    /// Checks that other registered service clients receive no implicit currency-read grant.
+    /// </summary>
+    /// <param name="clientId">The configured or attempted machine client identity under test.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("legacy-other")]
     [InlineData("legacy-web-other")]
@@ -59,6 +72,10 @@ public sealed class LegacyWebCurrencyPermissionHttpTests(PostgresFixture postgre
         Assert.Equal(["legacy-contact.messages.create"], principal.FindAll("permissions").Select(claim => claim.Value));
     }
 
+    /// <summary>
+    /// Checks generic rejection of unknown or incorrect service credentials without an access token or secret disclosure.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task NormalLogin_BadOrUnknownCredential_RefusesWithoutGrantOrToken()
     {
@@ -88,6 +105,10 @@ public sealed class LegacyWebCurrencyPermissionHttpTests(PostgresFixture postgre
         }
     }
 
+    /// <summary>
+    /// Checks validation failure for normally issued tokens under a wrong audience or verification key.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task NormalIssuedToken_WrongAudienceOrVerificationKey_IsRejected()
     {
@@ -102,6 +123,10 @@ public sealed class LegacyWebCurrencyPermissionHttpTests(PostgresFixture postgre
         Assert.ThrowsAny<SecurityTokenException>(() => app.Validate(token, key: new RsaSecurityKey(wrongKey)));
     }
 
+    /// <summary>
+    /// Checks token expiry using an earlier issuance clock rather than waiting.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task NormalIssuedToken_ExpiredServerObservation_IsRejectedWithoutSleep()
     {

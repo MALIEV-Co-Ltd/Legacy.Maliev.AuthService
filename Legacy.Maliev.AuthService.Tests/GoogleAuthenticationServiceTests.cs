@@ -4,10 +4,17 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies Google exchange nonce consumption, employee admission, and refresh-token storage.
+/// </summary>
 public sealed class GoogleAuthenticationServiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 27, 0, 0, 0, TimeSpan.Zero);
 
+    /// <summary>
+    /// Verifies exchange consumes the nonce before validation and persists only the refresh-token hash.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Exchange_ConsumesNonceBeforeValidation_AndStoresOnlyRefreshHash()
     {
@@ -38,6 +45,10 @@ public sealed class GoogleAuthenticationServiceTests
         Assert.Equal(Employee().Id, store.Created.IdentityId);
     }
 
+    /// <summary>
+    /// Verifies replayed or expired nonces fail before credential validation.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Exchange_ReplayedOrExpiredNonce_FailsBeforeCredentialValidation()
     {
@@ -61,6 +72,10 @@ public sealed class GoogleAuthenticationServiceTests
         Assert.Null(store.Created);
     }
 
+    /// <summary>
+    /// Verifies unknown or inactive employees cannot create an exchange session.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Exchange_UnknownOrInactiveEmployee_FailsWithoutCreatingSession()
     {
@@ -83,6 +98,10 @@ public sealed class GoogleAuthenticationServiceTests
         Assert.Null(store.Created);
     }
 
+    /// <summary>
+    /// Verifies an invalid Google identity cannot create a session.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Exchange_InvalidGoogleIdentity_DoesNotCreateSession()
     {

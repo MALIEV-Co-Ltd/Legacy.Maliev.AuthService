@@ -13,11 +13,19 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises the current customer's contact projection and eligibility through the real HTTP boundary.
+/// </summary>
+/// <param name="postgres">The collection-owned fixture that creates isolated PostgreSQL stores for each case.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class CustomerSelfIdentityTests(PostgresFixture postgres)
 {
     private const string Route = "/auth/v1/customer-self-service/identity";
 
+    /// <summary>
+    /// Checks that identity reads ignore caller-selected IDs, expose only current contact fields, and disable caching.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Get_Customer_ReturnsOnlyOwnCurrentContactFieldsWithoutCaching()
     {
@@ -47,6 +55,12 @@ public sealed class CustomerSelfIdentityTests(PostgresFixture postgres)
         Assert.Equal(JsonValueKind.Null, refreshedJson.RootElement.GetProperty("mobile").ValueKind);
     }
 
+    /// <summary>
+    /// Checks that invalid, ineligible, or wrong-kind principals cannot disclose customer contact data.
+    /// </summary>
+    /// <param name="scenario">The invalid principal or token condition submitted to the identity endpoint.</param>
+    /// <param name="expectedStatus">The expected HTTP status for the configured identity condition.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("anonymous", 401)]
     [InlineData("employee", 403)]
@@ -76,6 +90,12 @@ public sealed class CustomerSelfIdentityTests(PostgresFixture postgres)
         Assert.DoesNotContain("current@example.com", await response.Content.ReadAsStringAsync());
     }
 
+    /// <summary>
+    /// Checks that current linkage, confirmation, and lockout state govern self-identity reads.
+    /// </summary>
+    /// <param name="change">The current identity linkage, confirmation, or lockout mutation applied before reading.</param>
+    /// <param name="expectedStatus">The expected HTTP status for the configured identity condition.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("deleted", 404)]
     [InlineData("relinked", 403)]
@@ -109,6 +129,10 @@ public sealed class CustomerSelfIdentityTests(PostgresFixture postgres)
         }
     }
 
+    /// <summary>
+    /// Checks that customer self-service credentials do not authorize the employee-only identity administration route.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Get_CustomerToken_CannotUseEmployeeIdentityAdminEndpoint()
     {

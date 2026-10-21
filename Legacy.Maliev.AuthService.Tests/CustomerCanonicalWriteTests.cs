@@ -8,6 +8,10 @@ using System.Text.Json;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises canonical customer-email ownership and raw idempotency receipts against isolated PostgreSQL databases.
+/// </summary>
+/// <param name="postgres">The collection fixture that creates independent customer and session stores.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class CustomerCanonicalWriteTests(PostgresFixture postgres) : IAsyncLifetime
 {
@@ -15,8 +19,16 @@ public sealed class CustomerCanonicalWriteTests(PostgresFixture postgres) : IAsy
     // method's await-using contexts and concurrent operations have completed.
     private readonly List<NpgsqlConnection> ownedPools = [];
 
+    /// <summary>
+    /// Leaves setup to each test so its databases and connection pools remain independently owned.
+    /// </summary>
+    /// <returns>A completed task; no shared initialization is required.</returns>
     public Task InitializeAsync() => Task.CompletedTask;
 
+    /// <summary>
+    /// Clears only the connection pools registered by this test instance after its operations have finished.
+    /// </summary>
+    /// <returns>A task that completes after the owned pool registrations are cleared.</returns>
     public Task DisposeAsync()
     {
         foreach (var connection in ownedPools) NpgsqlConnection.ClearPool(connection);
@@ -32,6 +44,10 @@ public sealed class CustomerCanonicalWriteTests(PostgresFixture postgres) : IAsy
         return context;
     }
 
+    /// <summary>
+    /// Checks that email normalization never changes the raw request hash or the caller and payload required to replay a creation receipt.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task KeyedCreate_CanonicalKeyNeverChangesRawPayloadReceiptOrReplayOwnership()
     {
@@ -65,6 +81,11 @@ public sealed class CustomerCanonicalWriteTests(PostgresFixture postgres) : IAsy
         Assert.Equal("CAF\u00c9@IDENTITY.TEST", user.NormalizedEmail);
     }
 
+    /// <summary>
+    /// Checks that concurrent Unicode-equivalent emails commit one identity and, for keyed writes, only the winner's receipt.
+    /// </summary>
+    /// <param name="keyed">Whether the competing writes use idempotency keys rather than unkeyed creation.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -99,6 +120,11 @@ public sealed class CustomerCanonicalWriteTests(PostgresFixture postgres) : IAsy
     private static CustomerIdentityAdminService NewService(CustomerIdentityDbContext context, string storedEmail, int id = 42) =>
         new(context, new PasswordHasher<LegacyIdentityRow>(), new FixedCustomerProfileBinding(new CustomerProfileBinding(id, storedEmail, null, null, null)));
 
+    /// <summary>
+    /// Checks that administrative creation and web registration cannot claim the same canonical email or customer profile concurrently.
+    /// </summary>
+    /// <param name="sameProfile">Whether the competing requests share a profile instead of equivalent email spellings.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

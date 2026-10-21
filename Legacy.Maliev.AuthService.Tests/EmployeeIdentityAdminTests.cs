@@ -9,9 +9,17 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises employee identity persistence and the public administration contract in an isolated PostgreSQL store.
+/// </summary>
+/// <param name="postgres">The collection-owned fixture that creates isolated PostgreSQL stores for each case.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class EmployeeIdentityAdminTests(PostgresFixture postgres)
 {
+    /// <summary>
+    /// Checks compatible employee password hashing and exclusion of security material and customer-only fields from responses.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Create_PersistsCompatibleHashWithoutCustomerOnlyColumns()
     {
@@ -36,6 +44,9 @@ public sealed class EmployeeIdentityAdminTests(PostgresFixture postgres)
         Assert.DoesNotContain("MobileNumber", responseFields);
     }
 
+    /// <summary>
+    /// Checks the create route and request DTO without exposing a password as a route parameter.
+    /// </summary>
     [Fact]
     public void Controller_CreateUsesExactPermissionAndPasswordNeverAppearsInRoute()
     {
@@ -51,6 +62,10 @@ public sealed class EmployeeIdentityAdminTests(PostgresFixture postgres)
             string.Equals(parameter.Name, "password", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// Checks stamp rotation on update and exclusion of customer-only request fields.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Update_RotatesSecurityStampAndDoesNotAcceptCustomerOnlyFields()
     {
@@ -76,6 +91,9 @@ public sealed class EmployeeIdentityAdminTests(PostgresFixture postgres)
         Assert.DoesNotContain("MobileNumber", requestFields);
     }
 
+    /// <summary>
+    /// Checks that employee identity migrations target their own PostgreSQL context.
+    /// </summary>
     [Fact]
     public void EmployeeIdentityContext_HasIsolatedPostgresMigration()
     {

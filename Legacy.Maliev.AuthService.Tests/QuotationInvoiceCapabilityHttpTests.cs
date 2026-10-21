@@ -24,12 +24,18 @@ using Npgsql;
 namespace Legacy.Maliev.AuthService.Tests;
 
 /// <summary>Normal signed HTTP route admission; no fabricated live-IAM positive authority.</summary>
+/// <param name="postgres">The shared fixture that owns the disposable PostgreSQL container.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres)
 {
     private const string Endpoint = "/auth/v1/exchange/quotation-invoice-completion";
     private static readonly Guid Operation = Guid.Parse("d5743e1a-641b-4623-9dc3-57a82b4c7885");
 
+    /// <summary>
+    /// Verifies the actual issuer binds financial proof while preserving the original unbound contract.
+    /// </summary>
+    /// <param name="bound">The invoice binding mode or capability bound exercised by the case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -57,6 +63,12 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Equal(before, await SnapshotCapabilityStateAsync(stores));
     }
 
+    /// <summary>
+    /// Verifies foreign financial ownership never produces a capability.
+    /// </summary>
+    /// <param name="mutation">The malformed binding, credential, or authority mutation tested by the case.</param>
+    /// <param name="expectedStatus">The expected HTTP status returned without granting authority.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("invoice", 403)]
     [InlineData("quotation", 403)]
@@ -79,6 +91,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Equal(before, await SnapshotCapabilityStateAsync(stores));
     }
 
+    /// <summary>
+    /// Verifies ambiguous or malformed financial readback is treated as unavailable.
+    /// </summary>
+    /// <param name="mutation">The malformed binding, credential, or authority mutation tested by the case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("version")]
     [InlineData("duplicate")]
@@ -103,6 +120,10 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Equal(before, await SnapshotCapabilityStateAsync(stores));
     }
 
+    /// <summary>
+    /// Verifies missing workload read authority prevents any financial request.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task NormalInvoiceBoundCapability_MissingOwnWorkloadReadGrantNeverSendsFinancialRequest()
     {
@@ -119,6 +140,12 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Equal(before, await SnapshotCapabilityStateAsync(stores));
     }
 
+    /// <summary>
+    /// Verifies financial absence and transport failure retain distinct outcomes.
+    /// </summary>
+    /// <param name="upstreamStatus">The status returned by the controlled upstream authority endpoint.</param>
+    /// <param name="expectedStatus">The expected HTTP status returned without granting authority.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(404, 403)]
     [InlineData(409, 403)]
@@ -141,6 +168,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Equal(before, await SnapshotCapabilityStateAsync(stores));
     }
 
+    /// <summary>
+    /// Verifies genuine nonemployee credentials never reach financial authority.
+    /// </summary>
+    /// <param name="kind">The identity or isolated-context kind selected by the test case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("customer")]
     [InlineData("service")]
@@ -189,6 +221,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Equal(before, await SnapshotCapabilityStateAsync(stores));
     }
 
+    /// <summary>
+    /// Verifies the direct signer rejects an invalid financial binding.
+    /// </summary>
+    /// <param name="mutation">The malformed binding, credential, or authority mutation tested by the case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("invoice")]
     [InlineData("binding")]
@@ -217,6 +254,12 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Verifies changed authority during the second financial read prevents capability issuance.
+    /// </summary>
+    /// <param name="mutation">The malformed binding, credential, or authority mutation tested by the case.</param>
+    /// <param name="expectedStatus">The expected HTTP status returned without granting authority.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("stamp", 401)]
     [InlineData("revoke", 401)]
@@ -329,6 +372,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         });
     }
 
+    /// <summary>
+    /// Verifies a persisted wrong owner or customer session is rejected using the exact session identifier.
+    /// </summary>
+    /// <param name="customerKind">Whether the persisted session belongs to a customer rather than an employee.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -361,6 +409,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.All(await stores.State.RefreshSessions.AsNoTracking().ToListAsync(), x => Assert.Null(x.RevokedAt));
     }
 
+    /// <summary>
+    /// Verifies an ambiguous signed requester is forbidden even with the exact grant.
+    /// </summary>
+    /// <param name="mutation">The malformed binding, credential, or authority mutation tested by the case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("subject")]
     [InlineData("kind")]
@@ -383,6 +436,12 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Null((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
+    /// <summary>
+    /// Verifies noninteger or duplicate signed numeric dates are rejected before live authority checks.
+    /// </summary>
+    /// <param name="field">The signed numeric-date claim whose representation is invalidated.</param>
+    /// <param name="mutation">The malformed binding, credential, or authority mutation tested by the case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("iat", "string")]
     [InlineData("nbf", "string")]
@@ -406,6 +465,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Null((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
+    /// <summary>
+    /// Verifies invalid direct-issuance input fails before authority is consulted.
+    /// </summary>
+    /// <param name="mutation">The malformed binding, credential, or authority mutation tested by the case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("empty-token")]
     [InlineData("oversize-token")]
@@ -433,6 +497,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Equal(0, await stores.State.RefreshSessions.CountAsync());
     }
 
+    /// <summary>
+    /// Verifies the direct signer rejects an invalid capability binding.
+    /// </summary>
+    /// <param name="mutation">The malformed binding, credential, or authority mutation tested by the case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("empty-subject")]
     [InlineData("service-subject")]
@@ -453,6 +522,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
             app.Clock.GetUtcNow(), mutation == "zero-lifetime" ? 0 : mutation == "excess-lifetime" ? 121 : 120));
     }
 
+    /// <summary>
+    /// Verifies employee not-before time is enforced both initially and after the live check.
+    /// </summary>
+    /// <param name="afterLive">Whether the not-before boundary is crossed after awaiting live authority.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -481,6 +555,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         finally { app.IamRelease.TrySetResult(); }
     }
 
+    /// <summary>
+    /// Verifies invalid employee credentials fail before employee live authority is consulted.
+    /// </summary>
+    /// <param name="mutation">The malformed binding, credential, or authority mutation tested by the case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("signature")]
     [InlineData("audience")]
@@ -514,6 +593,10 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Null((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
+    /// <summary>
+    /// Verifies missing live authority returns unavailable rather than an absent exchange.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task ActiveEmployee_MissingLiveAuthorityReturns503_NotAnAbsentExchange()
     {
@@ -541,6 +624,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Null((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
+    /// <summary>
+    /// Verifies invalid current employee authority denies both a new exchange and the original invoice path.
+    /// </summary>
+    /// <param name="change">The authority or identity mutation applied before the tested operation completes.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("revoked")]
     [InlineData("stamp")]
@@ -575,6 +663,12 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         await AssertOpaqueAsync(response, HttpStatusCode.Unauthorized, employee);
     }
 
+    /// <summary>
+    /// Verifies invalid quotation or operation input receives a bad-request response.
+    /// </summary>
+    /// <param name="quote">The invalid quotation identifier submitted for capability issuance.</param>
+    /// <param name="operation">The operation value submitted for capability issuance.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(0, "d5743e1a-641b-4623-9dc3-57a82b4c7885")]
     [InlineData(84, "D5743E1A-641B-4623-9DC3-57A82B4C7885")]
@@ -589,6 +683,10 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         await AssertOpaqueAsync(response, HttpStatusCode.BadRequest, employee);
     }
 
+    /// <summary>
+    /// Verifies accounting authority alone cannot issue an intranet quotation capability.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task AccountingCannotIssueIntranetCapability_Returns403()
     {
@@ -600,6 +698,10 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         await AssertOpaqueAsync(response, HttpStatusCode.Forbidden, employee);
     }
 
+    /// <summary>
+    /// Verifies anonymous callers cannot perform the exchange.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task AnonymousCannotExchange_Returns401()
     {
@@ -611,6 +713,10 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         await AssertOpaqueAsync(response, HttpStatusCode.Unauthorized, employee);
     }
 
+    /// <summary>
+    /// Verifies invoice permission retains invoice exchange but cannot issue a quotation capability.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task InvoicePermissionAlone_PreservesInvoiceExchange_ButCannotIssueQuotationCapability()
     {
@@ -625,6 +731,10 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         await AssertOpaqueAsync(response, HttpStatusCode.Forbidden, employee);
     }
 
+    /// <summary>
+    /// Verifies the registered harness uses normal workload login and uncached employee authority transport.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Registered129Harness_UsesNormalOwnLoginAndUncachedEmployeeWire()
     {
@@ -643,6 +753,12 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
     }
 
+    /// <summary>
+    /// Verifies a live allow result issues only a separate time-bounded capability.
+    /// </summary>
+    /// <param name="bound">The invoice binding mode or capability bound exercised by the case.</param>
+    /// <param name="maximumSeconds">The maximum permitted lifetime of the issued capability in seconds.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("maximum", 120)]
     [InlineData("employee", 30)]
@@ -669,6 +785,12 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Throws<SecurityTokenInvalidLifetimeException>(() => app.ValidateCapability(issued.AccessToken));
     }
 
+    /// <summary>
+    /// Verifies repeated authorized requests recheck live authority and retain workload invalidation.
+    /// </summary>
+    /// <param name="admissionStatus">The authority admission status returned during the repeated requests.</param>
+    /// <param name="expectedExchanges">The expected number of workload exchanges after invalidation is exercised.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(HttpStatusCode.NotFound, 1)]
     [InlineData(HttpStatusCode.Unauthorized, 3)]
@@ -691,6 +813,13 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
     }
 
+    /// <summary>
+    /// Verifies live denial or unavailability cannot mint from static employee grants.
+    /// </summary>
+    /// <param name="body">The response or request JSON body used to exercise the boundary.</param>
+    /// <param name="upstreamStatus">The status returned by the controlled upstream authority endpoint.</param>
+    /// <param name="expected">The expected authority result or HTTP outcome.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("{\"allowed\":false}", 200, HttpStatusCode.Forbidden)]
     [InlineData("{}", 200, HttpStatusCode.ServiceUnavailable)]
@@ -708,6 +837,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Null((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
+    /// <summary>
+    /// Verifies a signed requester without exact issuance authority fails before employee live IAM.
+    /// </summary>
+    /// <param name="change">The authority or identity mutation applied before the tested operation completes.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("missing-grant")]
     [InlineData("wildcard-grant")]
@@ -727,6 +861,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Null((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
+    /// <summary>
+    /// Verifies employees require both original accounting and quotation permissions.
+    /// </summary>
+    /// <param name="removed">The original permission removed from the employee's authority.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("accounting-permission")]
     [InlineData("quotation-permission")]
@@ -741,6 +880,11 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         Assert.Equal(0, app.IamRequests);
     }
 
+    /// <summary>
+    /// Verifies an authority change during the live await is rechecked before signing.
+    /// </summary>
+    /// <param name="change">The authority or identity mutation applied before the tested operation completes.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("revoked")]
     [InlineData("stamp")]
@@ -798,6 +942,10 @@ public sealed class QuotationInvoiceCapabilityHttpTests(PostgresFixture postgres
         finally { app.IamRelease.TrySetResult(); }
     }
 
+    /// <summary>
+    /// Verifies caller cancellation during the live await propagates without issuing a capability.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task CallerAbortDuringActualLiveAwait_PropagatesWithoutCapability()
     {

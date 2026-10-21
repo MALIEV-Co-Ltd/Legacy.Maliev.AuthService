@@ -5,8 +5,14 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Checks the generated refresh-store migration script without connecting to PostgreSQL.
+/// </summary>
 public sealed class RefreshSessionMigrationTests
 {
+    /// <summary>
+    /// Checks that the idempotent script creates action and nonce state without altering legacy identity tables.
+    /// </summary>
     [Fact]
     public void LatestScript_CreatesIdentityActionsOnlyInIsolatedPostgresStore()
     {
