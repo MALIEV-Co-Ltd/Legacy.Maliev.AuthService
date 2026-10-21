@@ -181,6 +181,9 @@ public sealed class CorsHttpContractTests
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment(environment);
+            // Host settings become entry-point arguments before Program eagerly registers the CORS policy.
+            if (origins is not null)
+                builder.UseSetting(array ? "CORS:AllowedOrigins:0" : "CORS:AllowedOrigins", origins);
             builder.ConfigureLogging(logging => logging.ClearProviders());
             builder.ConfigureAppConfiguration((_, configuration) =>
             {
