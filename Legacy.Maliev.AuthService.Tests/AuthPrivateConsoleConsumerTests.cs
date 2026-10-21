@@ -135,7 +135,7 @@ public sealed class AuthPrivateConsoleConsumerTests
         await using var host = new ConsoleHost();
         using var serverClient = host.CreateClient();
         using var client = host.Services.GetRequiredService<IHttpClientFactory>().CreateClient(name);
-        Assert.True(host.Transport.SelectedNames.Contains(name));
+        Assert.Contains(name, host.Transport.SelectedNames);
         foreach (var status in new[] { 200, 404, 503 })
         {
             host.Transport.Status = status;
