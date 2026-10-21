@@ -19,11 +19,18 @@ public sealed class IdentityActionToken
     public DateTimeOffset ExpiresAt { get; set; }
     /// <summary>Consumption timestamp.</summary>
     public DateTimeOffset? ConsumedAt { get; set; }
+    /// <summary>The employee recovery binding version, or null for actions outside that recovery protocol.</summary>
     public int? RecoveryVersion { get; set; }
+    /// <summary>The SHA-256 hash matched against the committed employee recovery receipt.</summary>
     public string? OriginalTokenSha256 { get; set; }
+    /// <summary>The authenticated service subject allowed to complete this employee action.</summary>
     public string? OwnerSubject { get; set; }
+    /// <summary>The employee email captured at issuance and checked again before applying recovery.</summary>
     public string? BoundNormalizedEmail { get; set; }
+    /// <summary>The employee security stamp captured at issuance to reject stale recovery actions.</summary>
     public string? BoundSecurityStamp { get; set; }
+    /// <summary>The committed employee receipt identifier recorded during Auth finalization.</summary>
     public Guid? EffectActionId { get; set; }
+    /// <summary>The timestamp when Auth finalized the committed employee recovery effect.</summary>
     public DateTimeOffset? FinalizedAt { get; set; }
 }
