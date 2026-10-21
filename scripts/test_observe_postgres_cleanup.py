@@ -35,6 +35,29 @@ class Controls(unittest.TestCase):
         self.assertTrue(result['persistentDataUnknown'])
         self.assertNotIn('PidsLimit', result['numeric'])
 
+    def test_pinned_testcontainers_session_label_is_projected_without_ownership_claim(self):
+        for session in ('c' * 32, 'cccccccc-cccc-cccc-cccc-cccccccccccc'):
+            with self.subTest(session=session):
+                value = document()
+                value['Config']['Labels']['org.testcontainers.session-id'] = session
+                result = observation.container(value)
+                self.assertEqual(session, result['testcontainersSession'])
+                self.assertFalse(result['authenticatedTaskOwnership'])
+                self.assertNotIn(PRIVATE, json.dumps(result))
+
+    def test_invalid_pinned_session_label_is_rejected(self):
+        value = document()
+        value['Config']['Labels']['org.testcontainers.session-id'] = PRIVATE
+        with self.assertRaises(ValueError):
+            observation.container(value)
+
+    def test_unrecognized_session_label_is_not_projected(self):
+        value = document()
+        value['Config']['Labels']['org.testcontainers.sessionId'] = PRIVATE
+        result = observation.container(value)
+        self.assertIsNone(result['testcontainersSession'])
+        self.assertNotIn(PRIVATE, json.dumps(result))
+
     def test_wrong_image_rejected(self):
         value = document()
         value['Config']['Image'] = 'foreign'
