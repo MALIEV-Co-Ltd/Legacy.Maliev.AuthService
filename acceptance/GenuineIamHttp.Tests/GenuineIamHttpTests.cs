@@ -337,10 +337,24 @@ public sealed class GenuineIamHttpFixture : IAsyncLifetime
         }
         else storagePolicyComplete = false; // Missing pre-removal evidence is not a storage-policy pass.
         var state = await InspectAsync(id, cancellationToken);
-        Assert.True(OwnedCleanup.IsExactContainerAbsence(id, state.ExitCode, state.Error));
-        // Release managed ownership before policy/receipt failures can affect teardown.
-        await database.DisposeAsync().AsTask().WaitAsync(cancellationToken);
-        database = null;
+        var absenceCategory = OwnedCleanup.ContainerAbsenceCategory(id, state.ExitCode, state.Error);
+        var absenceVerified = OwnedCleanup.IsExactContainerAbsence(id, state.ExitCode, state.Error);
+        await OwnedCleanup.ReleaseWithObservationAsync(
+            () => WriteLedgerAsync(new { run, containerId = id, state = "post-removal-inspection",
+                inspectExitCode = state.ExitCode, absenceCategory, absenceVerified }, cancellationToken),
+            async () =>
+            {
+                Assert.True(OwnedCleanup.IsExactContainerAbsence(id, state.ExitCode, state.Error));
+                await OwnedCleanup.ReleaseWithObservationAsync(
+                    () => WriteLedgerAsync(new { run, containerId = id, state = "managed-owner-disposal-started",
+                        absenceVerified = true }, cancellationToken),
+                    async () =>
+                    {
+                        // Release managed ownership even when a diagnostic receipt fails.
+                        await database.DisposeAsync().AsTask().WaitAsync(cancellationToken);
+                        database = null;
+                    });
+            });
         await WriteLedgerAsync(new { run, containerId = id, state = "removed", persistentData = storagePolicyComplete ? (bool?)false : null,
             mounts = lastObservedStorage?.GetProperty("mounts"), tmpfs = lastObservedStorage?.GetProperty("tmpfs"),
             declaredVolumes = lastObservedStorage?.GetProperty("volumes"), imageId = lastObservedStorage?.GetProperty("imageId"),
