@@ -3,8 +3,16 @@ using System.Text.Json;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises the production startup-failure envelope in an isolated child process with no inherited runtime credentials.
+/// </summary>
+/// <param name="testOutput">The xUnit sink for the controlled child's exit code and sanitized captured output.</param>
 public sealed class PrivateStartupProcessAcceptanceTests(Xunit.Abstractions.ITestOutputHelper testOutput)
 {
+    /// <summary>
+    /// Checks missing runtime configuration emits one private startup incident and exits nonzero without leaking configuration or stack traces.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task ProductionStartup_MissingRuntimeConfiguration_EmitsOnePrivateFailureAndExitsNonzero()
     {

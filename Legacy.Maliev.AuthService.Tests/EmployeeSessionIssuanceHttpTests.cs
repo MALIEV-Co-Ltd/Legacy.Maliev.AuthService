@@ -34,9 +34,17 @@ using Maliev.Aspire.ServiceDefaults.LegacyAuth;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises normal HTTP identity administration and token issuance against persisted PostgreSQL identity and session state.
+/// </summary>
+/// <param name="postgres">The collection fixture that creates independent identity and refresh-session databases.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
 {
+    /// <summary>
+    /// Checks that persisted supplementary Unicode profile fields use producer scalar limits rather than narrower request UTF-16 lengths.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalEmployeeProfileBinding_SupplementaryUnicodeUsesProducerScalarBoundsAndStoredCopy()
     {
@@ -62,6 +70,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal(1, factory.ProfileReads);
     }
 
+    /// <summary>
+    /// Checks that trusted persisted phone values beyond the request limit are copied without truncation.
+    /// </summary>
+    /// <param name="length">The stored phone length admitted by the producer's schema.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(65)]
     [InlineData(256)]
@@ -82,6 +95,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal(1, factory.ProfileReads);
     }
 
+    /// <summary>
+    /// Checks that administrative employee creation reads persisted profile fields using the host's own workload authority.
+    /// </summary>
+    /// <param name="serviceCaller">Whether machine credentials authorize creation instead of an interactive employee.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -114,6 +132,12 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.Employees.RecoveryEffects.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks that missing or invalid trusted profile authority leaves identity and session stores unchanged.
+    /// </summary>
+    /// <param name="failure">The upstream status, wire-shape, schema-bound, or workload-grant failure injected.</param>
+    /// <param name="expected">The HTTP status required for that failure.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData("missing", 404)]
     [InlineData("unavailable", 503)]
@@ -171,6 +195,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks that a stored null phone clears posted data and that canonical persisted-email collisions deny creation.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalEmployeeProfileBinding_NullStoredPhoneClearsPostedPhoneAndStoredCollisionDeniesCreate()
     {
@@ -192,6 +220,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal(2, factory.ProfileReads);
     }
 
+    /// <summary>
+    /// Checks persisted failed-login accounting, inclusive lockout expiry, and session issuance after the deadline.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
@@ -228,6 +261,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal(Hash(tokens.RefreshToken), session.TokenHash);
     }
 
+    /// <summary>
+    /// Checks that simultaneous failed logins persist all five attempts without losing updates.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
@@ -249,6 +287,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks that disabled lockout still records failed attempts and a verified password resets the counter.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalLoginAccounting_DisabledLockoutStillRecordsSourceAttemptsAndSuccessfulPasswordResets()
     {
@@ -271,6 +313,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         await AssertOnlyLoginAccountingChangedAsync(before, stores, IdentityKind.Customer, 0, clock.GetUtcNow().AddMinutes(5));
     }
 
+    /// <summary>
+    /// Checks that unconfirmed employee and unknown-account login attempts cannot mutate identities or issue sessions.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalLoginAccounting_UnconfirmedEmployeeAndUnknownAccountHaveNoIdentityOrSessionEffects()
     {
@@ -293,6 +339,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks that verified unconfirmed-customer login resets accounting before requesting recovery without issuing a session.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalLoginAccounting_UnconfirmedCustomerResetsVerifiedPasswordBeforeRecoveryWithoutSession()
     {
@@ -314,6 +364,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks that failure to persist login accounting prevents token and session issuance.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
@@ -344,6 +399,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks that concurrent successful and failed logins produce an ordered accounting outcome without unrelated identity changes.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
@@ -366,6 +426,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Single(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks that a login waiting on the row fence verifies the replacement password rather than a stale identity snapshot.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
@@ -423,6 +488,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal("replacement-accounting-stamp", (await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).SecurityStamp);
     }
 
+    /// <summary>
+    /// Checks that confirmed two-factor-enabled login preserves the existing deferred accounting behavior.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalLoginAccounting_ConfirmedTfaSuccessRetainsDeferredCounterContract()
     {
@@ -439,6 +508,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Single(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks that eight competing logins progress with a two-connection identity pool without acquiring a secondary reader.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
@@ -511,6 +585,12 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         }
     }
 
+    /// <summary>
+    /// Checks actual administrative writes reject weak new passwords, accept the six-character boundary, and issue correctly bound login sessions.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <param name="reconcile">Whether customer creation uses the keyed reconciliation route.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee, false)]
     [InlineData(IdentityKind.Customer, false)]
@@ -580,6 +660,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal(Hash(tokens.RefreshToken), session.TokenHash);
     }
 
+    /// <summary>
+    /// Checks that web registration retains its separate eight-character low-distinctness policy and read-only resolution contract.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalAdministrativePasswordPolicy_WebRegistrationKeepsEightCharacterLowDistinctPolicy()
     {
@@ -638,6 +722,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks that an already committed weak-password creation receipt remains replayable only with its original payload.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalAdministrativePasswordPolicy_PreviouslyCommittedWeakPasswordReceiptRemainsReplayable()
     {
@@ -689,6 +777,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks actual employee creation at the maximum password length and UTF-16 distinct-character boundary.
+    /// </summary>
+    /// <param name="unicode">Whether to exercise the supplementary-character boundary instead of maximum length.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -713,6 +806,12 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         ? new CreateEmployeeIdentityRequest(email, email, password!, true, null)
         : new CreateCustomerIdentityRequest(email, email, password!, true, null, null, null);
 
+    /// <summary>
+    /// Checks that administrative creation enforces the default username alphabet without mutating state on rejection or invalidating committed replay history.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <param name="reconcile">Whether customer creation uses keyed reconciliation.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee, false)]
     [InlineData(IdentityKind.Customer, false)]
@@ -800,6 +899,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         }
     }
 
+    /// <summary>
+    /// Checks administrative edits reject invalid or conflicting identity fields while preserving same-owner and valid rename behavior.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
@@ -849,6 +953,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks conditional administrative updates admit one concurrent writer and reject malformed, missing, and stale versions without overwriting committed state.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
@@ -992,6 +1101,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal(PasswordVerificationResult.Success, new PasswordHasher<LegacyIdentityRow>().VerifyHashedPassword(row, row.PasswordHash!, "abcdef"));
     }
 
+    /// <summary>
+    /// Checks that lost commit acknowledgement reports unavailability without retrying a completed conditional update as a stale edit.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
@@ -1055,6 +1169,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal(1, control.Attempts);
     }
 
+    /// <summary>
+    /// Checks that canonical ownership detects historical collisions while retaining raw email and same-owner update behavior.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
@@ -1129,6 +1248,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal("retained-concurrency", retained.ConcurrencyStamp);
     }
 
+    /// <summary>
+    /// Checks that keyed customer creation replays the original raw payload but rejects a canonically equivalent changed payload.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalCanonicalIdentityWriter_RawCustomerReceiptReplayRejectsEquivalentChangedPayload()
     {
@@ -1159,6 +1282,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
             (await stores.Customers.Users.AsNoTracking().SingleAsync(value => value.DatabaseID == 72)).NormalizedEmail);
     }
 
+    /// <summary>
+    /// Checks that unknown commit outcome on an unversioned customer edit returns unavailability without repeating the write.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalCanonicalIdentityWriter_UnversionedCustomerUnknownCommitReturns503WithoutRetry()
     {
@@ -1274,6 +1401,12 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         client.DefaultRequestHeaders.Authorization = new("Bearer", token);
     }
 
+    /// <summary>
+    /// Checks historical Identity V2 and V3 password hashes authenticate without rehashing or unrelated identity mutation.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <param name="versionThree">Whether the independent password fixture uses the V3 rather than V2 format.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee, false)]
     [InlineData(IdentityKind.Customer, false)]
@@ -1325,6 +1458,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal(storedHash, (await context.Users.AsNoTracking().SingleAsync()).PasswordHash);
     }
 
+    /// <summary>
+    /// Checks that an identity identifier cannot substitute for its password and that the real password issues a persisted actor-bound session.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
@@ -1361,6 +1499,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         await AssertOnlyLoginAccountingChangedAsync(identities, stores, kind, 0);
     }
 
+    /// <summary>
+    /// Checks retired credential routes remain absent without exposing credentials or changing identity and session state.
+    /// </summary>
+    /// <param name="route">The retired validation or long-lived-token route to probe.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData("validate")]
     [InlineData("longlived")]
@@ -1393,6 +1536,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Single(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks canonical credential lookup selects the persisted actor without rewriting identity rows or accepting compatibility aliases.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
@@ -1460,6 +1608,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks Google email lookup uses canonical keys without writes and refuses ambiguous historical collisions.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalHistoricalIdentityNormalization_GoogleEmailLookupUsesCanonicalKeyWithoutWrites()
     {
@@ -1534,6 +1686,12 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.True(JsonNode.DeepEquals(expected, actual), "Only the selected row's login accounting fields may change.");
     }
 
+    /// <summary>
+    /// Checks login and refresh tokens reach normal role authorization with the persisted actor and unchanged permission contract.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <param name="refresh">Whether authorization uses a refreshed token rather than the initial login token.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee, false)]
     [InlineData(IdentityKind.Employee, true)]
@@ -1591,6 +1749,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         "legacy-employee.addresses.create", "legacy-employee.addresses.update", "legacy-employee.roles.read",
     ];
 
+    /// <summary>
+    /// Checks the actual interactive issuer grants five employee-edit scopes that customer tokens cannot acquire.
+    /// </summary>
+    /// <param name="flow">The password, refresh, or Google exchange path used to issue the employee token.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData("password")]
     [InlineData("refresh")]
@@ -1646,6 +1809,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         }
     }
 
+    /// <summary>
+    /// Checks normal machine login cannot acquire interactive roles, employee-edit grants, or refresh sessions.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalServiceExchange_DoesNotBecomeAnInteractiveActor()
     {
@@ -1677,6 +1844,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks invoice-scoped tokens cannot become interactive actors even when their dedicated audience is accepted.
+    /// </summary>
+    /// <param name="capability">Whether to issue a quotation-invoice capability instead of an invoice delegation.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -1713,6 +1885,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks the normal issuer refuses an undefined interactive identity kind before creating session state.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalIssuer_UndefinedInteractiveKind_RefusesBeforeIssuance()
     {
@@ -1760,6 +1936,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         }
     }
 
+    /// <summary>
+    /// Checks employee password and refresh issuance bind the canonical session identifier to the exact persisted row.
+    /// </summary>
+    /// <param name="refresh">Whether to inspect a rotated replacement rather than the initial password-login session.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -1795,6 +1976,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Contains(jwt.Claims, claim => claim.Type == "permissions" && claim.Value == "legacy.quotation-requests.update");
     }
 
+    /// <summary>
+    /// Checks employee Google exchange binds its token to the exact persisted refresh-session row.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task EmployeeGoogleExchange_BindsExactPersistedRow()
     {
@@ -1815,6 +2000,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
     }
 
+    /// <summary>
+    /// Checks customer login and refresh preserve their response envelope without employee session claims or grants.
+    /// </summary>
+    /// <param name="refresh">Whether to inspect the refreshed token rather than the initial login token.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -1839,6 +2029,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal("issuance-customer", exact.IdentityId);
     }
 
+    /// <summary>
+    /// Checks machine exchange retains only configured grants and its existing envelope without employee session state.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task ServiceCredentialExchange_PreservesEnvelopeAndExactConfiguredGrants_NoEmployeeSid()
     {
@@ -1860,6 +2054,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks failed session persistence returns no token response and leaves no new employee session.
+    /// </summary>
+    /// <param name="refresh">Whether the failed write is rotation rather than initial password issuance.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -1892,6 +2091,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         else Assert.Empty(rows);
     }
 
+    /// <summary>
+    /// Checks a failed Google session save yields no issued result or persisted session.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task EmployeeGoogleExchange_SaveFailure_ReturnsNoIssuedResultOrSession()
     {
@@ -1908,6 +2111,11 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks read-only identity and refresh paths enforce the inclusive lockout deadline without identity writes and permit expired or disabled lockout.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Employee)]
     [InlineData(IdentityKind.Customer)]
@@ -1984,6 +2192,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.IdentityActionTokens.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks customer self projection rejects the exact lockout deadline but admits expired or disabled lockout without mutations.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalReadOnlyLockout_CustomerSelfExactDeadlineIsForbiddenThenExpiredOrDisabledIsFound()
     {
@@ -2018,6 +2230,10 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
         Assert.Equal(disabled, await AdministrativeSnapshotAsync(stores));
     }
 
+    /// <summary>
+    /// Checks Google exchange denies at the exact lockout deadline without a session, then admits expired or disabled lockout.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalReadOnlyLockout_GoogleExactDeadlineDeniesWithoutSessionThenExpiredOrDisabledIssues()
     {
@@ -2065,6 +2281,12 @@ public sealed class EmployeeSessionIssuanceHttpTests(PostgresFixture postgres)
 
     // Original customer DatabaseID is non-nullable; null characterizes the current nullable PostgreSQL extension.
     // Original employee DatabaseID is nullable. Login/refresh must preserve either selected projection without rebinding.
+    /// <summary>
+    /// Checks login and refresh preserve the selected nullable, zero, or positive business identifier without rebinding identity rows.
+    /// </summary>
+    /// <param name="kind">The employee or customer identity store exercised.</param>
+    /// <param name="databaseId">The persisted business identifier whose exact claim projection must survive login and refresh.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(IdentityKind.Customer, null)]
     [InlineData(IdentityKind.Customer, 0)]

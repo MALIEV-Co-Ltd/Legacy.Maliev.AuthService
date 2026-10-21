@@ -22,11 +22,16 @@ using Npgsql;
 namespace Legacy.Maliev.AuthService.Tests;
 
 /// <summary>Normal signed HTTP exchange with current, disposable PostgreSQL authority.</summary>
+/// <param name="postgres">The collection-owned fixture that creates isolated PostgreSQL stores for each case.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class InvoiceDelegationCurrentSessionHttpTests(PostgresFixture postgres)
 {
     private static readonly Guid Operation = Guid.Parse("7a630e38-9dd6-4f31-b790-98679e056415");
 
+    /// <summary>
+    /// Checks accounting-only delegation from a normally issued access token bound to its current refresh session.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ActiveNormalLoginLineage_IssuesUnchangedAccountingOnlyDelegation()
     {
@@ -44,6 +49,11 @@ public sealed class InvoiceDelegationCurrentSessionHttpTests(PostgresFixture pos
         Assert.Null((await stores.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
+    /// <summary>
+    /// Checks that changes to current identity or session authority prevent subsequent delegation without alternate-family rescue.
+    /// </summary>
+    /// <param name="mutation">The signed binding or current authority mutation applied before the request.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("revoked")]
     [InlineData("expired")]
@@ -91,6 +101,11 @@ public sealed class InvoiceDelegationCurrentSessionHttpTests(PostgresFixture pos
         Assert.Equal(count, await stores.State.RefreshSessions.CountAsync());
     }
 
+    /// <summary>
+    /// Checks that signed but ambiguous employee and session bindings cannot mint delegation.
+    /// </summary>
+    /// <param name="mutation">The signed binding or current authority mutation applied before the request.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("missing-sid")]
     [InlineData("wrong-sid")]
@@ -116,6 +131,10 @@ public sealed class InvoiceDelegationCurrentSessionHttpTests(PostgresFixture pos
         Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
     }
 
+    /// <summary>
+    /// Checks bound access-token admission across refresh rotation and rejection after actual family revocation.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task RealRefreshRotation_AllowsBothBoundTokensUntilActualFamilyRevocation()
     {
@@ -137,6 +156,10 @@ public sealed class InvoiceDelegationCurrentSessionHttpTests(PostgresFixture pos
         { using var denied = await SendAsync(client, caller, token); await AssertDeniedAsync(denied, token); }
     }
 
+    /// <summary>
+    /// Checks that an authority-store failure returns a generic unavailable response without tokens or state mutation.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task SessionStoreUnavailable_NoDelegationOrSensitiveError()
     {
@@ -157,6 +180,11 @@ public sealed class InvoiceDelegationCurrentSessionHttpTests(PostgresFixture pos
         Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
     }
 
+    /// <summary>
+    /// Checks cancellation during authority reads without minting delegation or adding sessions.
+    /// </summary>
+    /// <param name="finalRead">Whether to pause after the authority read at the final family check.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -183,6 +211,11 @@ public sealed class InvoiceDelegationCurrentSessionHttpTests(PostgresFixture pos
         Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
     }
 
+    /// <summary>
+    /// Checks strict access-token or persisted-session expiry after a paused authority read.
+    /// </summary>
+    /// <param name="sessionExpiry">Whether to test the persisted session expiry rather than the access-token expiry.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -221,6 +254,11 @@ public sealed class InvoiceDelegationCurrentSessionHttpTests(PostgresFixture pos
         Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
     }
 
+    /// <summary>
+    /// Checks that a consistent signed subject alias remains an unambiguous employee binding.
+    /// </summary>
+    /// <param name="alias">The consistent signed subject alias added to the employee token.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("consistent-user")]
     [InlineData("consistent-name")]

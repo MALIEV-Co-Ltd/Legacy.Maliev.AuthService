@@ -9,10 +9,16 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Guards Auth's shared logging consumer pins and production privacy boundaries without native logging.
+/// </summary>
 public sealed class NativeLoggingConsumerContractTests
 {
     private const string SharedLoggingCommit = "4517cf16f5f1159318e184969732d46eae4a8308";
 
+    /// <summary>
+    /// Checks Auth host, delivery, container, and build inputs consume the pinned shared defaults without native logging.
+    /// </summary>
     [Fact]
     public void AuthHostAndDelivery_ConsumePinnedSharedLoggingWithoutNativeLogging()
     {
@@ -34,6 +40,14 @@ public sealed class NativeLoggingConsumerContractTests
         Assert.Contains($"checkout {SharedLoggingCommit}", dockerfile, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Checks production exception responses and incident fields redact Auth request and exception secrets.
+    /// </summary>
+    /// <param name="notFound">Whether to exercise a missing-resource failure instead of an unexpected failure.</param>
+    /// <param name="expectedStatus">The response and incident status required for the failure.</param>
+    /// <param name="expectedLevel">The incident severity required by the shared exception boundary.</param>
+    /// <param name="expectedLoggedPath">The safe route template or fallback path permitted in the incident.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false, 500, LogLevel.Critical, "/auth/v1/customer-identities/{identity}")]
     [InlineData(true, 404, LogLevel.Debug, "/")]
@@ -83,6 +97,12 @@ public sealed class NativeLoggingConsumerContractTests
         Assert.DoesNotContain("private-", json.RootElement.ToString(), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Checks correlation propagation accepts only bounded safe identifiers and replaces rejected values.
+    /// </summary>
+    /// <param name="supplied">The caller-provided correlation identifier.</param>
+    /// <param name="accepted">Whether that identifier must be propagated unchanged.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData("auth-correlation", true)]
     [InlineData("secret@example.test", false)]

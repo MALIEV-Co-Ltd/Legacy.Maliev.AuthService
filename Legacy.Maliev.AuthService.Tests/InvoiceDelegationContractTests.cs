@@ -23,13 +23,23 @@ using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises dual-credential invoice delegation, actor binding, token minimality, and denial behavior through the HTTP boundary.
+/// </summary>
 public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelegationContractTests.AuthApiFactory>
 {
     private static readonly Guid OperationId = Guid.Parse("7a630e38-9dd6-4f31-b790-98679e056415");
     private readonly AuthApiFactory factory;
 
+    /// <summary>
+    /// Uses the class-owned host fixture so delegation assertions share its isolated signing and persisted session setup.
+    /// </summary>
+    /// <param name="factory">The initialized class fixture that hosts the delegation endpoint.</param>
     public InvoiceDelegationContractTests(AuthApiFactory factory) => this.factory = factory;
 
+    /// <summary>
+    /// Checks the delegation POST endpoint is service-only and requires its dedicated issuance grant.
+    /// </summary>
     [Fact]
     public void Endpoint_IsServiceOnlyAndRequiresDedicatedGrant()
     {
@@ -43,6 +53,10 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
             exchange.GetCustomAttribute<RequirePermissionAttribute>()?.Permission);
     }
 
+    /// <summary>
+    /// Checks validated service and employee credentials issue a signed short-lived Accounting-only delegation with minimal claims.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task ValidDualCredential_IssuesSignedMinimalAccountingOnlyToken()
     {
@@ -77,6 +91,10 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
         factory.ValidateDelegation(issued.AccessToken);
     }
 
+    /// <summary>
+    /// Checks absent, unprivileged, or unapproved service credentials cannot exchange an employee token.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task MissingOrUnapprovedServiceCredential_CannotExchangeEmployeeToken()
     {
@@ -90,6 +108,10 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
         Assert.Equal(HttpStatusCode.Forbidden, otherClient.StatusCode);
     }
 
+    /// <summary>
+    /// Checks malformed, misbound, expired, and incorrectly signed employee tokens are denied without credential disclosure.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task InvalidEmployeeTokens_AreRejectedWithoutEchoingCredential()
     {
@@ -117,6 +139,11 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
         }
     }
 
+    /// <summary>
+    /// Checks noncanonical or empty operation identifiers are rejected before delegation issuance.
+    /// </summary>
+    /// <param name="operationId">The invalid operation identifier submitted to the exchange.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData("00000000-0000-0000-0000-000000000000")]
     [InlineData("7A630E38-9DD6-4F31-B790-98679E056415")]
@@ -127,6 +154,10 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    /// <summary>
+    /// Checks renewal issues a fresh token identifier while retaining the bound actor and operation.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task RenewedSameOperation_UsesFreshJtiWithoutChangingBoundActorOrOperation()
     {
@@ -143,6 +174,10 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
         Assert.Equal(Claim(firstToken, "operation_id"), Claim(secondToken, "operation_id"));
     }
 
+    /// <summary>
+    /// Checks the same operation derives each delegated subject only from the separately validated employee token.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task SameOperationWithDifferentEmployee_DerivesEachSubjectOnlyFromValidatedToken()
     {
@@ -171,6 +206,9 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
 
     private static string Claim(JwtSecurityToken token, string type) => Assert.Single(token.Claims, claim => claim.Type == type).Value;
 
+    /// <summary>
+    /// Hosts delegation tests with isolated signing material, employee identities, and active persisted session bindings.
+    /// </summary>
     public sealed class AuthApiFactory : WebApplicationFactory<Program>, IAsyncLifetime
     {
         private readonly string privateKeyPem;
@@ -185,6 +223,9 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
             ["employee-8"] = Guid.Parse("3700f80a-311f-4844-b1c8-96cf737ef9cc"),
         };
 
+        /// <summary>
+        /// Creates an isolated RSA issuer for the delegation test host.
+        /// </summary>
         public AuthApiFactory()
         {
             using var rsa = RSA.Create(2048);
@@ -192,9 +233,19 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
             issuer = new RsaAccessTokenIssuer(Options.Create(JwtSettings()));
         }
 
+        /// <summary>
+        /// Gets the isolated issuer identifier used to sign and validate delegation test tokens.
+        /// </summary>
         public string Issuer => "https://auth.delegation.test";
+        /// <summary>
+        /// Gets the isolated key identifier expected in delegation token headers.
+        /// </summary>
         public string KeyId => "delegation-test-key";
 
+        /// <summary>
+        /// Starts the owned database fixture and seeds employees with active refresh-session bindings.
+        /// </summary>
+        /// <returns>A task that completes after the fixture stores and session bindings are persisted.</returns>
         public async Task InitializeAsync()
         {
             await postgres.InitializeAsync();
@@ -228,6 +279,10 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
             await sessions.SaveChangesAsync();
         }
 
+        /// <summary>
+        /// Configures the test host with its isolated identity databases and RSA token settings.
+        /// </summary>
+        /// <param name="builder">The web-host builder receiving only fixture-owned database and signing configuration.</param>
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Testing");
@@ -245,13 +300,37 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
             }));
         }
 
+        /// <summary>
+        /// Issues an isolated machine token for service-admission and grant-denial controls.
+        /// </summary>
+        /// <param name="clientId">The configured service identity to place in the token subject.</param>
+        /// <param name="permissions">The explicit service grants, or the dedicated delegation grant when omitted.</param>
+        /// <returns>The signed machine access token.</returns>
         public string IssueService(string clientId = "legacy-intranet", IReadOnlyList<string>? permissions = null) =>
             issuer.IssueService(clientId, permissions ?? [LegacyAccessTokenPermissions.InvoiceDelegationIssue], DateTimeOffset.UtcNow).Value;
 
+        /// <summary>
+        /// Issues an isolated identity token with an employee session binding only for employee identities.
+        /// </summary>
+        /// <param name="subject">The seeded employee subject or customer-control subject to encode.</param>
+        /// <param name="kind">The identity kind used for the employee or customer denial control.</param>
+        /// <returns>The signed identity access token.</returns>
         public string IssueEmployee(string subject, IdentityKind kind = IdentityKind.Employee) =>
             issuer.Issue(new LegacyIdentity(subject, "employee@maliev.com", "employee@maliev.com", kind, 7, "stamp"), DateTimeOffset.UtcNow,
                 kind == IdentityKind.Employee ? SessionIds[subject] : null).Value;
 
+        /// <summary>
+        /// Constructs employee-token controls with independently varied claims, lifetime, issuer, audience, and signing algorithm.
+        /// </summary>
+        /// <param name="subject">The employee subject encoded in the control token.</param>
+        /// <param name="includeAccountingPermission">Whether to include the Accounting creation grant required by delegation.</param>
+        /// <param name="issuer">The issuer override, or the fixture issuer when omitted.</param>
+        /// <param name="audience">The audience override, or the normal legacy access audience when omitted.</param>
+        /// <param name="notBefore">The validity-start override used for lifetime controls.</param>
+        /// <param name="expires">The expiry override used for lifetime controls.</param>
+        /// <param name="useForeignKey">Whether to sign with an unrelated RSA key.</param>
+        /// <param name="useHmac">Whether to use HMAC instead of the accepted RSA algorithm.</param>
+        /// <returns>The encoded token containing the requested admission control.</returns>
         public string IssueCustomEmployee(
             string subject,
             bool includeAccountingPermission = true,
@@ -291,6 +370,10 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
             return new JwtSecurityTokenHandler().WriteToken(token);
         }
 
+        /// <summary>
+        /// Validates an issued delegation against the fixture key, issuer, Accounting audience, algorithm, and lifetime.
+        /// </summary>
+        /// <param name="token">The encoded delegation token whose cryptographic contract must hold.</param>
         public void ValidateDelegation(string token)
         {
             using var rsa = RSA.Create();
@@ -308,6 +391,10 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
             }, out _);
         }
 
+        /// <summary>
+        /// Disposes the fixture's RSA token issuer when synchronous host disposal requests managed cleanup.
+        /// </summary>
+        /// <param name="disposing">Whether managed fixture resources are being disposed.</param>
         protected override void Dispose(bool disposing)
         {
             if (disposing) issuer.Dispose();
@@ -316,6 +403,10 @@ public sealed class InvoiceDelegationContractTests : IClassFixture<InvoiceDelega
 
         Task IAsyncLifetime.DisposeAsync() => DisposeAsync().AsTask();
 
+        /// <summary>
+        /// Disposes the host and owned database contexts, clears their pools, and disposes the PostgreSQL fixture.
+        /// </summary>
+        /// <returns>A task-like value that completes after host and database cleanup.</returns>
         public override async ValueTask DisposeAsync()
         {
             var connections = new List<NpgsqlConnection>();

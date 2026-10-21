@@ -19,9 +19,18 @@ namespace Legacy.Maliev.AuthService.Tests;
 
 // The public SDK verification seam uses owned loopback JWKS and ephemeral RSA.
 // This does not replace or prove the production Google certificate-fetch path.
+/// <summary>
+/// Verifies the pinned Google SDK and production audience guard using locally signed credentials.
+/// </summary>
+/// <param name="fixture">The shared fixture supplying the authentication host or local signing-certificate endpoint.</param>
 public sealed class GoogleSdk177AcceptanceTests(GoogleSdk177JwksFixture fixture)
     : IClassFixture<GoogleSdk177JwksFixture>
 {
+    /// <summary>
+    /// Verifies genuinely signed claims from an accepted issuer reach the existing consumer.
+    /// </summary>
+    /// <param name="issuer">The accepted issuer whose signed claims are verified by the actual SDK.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("https://accounts.google.com")]
     [InlineData("accounts.google.com")]
@@ -43,6 +52,11 @@ public sealed class GoogleSdk177AcceptanceTests(GoogleSdk177JwksFixture fixture)
         Assert.True(fixture.JwksRequests > 0);
     }
 
+    /// <summary>
+    /// Verifies invalid SDK or consumer boundaries reject the credential without an identity.
+    /// </summary>
+    /// <param name="failure">The injected authority or credential failure tested by the case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("issuer")]
     [InlineData("audience")]
@@ -93,6 +107,10 @@ public sealed class GoogleSdk177AcceptanceTests(GoogleSdk177JwksFixture fixture)
         Assert.DoesNotContain("owned-subject", result.ErrorDescription ?? string.Empty, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Verifies even a single trusted array audience still requires a valid signature.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task ActualSdkAndProductionAudienceGuard_SingleTrustedArrayStillRequiresSignature()
     {
@@ -106,6 +124,11 @@ public sealed class GoogleSdk177AcceptanceTests(GoogleSdk177JwksFixture fixture)
         Assert.True(fixture.JwksRequests > 0);
     }
 
+    /// <summary>
+    /// Verifies ambiguous or untrusted audiences are rejected before invoking the provider.
+    /// </summary>
+    /// <param name="payload">The candidate JSON payload used to exercise audience admission.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("{}")]
     [InlineData("{\"aud\":\"other-client\"}")]
@@ -144,6 +167,11 @@ public sealed class GoogleSdk177AcceptanceTests(GoogleSdk177JwksFixture fixture)
         Assert.Null(result.Identity);
     }
 
+    /// <summary>
+    /// Verifies bounded payload rejection remains opaque to the caller.
+    /// </summary>
+    /// <param name="boundary">The payload boundary that must be rejected opaquely.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("size")]
     [InlineData("depth")]
@@ -162,6 +190,10 @@ public sealed class GoogleSdk177AcceptanceTests(GoogleSdk177JwksFixture fixture)
         Assert.Null(exception.InnerException);
     }
 
+    /// <summary>
+    /// Verifies malformed credential segments are rejected without disclosing details.
+    /// </summary>
+    /// <param name="credential">The malformed credential whose segments must be rejected opaquely.</param>
     [Theory]
     [InlineData("")]
     [InlineData("header.payload")]
@@ -179,6 +211,9 @@ public sealed class GoogleSdk177AcceptanceTests(GoogleSdk177JwksFixture fixture)
         Assert.Null(exception.InnerException);
     }
 
+    /// <summary>
+    /// Verifies noncanonical base64 is rejected even when it decodes to equivalent bytes.
+    /// </summary>
     [Fact]
     public void AudienceGuard_NoncanonicalBase64WithEquivalentDecodedBytesIsRejected()
     {
@@ -199,6 +234,9 @@ public sealed class GoogleSdk177AcceptanceTests(GoogleSdk177JwksFixture fixture)
         Assert.Null(exception.InnerException);
     }
 
+    /// <summary>
+    /// Verifies the sole audience property is recognized when its JSON name is escaped.
+    /// </summary>
     [Fact]
     public void AudienceGuard_EscapedSoleAudienceNameIsRecognized()
     {
@@ -209,6 +247,10 @@ public sealed class GoogleSdk177AcceptanceTests(GoogleSdk177JwksFixture fixture)
         Assert.Null(exception);
     }
 
+    /// <summary>
+    /// Verifies a hosted-domain suffix is not mistaken for an allowlisted domain.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task ActualSdkVerifiedClaims_HostedDomainSuffixIsNotAllowlisted()
     {
@@ -223,6 +265,10 @@ public sealed class GoogleSdk177AcceptanceTests(GoogleSdk177JwksFixture fixture)
         Assert.Equal("invalid_domain", result.ErrorCode);
     }
 
+    /// <summary>
+    /// Verifies malformed credentials fail before fetching signing certificates.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task ProductionGoogleAdapter_MalformedCredentialFailsBeforeCertificateFetch()
     {
@@ -267,15 +313,28 @@ public sealed class GoogleSdk177AcceptanceTests(GoogleSdk177JwksFixture fixture)
     }
 }
 
+/// <summary>
+/// Provides a loopback signing-certificate endpoint and local keys for genuine SDK verification.
+/// </summary>
 public sealed class GoogleSdk177JwksFixture : IAsyncLifetime
 {
     private readonly RSA rsa = RSA.Create(2048);
     private WebApplication application = null!;
     private int jwksRequests;
 
+    /// <summary>
+    /// Gets the loopback URI serving the fixture's signing certificates.
+    /// </summary>
     public Uri CertificatesUri { get; private set; } = null!;
+    /// <summary>
+    /// Gets the number of certificate requests received by this fixture.
+    /// </summary>
     public int JwksRequests => Volatile.Read(ref jwksRequests);
 
+    /// <summary>
+    /// Starts the loopback certificate endpoint using the fixture-owned signing key.
+    /// </summary>
+    /// <returns>A task that completes when fixture initialization is finished.</returns>
     public async Task InitializeAsync()
     {
         var builder = WebApplication.CreateSlimBuilder();
@@ -300,6 +359,10 @@ public sealed class GoogleSdk177JwksFixture : IAsyncLifetime
         Assert.True(IPAddress.IsLoopback(IPAddress.Parse(CertificatesUri.Host)));
     }
 
+    /// <summary>
+    /// Creates the baseline signed-credential claims used by the acceptance cases.
+    /// </summary>
+    /// <returns>The baseline claim dictionary for a locally signed credential.</returns>
     public Dictionary<string, object> Claims() => new()
     {
         ["iss"] = "https://accounts.google.com",
@@ -315,9 +378,23 @@ public sealed class GoogleSdk177JwksFixture : IAsyncLifetime
         ["picture"] = "https://synthetic.example.invalid/profile.png",
     };
 
+    /// <summary>
+    /// Signs structured claims with the selected local key and algorithm.
+    /// </summary>
+    /// <param name="claims">The structured claims or raw JSON claim payload to sign.</param>
+    /// <param name="wrongKey">Whether to sign with the key absent from the published certificate set.</param>
+    /// <param name="algorithm">The JWT signing algorithm written into the locally signed credential.</param>
+    /// <returns>The compact JWT signed with the selected fixture key.</returns>
     public string Sign(Dictionary<string, object> claims, bool wrongKey = false, string algorithm = "RS256")
         => SignRawPayload(JsonSerializer.Serialize(claims), wrongKey, algorithm);
 
+    /// <summary>
+    /// Signs a raw JSON claim payload with the selected local key and algorithm.
+    /// </summary>
+    /// <param name="claims">The structured claims or raw JSON claim payload to sign.</param>
+    /// <param name="wrongKey">Whether to sign with the key absent from the published certificate set.</param>
+    /// <param name="algorithm">The JWT signing algorithm written into the locally signed credential.</param>
+    /// <returns>The compact JWT signed with the selected fixture key.</returns>
     public string SignRawPayload(string claims, bool wrongKey = false, string algorithm = "RS256")
     {
         var header = Encode(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { alg = algorithm, typ = "JWT", kid = "owned-key" })));
@@ -328,6 +405,10 @@ public sealed class GoogleSdk177JwksFixture : IAsyncLifetime
         return input + "." + Encode(signature);
     }
 
+    /// <summary>
+    /// Stops the loopback certificate host and releases the fixture-owned signing keys.
+    /// </summary>
+    /// <returns>A task that completes after fixture-owned resources are released.</returns>
     public async Task DisposeAsync()
     {
         await application.StopAsync();

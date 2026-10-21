@@ -20,6 +20,10 @@ using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises bounded employee-recovery receipt traversal, fairness, retries, and cancellation using real PostgreSQL state.
+/// </summary>
+/// <param name="postgres">The collection fixture that supplies independent recovery and identity databases.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class EmployeeRecoveryWorkerFairnessTests(PostgresFixture postgres)
 {
@@ -27,6 +31,11 @@ public sealed class EmployeeRecoveryWorkerFairnessTests(PostgresFixture postgres
     private const string OriginalPassword = "fairness-original-password";
     private const string AppliedPassword = "fairness-applied-password";
 
+    /// <summary>
+    /// Checks that scan-query failure propagates without delivery effects and a later independent pass retains a valid cursor.
+    /// </summary>
+    /// <param name="position">The scan failure point injected during traversal.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData("highwater-query")]
     [InlineData("batch-query")]
@@ -48,6 +57,10 @@ public sealed class EmployeeRecoveryWorkerFairnessTests(PostgresFixture postgres
         Assert.Equal(2, await factory.Worker.ReconcileBatchAsync(default));
     }
 
+    /// <summary>
+    /// Checks that physical readiness failure occurs before cursor advancement or recovery-delivery mutation.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task PhysicalReadinessFailure_PropagatesBeforeCursorOrDeliveryMutation()
     {
@@ -66,6 +79,10 @@ public sealed class EmployeeRecoveryWorkerFairnessTests(PostgresFixture postgres
         Assert.Equal(1, await factory.Worker.ReconcileBatchAsync(default));
     }
 
+    /// <summary>
+    /// Checks PostgreSQL UUID tie ordering and traversal-cursor continuity across independently created scopes.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task TiedAppliedAt_UsesPostgresUuidOrder_AndRetainsCursorAcrossFreshScopes()
     {
@@ -87,6 +104,10 @@ public sealed class EmployeeRecoveryWorkerFairnessTests(PostgresFixture postgres
         Assert.All(await stores.Employees.RecoveryEffects.AsNoTracking().ToListAsync(), value => Assert.NotNull(value.FinalizedAcknowledgedAt));
     }
 
+    /// <summary>
+    /// Checks that a receipt above the traversal high-water mark waits until the next traversal.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NewReceiptAboveTraversalHighwater_WaitsForNextTraversal()
     {
@@ -106,6 +127,10 @@ public sealed class EmployeeRecoveryWorkerFairnessTests(PostgresFixture postgres
         Assert.NotNull((await stores.Employees.RecoveryEffects.AsNoTracking().SingleAsync(value => value.ActionId == arrived.Id)).FinalizedAcknowledgedAt);
     }
 
+    /// <summary>
+    /// Checks that a repaired receipt is revisited after cursor wrap without repeating its identity effect.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task FailedReceipt_RepairedBinding_IsRevisitedAfterWrapWithoutRepeatingIdentityEffect()
     {
@@ -127,6 +152,10 @@ public sealed class EmployeeRecoveryWorkerFairnessTests(PostgresFixture postgres
         Assert.Equal(before, await IdentitySnapshotAsync(stores));
     }
 
+    /// <summary>
+    /// Checks that parallel entry and a cancelled gate waiter neither double-count delivery nor lose traversal position.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task ParallelEntries_AndCancelledGateWaiter_DoNotDoubleCountOrLoseCursor()
     {
@@ -153,6 +182,10 @@ public sealed class EmployeeRecoveryWorkerFairnessTests(PostgresFixture postgres
         Assert.Equal(before, await IdentitySnapshotAsync(stores));
     }
 
+    /// <summary>
+    /// Checks that the actual background worker uses the same delivery entry point and stops within its existing deadline.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task ActualWorkerExecute_DeliversThroughSameEntry_AndStopsWithinDeadline()
     {
@@ -170,6 +203,11 @@ public sealed class EmployeeRecoveryWorkerFairnessTests(PostgresFixture postgres
         Assert.Equal(0, await factory.Worker.ReconcileBatchAsync(deadline.Token));
     }
 
+    /// <summary>
+    /// Checks that older invalid receipts cannot starve an unrelated committed recovery effect.
+    /// </summary>
+    /// <param name="poisonCount">The number of invalid older receipts preceding the deliverable effect.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(1)]
     [InlineData(32)]
@@ -202,6 +240,11 @@ public sealed class EmployeeRecoveryWorkerFairnessTests(PostgresFixture postgres
         Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
     }
 
+    /// <summary>
+    /// Checks that a receipt-local failure allows another identity to progress and a subsequent pass converges.
+    /// </summary>
+    /// <param name="position">The receipt-local operation at which to inject failure.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData("finalization")]
     [InlineData("auth-commit")]
@@ -234,6 +277,10 @@ public sealed class EmployeeRecoveryWorkerFairnessTests(PostgresFixture postgres
         Assert.Equal(applied, await IdentitySnapshotAsync(stores));
     }
 
+    /// <summary>
+    /// Checks that cancellation during finalization propagates and leaves effects pending for a fresh independent pass.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task CancellationDuringFinalization_PropagatesAndLeavesEffectsPendingForIndependentPass()
     {
@@ -258,6 +305,10 @@ public sealed class EmployeeRecoveryWorkerFairnessTests(PostgresFixture postgres
         Assert.Equal(before, await IdentitySnapshotAsync(stores));
     }
 
+    /// <summary>
+    /// Checks that an invalid receipt remains pending and cannot authorize worker or administrator effects.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task InvalidReceipt_RemainsPendingAndCannotAuthorizeWorkerOrAdministrator()
     {
@@ -280,6 +331,10 @@ public sealed class EmployeeRecoveryWorkerFairnessTests(PostgresFixture postgres
         Assert.Equal(HttpStatusCode.BadRequest, wrong.StatusCode);
     }
 
+    /// <summary>
+    /// Checks exactly-once finalization without mutating customer state or a newer employee security generation.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task HealthyReceipt_FinalizesExactlyOnce_PreservesCustomerAndNewEmployeeGeneration()
     {

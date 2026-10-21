@@ -10,8 +10,14 @@ using System.Reflection;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Checks authentication endpoint metadata and non-enumerating login failures without hosting the application.
+/// </summary>
 public sealed class AuthenticationControllerContractTests
 {
+    /// <summary>
+    /// Checks that machine login, human login, refresh, and revocation retain their distinct rate-limit contracts.
+    /// </summary>
     [Fact]
     public void AuthenticationBoundary_IsolatesMachineLoginHumanLoginAndRefreshRateLimits()
     {
@@ -52,6 +58,9 @@ public sealed class AuthenticationControllerContractTests
             attribute => attribute.StatusCode == StatusCodes.Status429TooManyRequests);
     }
 
+    /// <summary>
+    /// Checks that authentication actions are POST-only and expose no long-lived token endpoint.
+    /// </summary>
     [Fact]
     public void AuthenticationBoundary_ExposesOnlyPostEndpointsAndNoLongLivedTokenRoute()
     {
@@ -66,6 +75,10 @@ public sealed class AuthenticationControllerContractTests
                 .Any(attribute => attribute.Template?.Contains("longlived", StringComparison.OrdinalIgnoreCase) == true));
     }
 
+    /// <summary>
+    /// Checks that rejected credentials produce a generic unauthorized problem without disclosing the attempted account.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Login_InvalidCredentials_ReturnsGenericProblemWithoutAccountEnumeration()
     {

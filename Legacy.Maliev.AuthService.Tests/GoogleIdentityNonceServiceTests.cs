@@ -4,11 +4,19 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises PostgreSQL-backed Google nonce binding, single-use consumption, and expiry.
+/// </summary>
+/// <param name="postgres">The collection fixture that creates an isolated nonce database.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class GoogleIdentityNonceServiceTests(PostgresFixture postgres)
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 27, 0, 0, 0, TimeSpan.Zero);
 
+    /// <summary>
+    /// Checks a nonce is consumable once and cannot be reused across service or application bindings.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task IssueAndConsume_BindsApplicationAndService_AndAllowsOnlyOneUse()
     {
@@ -24,6 +32,10 @@ public sealed class GoogleIdentityNonceServiceTests(PostgresFixture postgres)
         Assert.False(await service.ConsumeAsync(issued.Nonce, "legacy-intranet", "other-app", default));
     }
 
+    /// <summary>
+    /// Checks a nonce cannot be consumed after its configured lifetime expires.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task Consume_ExpiredNonce_FailsClosed()
     {

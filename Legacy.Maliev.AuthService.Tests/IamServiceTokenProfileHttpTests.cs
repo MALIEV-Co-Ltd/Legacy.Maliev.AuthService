@@ -16,10 +16,19 @@ using Microsoft.IdentityModel.Tokens;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises normal machine-token issuance and dedicated IAM profile admission with isolated credentials and no database server.
+/// </summary>
 public sealed class IamServiceTokenProfileHttpTests
 {
     private const string LiveCredential = "isolated-iam-live-credential-0123456789";
 
+    /// <summary>
+    /// Checks legacy machine tokens stay unchanged while only explicitly profiled IAM tokens gain dedicated admission.
+    /// </summary>
+    /// <param name="audience">The configured IAM audience, including the legacy-audience overlap control.</param>
+    /// <param name="legacyDenial">The denial required when the IAM token is presented to the legacy invoice endpoint.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData("iam-live-profile-test", HttpStatusCode.Unauthorized)]
     [InlineData("iam-profile-test", HttpStatusCode.Forbidden)]
@@ -57,6 +66,10 @@ public sealed class IamServiceTokenProfileHttpTests
         Assert.Equal(legacyDenial, denied.StatusCode);
     }
 
+    /// <summary>
+    /// Checks caller-supplied identity and privilege fields cannot alter the server-selected IAM token profile.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task IamServiceProfile_ClientSuppliedClaimsCannotSelectProfile()
     {
@@ -83,6 +96,11 @@ public sealed class IamServiceTokenProfileHttpTests
         Assert.Equal(900, token.ExpiresIn);
     }
 
+    /// <summary>
+    /// Checks missing enrollment, missing grants, invalid credentials, and missing audience return indistinguishable generic denials.
+    /// </summary>
+    /// <param name="control">The enrollment, permission, credential, client, or audience condition removed.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData("missing-profile")]
     [InlineData("missing-permission")]
@@ -109,6 +127,11 @@ public sealed class IamServiceTokenProfileHttpTests
         Assert.DoesNotContain(responseBody.RootElement.EnumerateObject(), value => value.Name is "accessToken" or "refreshToken");
     }
 
+    /// <summary>
+    /// Checks a valid IAM JWT alone cannot replace the dedicated live-permission credential.
+    /// </summary>
+    /// <param name="credential">The absent or incorrect isolated live-permission credential presented with the valid JWT.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(null)]
     [InlineData("wrong-isolated-live-key-0123456789")]
@@ -124,6 +147,10 @@ public sealed class IamServiceTokenProfileHttpTests
         using (admission.Lease) Assert.Equal(LivePermissionCheckDecision.Forbidden, admission.Decision);
     }
 
+    /// <summary>
+    /// Checks malformed configured IAM service names fail validation and canonical-name admission.
+    /// </summary>
+    /// <param name="serviceName">The noncanonical configured service-name spelling to reject.</param>
     [Theory]
     [InlineData("")]
     [InlineData("Quotation")]

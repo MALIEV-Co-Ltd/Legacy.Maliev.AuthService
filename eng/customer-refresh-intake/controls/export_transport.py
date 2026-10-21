@@ -8,8 +8,8 @@ import intake
 CONTROL_NAMES = ('intake.py','test_intake.py','verify_trx.py','discovery.py','export_transport.py')
 PREFIX = 'eng/customer-refresh-intake/'
 OBSERVER_PINS = {
-    'scripts/observe_postgres_cleanup.py':'48d73f0c1acd8b7f37cd1b2015437be49bcd77f11dbbf1f2d7b14a7cc98151e3',
-    'scripts/test_observe_postgres_cleanup.py':'9280d52e0d1ccd7afb2265eb85d72990ceccf274abcb1ce5c0ba073923aabe10',
+    'scripts/observe_postgres_cleanup.py':'4e0068086b966c01ff721a009d3e1b77adcf91eed66d07de8cf380ee875e8c08',
+    'scripts/test_observe_postgres_cleanup.py':'3a6bded2b8e65154301562f52b6b0750f2202178fbe4b80c4471f6e975a5b3a4',
 }
 
 def export(root, commit, destination):
