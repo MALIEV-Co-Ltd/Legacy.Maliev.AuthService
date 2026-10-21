@@ -2,8 +2,14 @@ using System.Text.RegularExpressions;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies publisher permission scope and source-artifact isolation without executing publishing.
+/// </summary>
 public sealed class PublishWorkflowPermissionContractTests
 {
+    /// <summary>
+    /// Verifies validation uses the redacted JWT resource scanner.
+    /// </summary>
     [Fact]
     public void ValidationWorkflow_UsesRedactedJwtResourceScanner()
     {
@@ -18,6 +24,9 @@ public sealed class PublishWorkflowPermissionContractTests
             StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Verifies stale JWT XML documentation is absent from source.
+    /// </summary>
     [Fact]
     public void SourceE2f_StaleJwtXmlDocumentationIsAbsent()
     {
@@ -26,6 +35,9 @@ public sealed class PublishWorkflowPermissionContractTests
         Assert.False(File.Exists(Path.Combine(root, "Maliev.JwtSecurity.xml")));
     }
 
+    /// <summary>
+    /// Verifies OpenID Connect permissions are restricted to publisher jobs.
+    /// </summary>
     [Fact]
     public void PublishWorkflow_ScopesOidcToPublishJobs()
     {

@@ -7,8 +7,14 @@ using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies the configured database provider for both identity stores.
+/// </summary>
 public sealed class IdentityStorageConfigurationTests
 {
+    /// <summary>
+    /// Verifies infrastructure registration uses PostgreSQL for both identity contexts.
+    /// </summary>
     [Fact]
     public void AddInfrastructure_UsesPostgreSqlForBothIdentityContexts()
     {

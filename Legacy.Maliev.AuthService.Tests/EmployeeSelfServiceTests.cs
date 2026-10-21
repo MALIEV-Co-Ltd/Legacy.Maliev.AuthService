@@ -16,9 +16,19 @@ using System.Reflection;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies employee recovery binding, transactional effects, reconciliation, and hosted-worker lifecycle.
+/// </summary>
+/// <param name="postgres">The shared fixture that owns the disposable PostgreSQL container.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
 {
+    /// <summary>
+    /// Verifies recovery binds the exact historical stored key without changing the recovery-token hash frame.
+    /// </summary>
+    /// <param name="historicalKey">Whether the stored key uses the historical uppercase spelling instead of the canonical spelling.</param>
+    /// <param name="confirmation">Whether the case completes email confirmation rather than password reset.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false, false)]
     [InlineData(false, true)]
@@ -58,6 +68,11 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.Equal(bound, (await fixture.Employees.Users.AsNoTracking().SingleAsync()).NormalizedEmail);
     }
 
+    /// <summary>
+    /// Verifies a historical committed receipt finalizes without rehashing its identity binding.
+    /// </summary>
+    /// <param name="confirmation">Whether the case completes email confirmation rather than password reset.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -102,6 +117,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.Equal(original.TokenHash, (await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync()).TokenHash);
     }
 
+    /// <summary>
+    /// Verifies a missing authenticated owner prevents a password-reset identity effect.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task CompletePasswordReset_MissingAuthenticatedOwner_DoesNotApplyIdentityEffect()
     {
@@ -116,6 +135,9 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.Null((await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync()).ConsumedAt);
     }
 
+    /// <summary>
+    /// Verifies employee self-service uses authenticated JSON posts and employee-specific permission.
+    /// </summary>
     [Fact]
     public void Controller_UsesAuthenticatedJsonPostsAndEmployeeSpecificPermission()
     {
@@ -136,6 +158,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
                 || attribute.Template?.Contains("{token", StringComparison.OrdinalIgnoreCase) == true);
     }
 
+    /// <summary>
+    /// Verifies a known employee receives an opaque reset token backed by an employee-scoped hash.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task RequestPasswordReset_KnownEmployee_ReturnsOpaqueTokenAndStoresEmployeeScopedHash()
     {
@@ -153,6 +179,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.Equal("employee-password-reset", stored.Purpose);
     }
 
+    /// <summary>
+    /// Verifies an unknown employee receives an enumeration-safe response without stored state.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task RequestPasswordReset_UnknownEmployee_IsEnumerationSafeAndStoresNothing()
     {
@@ -166,6 +196,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.Empty(await fixture.State.IdentityActionTokens.ToListAsync());
     }
 
+    /// <summary>
+    /// Verifies a valid reset changes the password, rejects replay, and revokes employee sessions.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task CompletePasswordReset_ValidTokenChangesPasswordRejectsReplayAndRevokesEmployeeSessions()
     {
@@ -191,6 +225,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.NotNull((await fixture.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
+    /// <summary>
+    /// Verifies an expired confirmation token cannot change the employee.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task ConfirmEmail_ExpiredTokenIsRejectedWithoutChangingEmployee()
     {
@@ -208,6 +246,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.False((await fixture.Employees.Users.AsNoTracking().SingleAsync()).EmailConfirmed);
     }
 
+    /// <summary>
+    /// Verifies a second reset challenge supersedes the first challenge.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task RequestPasswordReset_SecondChallengeSupersedesFirstChallenge()
     {
@@ -229,6 +271,12 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.True(currentResult);
     }
 
+    /// <summary>
+    /// Verifies changed identity state invalidates the old challenge while permitting a freshly issued link.
+    /// </summary>
+    /// <param name="confirmation">Whether the case completes email confirmation rather than password reset.</param>
+    /// <param name="change">The authority or identity mutation applied before the tested operation completes.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false, "stamp")]
     [InlineData(true, "stamp")]
@@ -287,6 +335,11 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
             : await fixture.Service.CompletePasswordResetAsync(new(row.Email!, fresh.Token!, "replayed-password"), "service:legacy-intranet", default));
     }
 
+    /// <summary>
+    /// Verifies a previously issued challenge without an identity binding fails closed.
+    /// </summary>
+    /// <param name="confirmation">Whether the case completes email confirmation rather than password reset.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -311,6 +364,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.Null((await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync()).ConsumedAt);
     }
 
+    /// <summary>
+    /// Verifies concurrent password-reset completion has only one winner.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task CompletePasswordReset_ConcurrentRequestsHaveOnlyOneWinner()
     {
@@ -331,6 +388,12 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.Equal(PasswordVerificationResult.Success, fixture.Hasher.VerifyHashedPassword(stored, stored.PasswordHash!, winner));
     }
 
+    /// <summary>
+    /// Verifies recovery initializes a missing migrated security stamp and permits the challenge.
+    /// </summary>
+    /// <param name="confirmation">Whether the case completes email confirmation rather than password reset.</param>
+    /// <param name="stamp">The migrated security-stamp value before challenge issuance.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false, null)]
     [InlineData(false, "")]
@@ -354,6 +417,11 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
             : await fixture.Service.CompletePasswordResetAsync(new("employee@example.com", challenge.Token!, "fresh-password"), "service:legacy-intranet", default));
     }
 
+    /// <summary>
+    /// Verifies concurrent stamp bootstrap or administration is not overwritten by recovery.
+    /// </summary>
+    /// <param name="adminWins">Whether the concurrent administrative mutation wins the bootstrap race.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -392,6 +460,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.NotNull((await fixture.Service.RequestPasswordResetAsync(new("employee@example.com"), "service:legacy-intranet", default)).Token);
     }
 
+    /// <summary>
+    /// Verifies an identity-save failure is not reported as success and a fresh request can recover.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task CompletePasswordReset_IdentitySaveFailureIsNotSuccessAndFreshRequestCanRecover()
     {
@@ -413,6 +485,11 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.True(await fixture.Service.CompletePasswordResetAsync(new("employee@example.com", fresh.Token!, "recovered"), "service:legacy-intranet", default));
     }
 
+    /// <summary>
+    /// Verifies an administrative change after recovery reads prevents stale identity mutation.
+    /// </summary>
+    /// <param name="confirmation">Whether the case completes email confirmation rather than password reset.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -462,6 +539,11 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
             () => Assert.IsType<BadRequestObjectResult>(replay));
     }
 
+    /// <summary>
+    /// Verifies an unapplied challenge survives identity-save failure for retry and then rejects replay.
+    /// </summary>
+    /// <param name="confirmation">Whether the case completes email confirmation rather than password reset.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -509,6 +591,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
             () => Assert.Equal(confirmation, session.RevokedAt is null));
     }
 
+    /// <summary>
+    /// Verifies retry after revocation failure finalizes without repeating the identity effect.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Atomicity_RevocationFailure_RetryFinalizesWithoutReapplyingIdentityEffect()
     {
@@ -556,6 +642,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
             () => Assert.Equal(committed.ConcurrencyStamp, persisted.ConcurrencyStamp));
     }
 
+    /// <summary>
+    /// Verifies a committed reset finalizes only old or null session epochs without repeating identity mutation.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Worker_CommittedResetFinalizesOnlyOldAndNullEpochs_WithoutReapplyingIdentity()
     {
@@ -612,6 +702,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.False(await fixture.Service.CompletePasswordResetAsync(new("employee@example.com", challenge.Token!, "applied-password"), "service:legacy-intranet", default));
     }
 
+    /// <summary>
+    /// Verifies an uncommitted challenge never applies a password and cancellation retains the pending receipt.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Worker_UncommittedChallengeNeverAppliesPassword_AndCancellationLeavesPendingReceipt()
     {
@@ -629,6 +723,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.Equal(1, await fixture.Service.ReconcileOutstandingAsync(default));
     }
 
+    /// <summary>
+    /// Verifies a worker fault retains the committed receipt and finalization does not require an identity row lock.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Worker_FaultRetainsCommittedReceipt_AndFinalizesWithoutAcquiringIdentityRowLock()
     {
@@ -653,6 +751,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.NotNull((await fixture.State.RefreshSessions.AsNoTracking().SingleAsync(deadline.Token)).RevokedAt);
     }
 
+    /// <summary>
+    /// Verifies a mismatched immutable action binding cannot finalize or acknowledge a recovery effect.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Worker_WrongImmutableActionBindingCannotFinalizeOrAcknowledgeEffect()
     {
@@ -667,6 +769,11 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.Null((await fixture.State.IdentityActionTokens.AsNoTracking().SingleAsync()).FinalizedAt);
     }
 
+    /// <summary>
+    /// Verifies a pending receipt yields a generic unavailable response until worker reconciliation permits administration.
+    /// </summary>
+    /// <param name="delete">Whether the administrative operation deletes rather than updates the employee.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -685,6 +792,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.IsType<NoContentResult>(retry);
     }
 
+    /// <summary>
+    /// Verifies challenge issuance reconciles a committed effect before superseding its challenge.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Issuance_ReconcilesCommittedEffectBeforeSupersedingChallenge()
     {
@@ -702,6 +813,11 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.False(await fixture.Service.CompletePasswordResetAsync(new("employee@example.com", original.Token!, "applied-password"), "service:legacy-intranet", default));
     }
 
+    /// <summary>
+    /// Verifies physical storage drift fails readiness despite recorded migration history.
+    /// </summary>
+    /// <param name="drift">The physical database drift introduced despite recorded migration history.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("employee-column")]
     [InlineData("employee-index")]
@@ -733,6 +849,11 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         await Assert.ThrowsAsync<EmployeeRecoveryUnavailableException>(() => EmployeeRecoverySchema.EnsureAsync(fixture.Employees, fixture.State, default));
     }
 
+    /// <summary>
+    /// Verifies database constraints reject incomplete employee recovery binding and finalization.
+    /// </summary>
+    /// <param name="invalid">The incomplete binding or finalization shape rejected by database constraints.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("legacy-finalized")]
     [InlineData("missing-effect")]
@@ -761,6 +882,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         await Assert.ThrowsAsync<DbUpdateException>(() => fixture.State.SaveChangesAsync());
     }
 
+    /// <summary>
+    /// Verifies disabled recovery opt-in prevents challenge issuance, completion, and administrative mutation.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Recovery_DisabledOptInCannotIssueOrCompleteOrMutateAdmin()
     {
@@ -775,6 +900,11 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.Single(await fixture.Employees.Users.ToListAsync());
     }
 
+    /// <summary>
+    /// Verifies expiry while waiting for an identity lock prevents an unapplied action from taking effect.
+    /// </summary>
+    /// <param name="confirmation">Whether the case completes email confirmation rather than password reset.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -819,6 +949,11 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
             () => Assert.Null(session.RevokedAt));
     }
 
+    /// <summary>
+    /// Verifies an already committed receipt can finalize after the original challenge expires.
+    /// </summary>
+    /// <param name="confirmation">Whether the case completes email confirmation rather than password reset.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -852,6 +987,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.IsType<BadRequestObjectResult>(await CompleteAsync(CreateController(fixture.Service), confirmation, challenge.Token!, "applied-password", default));
     }
 
+    /// <summary>
+    /// Verifies a transient save retry reads a fresh clock and does not apply an expired action.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Expiry_RolledBackTransientSaveRetryUsesFreshClockAndDoesNotApplyExpiredAction()
     {
@@ -919,6 +1058,11 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         }
     }
 
+    /// <summary>
+    /// Verifies probing an unknown commit does not repeat the password or security-stamp effect.
+    /// </summary>
+    /// <param name="authCommit">Whether the simulated uncertain commit affects the authentication-state transaction.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -961,6 +1105,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         }
     }
 
+    /// <summary>
+    /// Verifies the hosted worker delivers a committed receipt and stops cleanly.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task HostedWorker_DeliversCommittedReceiptAndStopsCleanly()
     {
@@ -979,6 +1127,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.NotNull((await fixture.State.RefreshSessions.AsNoTracking().SingleAsync(deadline.Token)).RevokedAt);
     }
 
+    /// <summary>
+    /// Verifies cancellation during finalization retains the receipt and challenge for a later worker.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task HostedWorker_CancellationDuringFinalizationRetainsReceiptAndChallengeForNextWorker()
     {
@@ -999,6 +1151,10 @@ public sealed class EmployeeSelfServiceTests(PostgresFixture postgres)
         Assert.Equal(1, await fixture.Service.ReconcileOutstandingAsync(deadline.Token));
     }
 
+    /// <summary>
+    /// Verifies disabled hosted-worker opt-in leaves the committed receipt pending.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task HostedWorker_DisabledOptInLeavesCommittedReceiptPending()
     {

@@ -9,8 +9,16 @@ using Microsoft.Extensions.Logging;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies environment-specific CORS configuration without treating preflight permission as authentication.
+/// </summary>
 public sealed class CorsHttpContractTests
 {
+    /// <summary>
+    /// Verifies registered development origins receive preflight permission without application authority.
+    /// </summary>
+    /// <param name="origin">The request origin tested against the configured CORS or IAM origin policy.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("https://maliev.com")]
     [InlineData("https://www.maliev.com")]
@@ -34,6 +42,11 @@ public sealed class CorsHttpContractTests
         await AssertUnauthenticatedAsync(client, origin, allowed: true);
     }
 
+    /// <summary>
+    /// Verifies unlisted development origins receive neither CORS permission nor application authority.
+    /// </summary>
+    /// <param name="origin">The request origin tested against the configured CORS or IAM origin policy.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("http://maliev.com")]
     [InlineData("http://www.maliev.com")]
@@ -54,6 +67,11 @@ public sealed class CorsHttpContractTests
         await AssertUnauthenticatedAsync(client, origin, allowed: false);
     }
 
+    /// <summary>
+    /// Verifies explicit scalar or array configuration replaces development origin defaults.
+    /// </summary>
+    /// <param name="array">Whether explicit origins are supplied through indexed array configuration.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -76,6 +94,12 @@ public sealed class CorsHttpContractTests
         }
     }
 
+    /// <summary>
+    /// Verifies production admits only explicitly configured origins rather than development defaults.
+    /// </summary>
+    /// <param name="origin">The request origin tested against the configured CORS or IAM origin policy.</param>
+    /// <param name="allowed">Whether the configured origin is expected to receive CORS permission.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("https://maliev.com", true)]
     [InlineData("https://www.maliev.com", false)]
@@ -94,6 +118,10 @@ public sealed class CorsHttpContractTests
         await AssertUnauthenticatedAsync(client, origin, allowed);
     }
 
+    /// <summary>
+    /// Verifies missing origin configuration fails closed outside development.
+    /// </summary>
+    /// <param name="environment">The nondevelopment hosting environment whose missing configuration must fail closed.</param>
     [Theory]
     [InlineData("Production")]
     [InlineData("Staging")]

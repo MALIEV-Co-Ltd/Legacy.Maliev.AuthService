@@ -10,8 +10,14 @@ using System.Text.Json;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Guards signed token claims, interactive permission separation, response shape, and persisted employee session requirements.
+/// </summary>
 public sealed class JwtAccessTokenContractTests
 {
+    /// <summary>
+    /// Checks employee token issuance refuses a missing persisted session identifier.
+    /// </summary>
     [Fact]
     public void EmployeeToken_WithoutPersistedSessionId_RefusesIssuance()
     {
@@ -19,6 +25,9 @@ public sealed class JwtAccessTokenContractTests
         Assert.Throws<ArgumentException>(() => fixture.Issuer.Issue(EmployeeIdentity(), Now, null));
     }
 
+    /// <summary>
+    /// Checks employee token issuance refuses an empty persisted session identifier.
+    /// </summary>
     [Fact]
     public void EmployeeToken_EmptyPersistedSessionId_RefusesIssuance()
     {
@@ -26,6 +35,9 @@ public sealed class JwtAccessTokenContractTests
         Assert.Throws<ArgumentException>(() => fixture.Issuer.Issue(EmployeeIdentity(), Now, Guid.Empty));
     }
 
+    /// <summary>
+    /// Checks customer token issuance refuses an employee session identifier.
+    /// </summary>
     [Fact]
     public void CustomerToken_SuppliedEmployeeSessionId_RefusesIssuance()
     {
@@ -117,6 +129,10 @@ public sealed class JwtAccessTokenContractTests
         AccountingFilesDelete,
     ];
 
+    /// <summary>
+    /// Checks validated employee password login issues the exact interactive permission and signed-token contract.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task Login_ValidatedEmployee_IssuesInteractivePermissions()
     {
@@ -139,6 +155,10 @@ public sealed class JwtAccessTokenContractTests
         AssertStableEmployeeContract(token, fixture.KeyId);
     }
 
+    /// <summary>
+    /// Checks employee refresh retains interactive permissions and records a replacement session.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task Refresh_ValidatedEmployee_RetainsInteractivePermissions()
     {
@@ -169,6 +189,10 @@ public sealed class JwtAccessTokenContractTests
         Assert.NotNull(store.Replacement);
     }
 
+    /// <summary>
+    /// Checks validated customer login cannot acquire employee permissions and retains explicit password capability.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task Login_ValidatedCustomer_DoesNotIssueEmployeePermissions()
     {
@@ -236,6 +260,9 @@ public sealed class JwtAccessTokenContractTests
         Assert.Equal("true", token.Claims.Single(claim => claim.Type == "has_password").Value);
     }
 
+    /// <summary>
+    /// Checks a passwordless customer token explicitly reports its absent password capability.
+    /// </summary>
     [Fact]
     public void CustomerToken_PasswordlessIdentityCarriesExplicitFalseCapability()
     {
@@ -247,6 +274,10 @@ public sealed class JwtAccessTokenContractTests
         Assert.Equal("false", token.Claims.Single(claim => claim.Type == "has_password").Value);
     }
 
+    /// <summary>
+    /// Checks customer refresh cannot acquire employee order-workflow or Accounting mutation grants.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task Refresh_ValidatedCustomer_DoesNotIssueEmployeeOrderWorkflowPermissions()
     {
@@ -279,6 +310,9 @@ public sealed class JwtAccessTokenContractTests
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "customer");
     }
 
+    /// <summary>
+    /// Checks machine tokens do not inherit interactive permissions beyond their configured grants.
+    /// </summary>
     [Fact]
     public void ServiceToken_WithoutExplicitEmployeePermission_DoesNotGainInteractivePermissions()
     {
@@ -303,6 +337,9 @@ public sealed class JwtAccessTokenContractTests
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "service");
     }
 
+    /// <summary>
+    /// Checks explicitly configured machine grants are retained without changing the service identity kind.
+    /// </summary>
     [Fact]
     public void ServiceToken_ExplicitlyRequestedEmployeePermissions_RetainsRequestedPermissions()
     {
@@ -320,6 +357,10 @@ public sealed class JwtAccessTokenContractTests
         Assert.Contains(token.Claims, claim => claim.Type == "identity_kind" && claim.Value == "service");
     }
 
+    /// <summary>
+    /// Checks login retains the existing public token-response JSON members.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task Login_ResponseJsonShapeRemainsUnchanged()
     {

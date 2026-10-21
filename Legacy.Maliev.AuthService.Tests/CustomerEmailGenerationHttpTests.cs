@@ -23,11 +23,21 @@ using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises customer email links through the normal HTTP boundary with persisted generation bindings and restarted hosts.
+/// </summary>
+/// <param name="postgres">The collection fixture that supplies isolated identity and action-token databases.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
 {
     private const string Root = "/auth/v1/customer-self-service/";
 
+    /// <summary>
+    /// Checks the literal generation-binding digest and successful consumption for confirmation and email-change links.
+    /// </summary>
+    /// <param name="changeEmail">Whether to exercise email change instead of initial confirmation.</param>
+    /// <param name="expectedBinding">The independently fixed canonical binding expected in the action-token row.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false, "ceg1:cd938242f1e209103761a5aaf6149f443701c7f6aa8a2da1016560e7f249c698")]
     [InlineData(true, "ceg1:00300dbecb4a5eec896baa90934339318c559fa15e4ce542e582be640a8f229e")]
@@ -47,6 +57,12 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
         Assert.NotNull((await stores.State.IdentityActionTokens.AsNoTracking().SingleAsync()).ConsumedAt);
     }
 
+    /// <summary>
+    /// Checks that malformed, unknown-version, and noncanonical bindings cannot consume a pending email link.
+    /// </summary>
+    /// <param name="changeEmail">Whether the pending link changes the address instead of confirming it.</param>
+    /// <param name="invalid">The persisted binding corruption to introduce.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false, "malformed")]
     [InlineData(true, "malformed")]
@@ -80,6 +96,12 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
         Assert.Equal(changeEmail, identity.EmailConfirmed);
     }
 
+    /// <summary>
+    /// Checks that a pending link cannot survive a password or administrator security-generation change across host restart.
+    /// </summary>
+    /// <param name="changeEmail">Whether to exercise email change instead of confirmation.</param>
+    /// <param name="passwordChange">Whether to rotate the generation through password change rather than an administrative update.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false, false)]
     [InlineData(false, true)]
@@ -118,6 +140,11 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
         Assert.DoesNotContain(token, await result.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Checks that validation of an old email-change link cannot authorize profile mutation after security rotation.
+    /// </summary>
+    /// <param name="passwordChange">Whether password change performs the security rotation.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -140,6 +167,11 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
         Assert.Equal("customer@example.com", (await stores.Customers.Users.AsNoTracking().SingleAsync()).Email);
     }
 
+    /// <summary>
+    /// Checks that an unchanged generation completes once after restart while completed email-change validation remains historical evidence.
+    /// </summary>
+    /// <param name="changeEmail">Whether to exercise email change instead of confirmation.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -175,6 +207,12 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
         }
     }
 
+    /// <summary>
+    /// Checks that expired or misbound email links preserve both identity state and the unconsumed challenge.
+    /// </summary>
+    /// <param name="changeEmail">Whether the issued link changes the address instead of confirming it.</param>
+    /// <param name="invalid">The expiry, email, or purpose mismatch applied to the request.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false, "expired")]
     [InlineData(true, "expired")]
@@ -202,6 +240,10 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
         Assert.Equal(changeEmail, row.EmailConfirmed);
     }
 
+    /// <summary>
+    /// Checks that unknown and known accounts receive accepted confirmation responses without creating challenges for unknown accounts.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task ConfirmationRequest_UnknownAndKnown_BothAccepted_OnlyKnownInternalBffGetsToken()
     {
@@ -219,6 +261,12 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
         Assert.Single(await stores.State.IdentityActionTokens.ToListAsync());
     }
 
+    /// <summary>
+    /// Checks that normal JWT admission rejects invalid confirmation callers before action-token or identity mutation.
+    /// </summary>
+    /// <param name="caller">The anonymous, unprivileged, or incorrectly signed caller variant.</param>
+    /// <param name="expected">The HTTP denial required for that caller.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData("anonymous", HttpStatusCode.Unauthorized)]
     [InlineData("no-permission", HttpStatusCode.Forbidden)]
@@ -246,6 +294,12 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
         return Assert.IsType<string>(challenge.Token);
     }
 
+    /// <summary>
+    /// Checks that a null or empty legacy security stamp remains usable only within the same generation across restart.
+    /// </summary>
+    /// <param name="changeEmail">Whether to exercise email change instead of confirmation.</param>
+    /// <param name="stamp">The legacy null or empty security stamp persisted before issuance.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false, null)]
     [InlineData(false, "")]
@@ -268,6 +322,12 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
         Assert.False(string.IsNullOrWhiteSpace((await stores.Customers.Users.AsNoTracking().SingleAsync()).SecurityStamp));
     }
 
+    /// <summary>
+    /// Checks that historical unbound links and changes to typed generation inputs cannot consume a pending challenge.
+    /// </summary>
+    /// <param name="changeEmail">Whether the pending link changes the address instead of confirming it.</param>
+    /// <param name="mutation">The missing binding, stamp transition, or stored-email change introduced after issuance.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false, "unbound")]
     [InlineData(true, "unbound")]
@@ -293,6 +353,11 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
         Assert.Null((await stores.State.IdentityActionTokens.AsNoTracking().SingleAsync()).ConsumedAt);
     }
 
+    /// <summary>
+    /// Checks that reissuing after security rotation rejects the old link and permits the newly bound link.
+    /// </summary>
+    /// <param name="changeEmail">Whether to reissue an email-change link instead of confirmation.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -313,6 +378,10 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
         Assert.Equal(2, await stores.State.IdentityActionTokens.CountAsync());
     }
 
+    /// <summary>
+    /// Checks that new web registrations enforce the username alphabet without breaking read-only resolution of an older identity.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalWebIdentityUserPolicy_NewRegistrationRejectsDefaultAlphabetViolationsAndKeepsLegacyResolve()
     {
@@ -353,6 +422,10 @@ public sealed class CustomerEmailGenerationHttpTests(PostgresFixture postgres)
         Assert.Empty(await stores.State.RefreshSessions.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks that invalid new and historically pending email targets cannot mutate or consume state, while committed history and valid targets remain usable.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task NormalWebIdentityUserPolicy_InvalidNewEmailAndHistoricalPendingTargetNeverMutateOrConsume()
     {

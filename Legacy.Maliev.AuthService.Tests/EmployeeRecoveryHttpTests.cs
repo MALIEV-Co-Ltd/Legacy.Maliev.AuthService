@@ -23,11 +23,18 @@ using System.Text.Json;
 namespace Legacy.Maliev.AuthService.Tests;
 
 /// <summary>Real HTTP/model binding/JWT middleware against isolated PostgreSQL stores and actual recovery services.</summary>
+/// <param name="postgres">The collection fixture that supplies isolated employee, customer, and action-token databases.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class EmployeeRecoveryHttpTests(PostgresFixture postgres)
 {
     private const string Root = "/auth/v1/employee-self-service/";
 
+    /// <summary>
+    /// Checks the recovery HTTP boundary against the historical bare-address email syntax predicate.
+    /// </summary>
+    /// <param name="email">The email spelling submitted to recovery issuance.</param>
+    /// <param name="accepted">Whether the historical predicate admits that spelling.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData("employee@example.com", true)]
     [InlineData("\"employee@office\"@example.com", true)]
@@ -85,6 +92,11 @@ public sealed class EmployeeRecoveryHttpTests(PostgresFixture postgres)
         Assert.Equal(HttpStatusCode.NoContent, confirmed.StatusCode);
     }
 
+    /// <summary>
+    /// Checks that invalid recovery email input preserves an already issued challenge and all persisted recovery state.
+    /// </summary>
+    /// <param name="purpose">The recovery action route exercised with invalid email input.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData("email-confirmation")]
     [InlineData("password-reset")]
@@ -128,6 +140,11 @@ public sealed class EmployeeRecoveryHttpTests(PostgresFixture postgres)
         Assert.Equal(HttpStatusCode.BadRequest, replay.StatusCode);
     }
 
+    /// <summary>
+    /// Checks that invalid reset passwords leave the challenge intact and the valid boundary applies and consumes exactly one effect.
+    /// </summary>
+    /// <param name="boundary">The minimum-length, maximum-length, or UTF-16 distinctness boundary exercised.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(0)]
     [InlineData(1)]
@@ -179,6 +196,10 @@ public sealed class EmployeeRecoveryHttpTests(PostgresFixture postgres)
         Assert.Equal(completed, await RecoverySnapshotAsync(stores));
     }
 
+    /// <summary>
+    /// Checks that an already committed legacy weak-password receipt can finalize without rewriting the identity or applying the effect again.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task ResetPasswordPolicy_PreviouslyCommittedWeakReceiptFinalizesWithoutRewritingIdentity()
     {
@@ -257,6 +278,12 @@ public sealed class EmployeeRecoveryHttpTests(PostgresFixture postgres)
         Sessions = await stores.State.RefreshSessions.AsNoTracking().OrderBy(row => row.Id).ToListAsync(),
     });
 
+    /// <summary>
+    /// Checks that invalid reset callers cannot alter identity or consume the challenge before a valid owner completes it.
+    /// </summary>
+    /// <param name="caller">The subject, grant, signature, or lifetime failure applied to the caller.</param>
+    /// <param name="expected">The denial status expected from that caller's admission failure.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData("missing-sub", HttpStatusCode.Forbidden)]
     [InlineData("duplicate-sub", HttpStatusCode.Unauthorized)]
@@ -283,6 +310,10 @@ public sealed class EmployeeRecoveryHttpTests(PostgresFixture postgres)
         Assert.Equal(HttpStatusCode.NoContent, success.StatusCode);
     }
 
+    /// <summary>
+    /// Checks that a committed reset awaiting finalization rejects changed payload, email, purpose, or owner but permits the original retry once.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task Complete_PendingResetWrongPayloadEmailPurposeOwnerFails_OriginalRetryFinalizes_ThenReplayFails()
     {
@@ -319,6 +350,11 @@ public sealed class EmployeeRecoveryHttpTests(PostgresFixture postgres)
         Assert.Single(await stores.Employees.RecoveryEffects.ToListAsync());
     }
 
+    /// <summary>
+    /// Checks that disabled recovery and physical schema drift map to generic unavailability without issuing action tokens.
+    /// </summary>
+    /// <param name="physicalDrift">Whether to remove a required schema index instead of disabling recovery.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

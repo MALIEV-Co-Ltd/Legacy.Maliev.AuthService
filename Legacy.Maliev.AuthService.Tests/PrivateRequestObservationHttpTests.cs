@@ -20,12 +20,19 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises production health identity and private diagnostic admission over real loopback HTTP while preserving denial and response privacy.
+/// </summary>
 public sealed class PrivateRequestObservationHttpTests
 {
     private const string InstanceHeader = "X-Maliev-Health-Instance";
     private const string NonceHeader = "X-Maliev-Diagnostic-Id";
     private const string DiagnosticPath = "/internal/diagnostics/observability";
 
+    /// <summary>
+    /// Checks only registered health GET endpoints expose one host identity and separate hosts remain distinct without observation events.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task ProductionHealth_UsesOneHostIdentityOnlyOnRegisteredGetEndpoints()
     {
@@ -74,6 +81,10 @@ public sealed class PrivateRequestObservationHttpTests
         Assert.False(other.Records.Overflowed);
     }
 
+    /// <summary>
+    /// Checks the private diagnostic requires a direct loopback peer and a single strict nonce while retaining its throttle.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task ProductionDiagnostic_RequiresDirectLoopbackSingleStrictNonceAndRetainsThrottle()
     {
@@ -147,6 +158,10 @@ public sealed class PrivateRequestObservationHttpTests
         Assert.False(spoof.Records.Overflowed);
     }
 
+    /// <summary>
+    /// Checks ordinary authorization denials, returned failures, and sanitized exceptions retain their normal response contracts.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task ProductionOrdinaryFailures_PreserveAuthDenialAndSanitizedErrorResponses()
     {
@@ -300,13 +315,24 @@ public sealed class PrivateRequestObservationHttpTests
 }
 
 // Test-only application part; no new endpoint is registered by the production application.
+/// <summary>
+/// Supplies test-only returned and thrown failures to exercise the normal Auth response and observation boundaries.
+/// </summary>
 [ApiController]
 [AllowAnonymous]
 [Route("/__fixture/auth-observation")]
 public sealed class AuthObservationFailureController : ControllerBase
 {
+    /// <summary>
+    /// Returns a controlled service-unavailable result for handled-failure observation assertions.
+    /// </summary>
+    /// <returns>A 503 result with the fixed fixture error code.</returns>
     [HttpGet("returned")]
     public IActionResult Returned() => StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = "fixture-returned-failure" });
+    /// <summary>
+    /// Throws a controlled private exception to exercise production exception redaction.
+    /// </summary>
+    /// <returns>No result; this action always throws the fixture exception.</returns>
     [HttpGet("throw")]
     public IActionResult Throw() => throw new Exception("fixture-private-error-sentinel");
 }

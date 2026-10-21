@@ -7,8 +7,18 @@ using Microsoft.AspNetCore.Mvc.ModelBinding;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises the compatibility credential JSON formatter's grammar, selection, redaction, and cancellation contracts.
+/// </summary>
 public sealed class LegacyCredentialValidationInputFormatterTests
 {
+    /// <summary>
+    /// Checks source-compatible JSON grammar and scalar lexemes across supported media types and encodings.
+    /// </summary>
+    /// <param name="json">The request JSON supplied to the boundary under test.</param>
+    /// <param name="username">The literal username expected from the compatibility JSON.</param>
+    /// <param name="password">The literal password expected from the compatibility JSON.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("{'Username':'source-user','Password':'source-password'}", "source-user", "source-password")]
     [InlineData("{/*source*/Username:'source-user',Password:'source-password',}", "source-user", "source-password")]
@@ -40,6 +50,13 @@ public sealed class LegacyCredentialValidationInputFormatterTests
         }
     }
 
+    /// <summary>
+    /// Checks empty-input distinctions and redacted model-state errors without exposing credential sentinels.
+    /// </summary>
+    /// <param name="json">The request JSON supplied to the boundary under test.</param>
+    /// <param name="hasError">Whether the formatter should report a redacted input error.</param>
+    /// <param name="isModelSet">Whether the formatter should produce a compatibility request model.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("", false, false)]
     [InlineData("null", false, false)]
@@ -82,6 +99,12 @@ public sealed class LegacyCredentialValidationInputFormatterTests
         }
     }
 
+    /// <summary>
+    /// Checks selection only for the compatibility DTO and supported JSON media types.
+    /// </summary>
+    /// <param name="modelType">The requested model type used to select the formatter.</param>
+    /// <param name="contentType">The media type submitted for formatter selection.</param>
+    /// <param name="expected">Whether the formatter should accept this model type and media type.</param>
     [Theory]
     [InlineData(typeof(LegacyCredentialValidationRequest), "application/json", true)]
     [InlineData(typeof(LegacyCredentialValidationRequest), "text/json", true)]
@@ -97,6 +120,10 @@ public sealed class LegacyCredentialValidationInputFormatterTests
         Assert.Equal(expected, new LegacyCredentialValidationInputFormatter().CanRead(context));
     }
 
+    /// <summary>
+    /// Checks cancellation propagation while leaving model state valid and the caller-owned request body open.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ReadAsync_CancelledRequest_PropagatesCancellationWithoutModelStateError()
     {

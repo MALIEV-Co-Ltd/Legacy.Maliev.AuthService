@@ -7,12 +7,21 @@ using Testcontainers.PostgreSql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Defines the shared PostgreSQL test collection so its owned database container is reused only within the collection.
+/// </summary>
 [CollectionDefinition(Name)]
 public sealed class PostgresCollection : ICollectionFixture<PostgresFixture>
 {
+    /// <summary>
+    /// Identifies the collection used to serialize tests sharing the PostgreSQL fixture.
+    /// </summary>
     public const string Name = "PostgreSQL integration";
 }
 
+/// <summary>
+/// Owns the bounded PostgreSQL integration container and creates a separate migrated database for each requested context.
+/// </summary>
 public sealed class PostgresFixture : IAsyncLifetime
 {
     private readonly PostgreSqlContainer postgres = new PostgreSqlBuilder("postgres:18-alpine")
@@ -29,6 +38,9 @@ public sealed class PostgresFixture : IAsyncLifetime
 
     private readonly Lazy<Task> cleanup;
 
+    /// <summary>
+    /// Creates the single shared cleanup task that stops and removes this fixture's owned container.
+    /// </summary>
     public PostgresFixture()
     {
         cleanup = CreateContainerCleanup(postgres.StopAsync, postgres.DisposeAsync);
@@ -62,12 +74,20 @@ public sealed class PostgresFixture : IAsyncLifetime
         if (stopFailure is not null) ExceptionDispatchInfo.Capture(stopFailure).Throw();
     }
 
+    /// <summary>
+    /// Starts the owned container with the existing bounded startup cancellation window.
+    /// </summary>
+    /// <returns>A task that completes when PostgreSQL is ready for fixture databases.</returns>
     public async Task InitializeAsync()
     {
         using var startup = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         await postgres.StartAsync(startup.Token);
     }
 
+    /// <summary>
+    /// Awaits idempotent stop and removal, reporting cleanup failure without suppressing its exception.
+    /// </summary>
+    /// <returns>A task that completes after owned-container cleanup or propagates its failure.</returns>
     public async Task DisposeAsync()
     {
         var started = Stopwatch.GetTimestamp();
@@ -81,6 +101,11 @@ public sealed class PostgresFixture : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// Creates and migrates an independent customer Identity database, disposing the context if migration fails.
+    /// </summary>
+    /// <param name="registerPool">An optional callback that records the context connection for caller-owned pool cleanup.</param>
+    /// <returns>The migrated customer context, whose disposal belongs to the caller.</returns>
     public async Task<CustomerIdentityDbContext> CreateCustomerContextAsync(Action<NpgsqlConnection>? registerPool = null)
     {
         var context = new CustomerIdentityDbContext(
@@ -100,6 +125,11 @@ public sealed class PostgresFixture : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// Creates and migrates an independent employee Identity database, disposing the context if migration fails.
+    /// </summary>
+    /// <param name="registerPool">An optional callback that records the context connection for caller-owned pool cleanup.</param>
+    /// <returns>The migrated employee context, whose disposal belongs to the caller.</returns>
     public async Task<EmployeeIdentityDbContext> CreateEmployeeContextAsync(Action<NpgsqlConnection>? registerPool = null)
     {
         var context = new EmployeeIdentityDbContext(
@@ -119,6 +149,11 @@ public sealed class PostgresFixture : IAsyncLifetime
         }
     }
 
+    /// <summary>
+    /// Creates and migrates an independent refresh-session database, disposing the context if migration fails.
+    /// </summary>
+    /// <param name="registerPool">An optional callback that records the context connection for caller-owned pool cleanup.</param>
+    /// <returns>The migrated session-state context, whose disposal belongs to the caller.</returns>
     public async Task<RefreshSessionDbContext> CreateStateContextAsync(Action<NpgsqlConnection>? registerPool = null)
     {
         var context = new RefreshSessionDbContext(

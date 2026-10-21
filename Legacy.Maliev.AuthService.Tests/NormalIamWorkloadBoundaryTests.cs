@@ -21,12 +21,24 @@ using System.Text.Json;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Serializes the normal IAM workload cases that share the standard permission cache and PostgreSQL fixture.
+/// </summary>
 [CollectionDefinition("Normal IAM workload", DisableParallelization = true)]
 public sealed class NormalIamWorkloadCollection : ICollectionFixture<PostgresFixture>;
 
+/// <summary>
+/// Exercises recovery and invoice delegation through the application's configured IAM workload boundary.
+/// </summary>
+/// <param name="postgres">The collection-owned fixture that creates isolated PostgreSQL stores for each case.</param>
 [Collection("Normal IAM workload")]
 public sealed class NormalIamWorkloadBoundaryTests(PostgresFixture postgres)
 {
+    /// <summary>
+    /// Checks exact recovery-token callback roundtrips, rejection of altered encodings, and one-time completion.
+    /// </summary>
+    /// <param name="action">The employee recovery action exercised through its request and completion routes.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("password-reset")]
     [InlineData("email-confirmation")]
@@ -117,6 +129,10 @@ public sealed class NormalIamWorkloadBoundaryTests(PostgresFixture postgres)
                 new CompleteEmployeeActionRequest(employee.Email!, token), deadline.Token);
     }
 
+    /// <summary>
+    /// Checks actual IAM workload exchange before current-session delegation authority and denial after revocation.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task NormalDelegation_ConsultsActualIamThroughOwnWorkloadBeforeCurrentSessionAuthority()
     {

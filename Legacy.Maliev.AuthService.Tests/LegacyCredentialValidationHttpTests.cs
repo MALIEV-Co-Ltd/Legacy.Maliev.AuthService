@@ -16,11 +16,21 @@ using Microsoft.Extensions.Options;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies retained credential-validation input grammar, outcomes, and safe password rehashing over HTTP.
+/// </summary>
+/// <param name="postgres">The shared fixture that owns the disposable PostgreSQL container.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class LegacyCredentialValidationHttpTests(PostgresFixture postgres)
 {
     private const string Password = "source-validation-test-password";
 
+    /// <summary>
+    /// Verifies original validation inputs and outcomes do not create an authentication session.
+    /// </summary>
+    /// <param name="path">The retained customer or employee credential-validation route.</param>
+    /// <param name="employee">Whether the case exercises employee rather than customer identity storage.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("/customers/v1/validate", false)]
     [InlineData("/Employees/v1/validate", true)]
@@ -82,6 +92,12 @@ public sealed class LegacyCredentialValidationHttpTests(PostgresFixture postgres
         Assert.Equal(HttpStatusCode.BadRequest, unchangedModernParser.StatusCode);
     }
 
+    /// <summary>
+    /// Verifies rehashing persists the hash, stamps, and source normalization without changing the validation contract.
+    /// </summary>
+    /// <param name="path">The retained customer or employee credential-validation route.</param>
+    /// <param name="employee">Whether the case exercises employee rather than customer identity storage.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("/customers/v1/validate", false)]
     [InlineData("/Employees/v1/validate", true)]
@@ -106,6 +122,12 @@ public sealed class LegacyCredentialValidationHttpTests(PostgresFixture postgres
         Assert.Equal(0, await stores.State.IdentityActionTokens.CountAsync());
     }
 
+    /// <summary>
+    /// Verifies user-validation failure suppresses rehashing but not an already verified password.
+    /// </summary>
+    /// <param name="path">The retained customer or employee credential-validation route.</param>
+    /// <param name="employee">Whether the case exercises employee rather than customer identity storage.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("/customers/v1/validate", false)]
     [InlineData("/Employees/v1/validate", true)]
@@ -127,6 +149,12 @@ public sealed class LegacyCredentialValidationHttpTests(PostgresFixture postgres
         Assert.Equal(0, await stores.State.IdentityActionTokens.CountAsync());
     }
 
+    /// <summary>
+    /// Verifies a concurrent identity change is not overwritten while verified-password validation still succeeds.
+    /// </summary>
+    /// <param name="path">The retained customer or employee credential-validation route.</param>
+    /// <param name="employee">Whether the case exercises employee rather than customer identity storage.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("/customers/v1/validate", false)]
     [InlineData("/Employees/v1/validate", true)]
@@ -157,6 +185,12 @@ public sealed class LegacyCredentialValidationHttpTests(PostgresFixture postgres
         Assert.Equal(0, await stores.State.IdentityActionTokens.CountAsync());
     }
 
+    /// <summary>
+    /// Verifies an actual rehash-store exception is not reported as validation success.
+    /// </summary>
+    /// <param name="path">The retained customer or employee credential-validation route.</param>
+    /// <param name="employee">Whether the case exercises employee rather than customer identity storage.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("/customers/v1/validate", false)]
     [InlineData("/Employees/v1/validate", true)]
@@ -187,6 +221,16 @@ public sealed class LegacyCredentialValidationHttpTests(PostgresFixture postgres
         Assert.Equal(0, await stores.State.IdentityActionTokens.CountAsync());
     }
 
+    /// <summary>
+    /// Verifies primitive JSON string binding preserves the original lexical values.
+    /// </summary>
+    /// <param name="path">The retained customer or employee credential-validation route.</param>
+    /// <param name="employee">Whether the case exercises employee rather than customer identity storage.</param>
+    /// <param name="usernameJson">The lexical JSON token submitted for the username.</param>
+    /// <param name="username">The username value expected after source-compatible deserialization.</param>
+    /// <param name="passwordJson">The lexical JSON token submitted for the password.</param>
+    /// <param name="password">The password value expected after source-compatible deserialization.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("/customers/v1/validate", false, "123", "123", "12345", "12345")]
     [InlineData("/Employees/v1/validate", true, "123", "123", "12345", "12345")]
@@ -217,6 +261,15 @@ public sealed class LegacyCredentialValidationHttpTests(PostgresFixture postgres
         Assert.Equal(0, await stores.State.IdentityActionTokens.CountAsync());
     }
 
+    /// <summary>
+    /// Verifies retained Newtonsoft input grammar is handled by the source serializer.
+    /// </summary>
+    /// <param name="path">The retained customer or employee credential-validation route.</param>
+    /// <param name="employee">Whether the case exercises employee rather than customer identity storage.</param>
+    /// <param name="body">The response or request JSON body used to exercise the boundary.</param>
+    /// <param name="username">The username value expected after source-compatible deserialization.</param>
+    /// <param name="password">The password value expected after source-compatible deserialization.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("/customers/v1/validate", false, "{'Username':'source-user','Password':'source-validation-test-password'}", "source-user", Password)]
     [InlineData("/Employees/v1/validate", true, "{'Username':'source-user','Password':'source-validation-test-password'}", "source-user", Password)]

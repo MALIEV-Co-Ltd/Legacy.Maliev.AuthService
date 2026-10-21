@@ -2,8 +2,15 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises idempotent PostgreSQL fixture cleanup, failure preservation, and bounded graceful stop without starting a container.
+/// </summary>
 public sealed class PostgresFixtureCleanupTests
 {
+    /// <summary>
+    /// Checks concurrent cleanup callers await one graceful stop before one removal.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task ConcurrentAndRepeatedCleanup_AwaitsOneGracefulStopBeforeOneRemoval()
     {
@@ -41,6 +48,11 @@ public sealed class PostgresFixtureCleanupTests
         Assert.Equal(new[] { "stop", "stopped", "remove" }, order);
     }
 
+    /// <summary>
+    /// Checks stop failure still attempts removal and preserves the original failure identity and throw site.
+    /// </summary>
+    /// <param name="cancelled">Whether graceful stop fails through cancellation rather than an ordinary exception.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -65,6 +77,10 @@ public sealed class PostgresFixtureCleanupTests
         Assert.Equal(new[] { "stop", "remove" }, order);
     }
 
+    /// <summary>
+    /// Checks removal failure preserves its original exception and throw site across repeated cleanup calls.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task RemovalFailure_PreservesExistingFailureIdentityAndThrowSite()
     {
@@ -86,6 +102,10 @@ public sealed class PostgresFixtureCleanupTests
         Assert.Equal(new[] { "stop", "remove" }, order);
     }
 
+    /// <summary>
+    /// Checks simultaneous stop and removal failures are both reported without replacing either original exception.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task BothFailures_ReportBothOriginalInstancesWithoutSuppressingEither()
     {
@@ -100,6 +120,10 @@ public sealed class PostgresFixtureCleanupTests
         Assert.Same(actual, await Assert.ThrowsAsync<AggregateException>(() => cleanup.Value));
     }
 
+    /// <summary>
+    /// Checks the graceful-stop deadline cancels stop while still attempting independent removal exactly once.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task GracefulStopDeadline_CancelsAndStillAttemptsIndependentRemoval()
     {

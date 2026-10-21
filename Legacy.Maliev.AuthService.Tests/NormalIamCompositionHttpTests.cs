@@ -7,8 +7,15 @@ using System.Security.Cryptography;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies the normal application composition registers the actual IAM client and enforces origin admission.
+/// </summary>
 public sealed class NormalIamCompositionHttpTests
 {
+    /// <summary>
+    /// Verifies the normal program registers the actual scoped IAM client for the configured origin key.
+    /// </summary>
+    /// <param name="originKey">The configuration key used to provide the admitted IAM origin.</param>
     [Theory]
     [InlineData("Services:IAMService:BaseUrl")]
     [InlineData("Services:IAM:BaseUrl")]
@@ -31,6 +38,10 @@ public sealed class NormalIamCompositionHttpTests
         else Assert.False(Assert.IsType<HttpClientHandler>(handler).AllowAutoRedirect);
     }
 
+    /// <summary>
+    /// Verifies an unapproved origin is rejected by the normal program before transport.
+    /// </summary>
+    /// <param name="origin">The request origin tested against the configured CORS or IAM origin policy.</param>
     [Theory]
     [InlineData("http://non-loopback.invalid")]
     [InlineData("https://normal-auth-iam.invalid/path")]

@@ -4,9 +4,18 @@ using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies fixture-created isolated identity contexts release their database connections.
+/// </summary>
+/// <param name="postgres">The shared fixture that owns the disposable PostgreSQL container.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class PostgresFixtureConnectionLifetimeTests(PostgresFixture postgres)
 {
+    /// <summary>
+    /// Verifies disposing an isolated context releases its PostgreSQL backend.
+    /// </summary>
+    /// <param name="kind">The identity or isolated-context kind selected by the test case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("customer")]
     [InlineData("employee")]

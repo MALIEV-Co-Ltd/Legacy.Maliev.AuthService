@@ -15,9 +15,17 @@ using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises refresh rotation, commit reconciliation, row fences, family revocation, and cancellation against real PostgreSQL state.
+/// </summary>
+/// <param name="postgres">The collection fixture that creates isolated identity and refresh-session stores.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class RefreshRotationRetryTests(PostgresFixture postgres)
 {
+    /// <summary>
+    /// Checks production HTTP refresh rotates once and reuse in a separate request revokes the token family.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task ProductionHttpRefresh_RotatesOnce_AndNewRequestReuseRevokesFamily()
     {
@@ -43,6 +51,10 @@ public sealed class RefreshRotationRetryTests(PostgresFixture postgres)
         Assert.All(await fixture.State.RefreshSessions.AsNoTracking().Where(x => x.FamilyId == persisted.FamilyId).ToListAsync(), row => Assert.NotNull(row.RevokedAt));
     }
 
+    /// <summary>
+    /// Checks family revocation waits for a concurrent rotation and also revokes the newly committed replacement.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task ConcurrentFamilyRevocation_WaitsForRotation_RevokesNewReplacementToo()
     {
@@ -81,6 +93,11 @@ public sealed class RefreshRotationRetryTests(PostgresFixture postgres)
         Assert.All(rows, row => Assert.NotNull(row.RevokedAt));
     }
 
+    /// <summary>
+    /// Checks commit-acknowledgement reconciliation refuses a session revoked or security-stamp-changed before retry.
+    /// </summary>
+    /// <param name="stampChange">Whether to rotate the identity stamp instead of logging out the session.</param>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -109,6 +126,10 @@ public sealed class RefreshRotationRetryTests(PostgresFixture postgres)
         Assert.All(await fixture.State.RefreshSessions.AsNoTracking().ToListAsync(), row => Assert.NotNull(row.RevokedAt));
     }
 
+    /// <summary>
+    /// Checks reconciliation waits for logout's row fence rather than accepting its earlier session snapshot.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task LostCommitAcknowledgement_ReceiptWaitsForLogout_MustNotUsePreFenceSnapshot()
     {
@@ -173,6 +194,10 @@ public sealed class RefreshRotationRetryTests(PostgresFixture postgres)
         }
     }
 
+    /// <summary>
+    /// Checks competing rotations create only one replacement and subsequent reuse revokes the entire family.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task ConcurrentRotation_OnlyOneReplacement_ReuseRevokesWholeFamily()
     {
@@ -197,6 +222,10 @@ public sealed class RefreshRotationRetryTests(PostgresFixture postgres)
         Assert.All(rows, row => Assert.Equal(fixture.Original.FamilyId, row.FamilyId));
     }
 
+    /// <summary>
+    /// Checks a known rollback after saving leaves the original session active without a replacement.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task KnownRollbackAfterSave_LeavesOriginalActiveAndNoReplacement()
     {
@@ -211,6 +240,10 @@ public sealed class RefreshRotationRetryTests(PostgresFixture postgres)
         await AssertUnchangedAsync(fixture);
     }
 
+    /// <summary>
+    /// Checks a retryable post-save failure uses a fresh context and commits one replacement.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task RetryableFailureAfterSave_RetriesFreshContextAndCommitsOneReplacement()
     {
@@ -227,6 +260,10 @@ public sealed class RefreshRotationRetryTests(PostgresFixture postgres)
         await AssertSuccessfulRotationAsync(fixture, replacement);
     }
 
+    /// <summary>
+    /// Checks lost commit acknowledgement finds the original replacement without mistaking internal retry for family reuse.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task LostCommitAcknowledgement_ReconcilesOriginalReplacementWithoutRevokingFamily()
     {
@@ -247,6 +284,10 @@ public sealed class RefreshRotationRetryTests(PostgresFixture postgres)
         Assert.All(await fixture.State.RefreshSessions.AsNoTracking().ToListAsync(), row => Assert.NotNull(row.RevokedAt));
     }
 
+    /// <summary>
+    /// Checks caller cancellation after saving rolls back rotation and propagates cancellation.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task CancellationAfterSavedRows_RollsBackAndPropagatesCallerCancellation()
     {
@@ -265,6 +306,10 @@ public sealed class RefreshRotationRetryTests(PostgresFixture postgres)
         await AssertUnchangedAsync(fixture);
     }
 
+    /// <summary>
+    /// Checks an already cancelled request cannot rotate or revoke its session family.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task PrecancelledCaller_DoesNotRotateOrRevoke()
     {

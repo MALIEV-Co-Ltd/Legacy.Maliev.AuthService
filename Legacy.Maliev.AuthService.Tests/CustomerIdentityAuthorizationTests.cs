@@ -21,6 +21,9 @@ using System.Security.Cryptography;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises customer identity administration through signed principals and the HTTP authorization pipeline.
+/// </summary>
 public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerIdentityAuthorizationTests.AuthApiFactory>
 {
     private const string CustomerIdentitiesCreate = "legacy-auth.customer-identities.create";
@@ -30,8 +33,15 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
     private const string CustomerIdentitiesDelete = "legacy-auth.customer-identities.delete";
     private readonly AuthApiFactory factory;
 
+    /// <summary>
+    /// Uses the shared signed-token application factory for customer authorization cases.
+    /// </summary>
+    /// <param name="factory">The shared application factory that issues signed principals for authorization cases.</param>
     public CustomerIdentityAuthorizationTests(AuthApiFactory factory) => this.factory = factory;
 
+    /// <summary>
+    /// Checks that customer identity creation has its own permission while other operations retain the employee policy.
+    /// </summary>
     [Fact]
     public void Controller_PostUsesCreatePermission_WhileOtherOperationsRemainEmployeeOnly()
     {
@@ -57,6 +67,9 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         }
     }
 
+    /// <summary>
+    /// Checks the exact read, update, and delete permissions alongside the employee policy.
+    /// </summary>
     [Fact]
     public void Controller_AdminOperationsRequireGranularPermissionsAndRetainEmployeePolicy()
     {
@@ -82,6 +95,10 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         }
     }
 
+    /// <summary>
+    /// Checks that a configured intranet service with customer-create permission receives a created identity response.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Post_ConfiguredIntranetServiceToken_ReturnsCreated()
     {
@@ -93,6 +110,10 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         Assert.Equal(42, (await response.Content.ReadFromJsonAsync<CustomerIdentityResponse>())?.DatabaseID);
     }
 
+    /// <summary>
+    /// Checks that reconciliation requires both service identity and its dedicated grant and returns a non-disclosing receipt.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ReconcileCreate_RequiresServiceIdentityAndDedicatedPermission()
     {
@@ -128,6 +149,10 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         return request;
     }
 
+    /// <summary>
+    /// Checks that an interactive employee can create a customer identity.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Post_EmployeeInteractiveToken_ReturnsCreated()
     {
@@ -138,6 +163,11 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
+    /// <summary>
+    /// Checks that a customer or unprivileged service cannot create a customer identity.
+    /// </summary>
+    /// <param name="tokenKind">The customer or service principal that lacks the create grant.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("customer")]
     [InlineData("service-without-permission")]
@@ -153,6 +183,11 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    /// <summary>
+    /// Checks that a service's create grant does not authorize customer read, update, or delete.
+    /// </summary>
+    /// <param name="method">The HTTP administration verb under test.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("GET")]
     [InlineData("PUT")]
@@ -181,6 +216,12 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    /// <summary>
+    /// Checks that matching operation grants do not let a service bypass the employee policy.
+    /// </summary>
+    /// <param name="method">The HTTP administration verb under test.</param>
+    /// <param name="permission">The exact operation grant assigned to the test principal.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("GET", CustomerIdentitiesRead)]
     [InlineData("PUT", CustomerIdentitiesUpdate)]
@@ -211,6 +252,11 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    /// <summary>
+    /// Checks that an employee passes both authorization layers and reaches the missing-record stub.
+    /// </summary>
+    /// <param name="method">The HTTP administration verb under test.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("GET")]
     [InlineData("PUT")]
@@ -239,6 +285,10 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
+    /// <summary>
+    /// Checks that factory-issued tokens use the call-time clock after earlier tokens expire.
+    /// </summary>
+    /// <param name="kind">The identity or workload token variant under test.</param>
     [Theory]
     [InlineData("employee")]
     [InlineData("customer")]
@@ -277,12 +327,18 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
         null,
         null);
 
+    /// <summary>
+    /// Hosts the testing application with recording identity services and a disposable RSA token issuer.
+    /// </summary>
     public class AuthApiFactory : WebApplicationFactory<Program>
     {
         private readonly string privateKeyPem;
         private readonly RsaAccessTokenIssuer tokenIssuer;
         private readonly TimeProvider clock;
 
+        /// <summary>
+        /// Creates a signed-token factory using the system clock.
+        /// </summary>
         public AuthApiFactory() : this(TimeProvider.System)
         {
         }
@@ -294,6 +350,10 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
             tokenIssuer = CreateIssuer(privateKeyPem);
         }
 
+        /// <summary>
+        /// Configures the testing host, signing options, and identity-administration stubs.
+        /// </summary>
+        /// <param name="builder">The test web-host builder receiving configuration and replacement services.</param>
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             builder.UseEnvironment("Testing");
@@ -321,6 +381,11 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
             });
         }
 
+        /// <summary>
+        /// Creates an HTTPS test client carrying the supplied bearer token.
+        /// </summary>
+        /// <param name="token">The bearer token attached to the returned client.</param>
+        /// <returns>An authorized test client that the caller must dispose.</returns>
         public HttpClient CreateAuthorizedClient(string token)
         {
             var client = CreateClient(new WebApplicationFactoryClientOptions
@@ -332,6 +397,10 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
             return client;
         }
 
+        /// <summary>
+        /// Issues a fresh signed employee token with a session binding.
+        /// </summary>
+        /// <returns>The signed employee access token.</returns>
         public string IssueEmployee()
         {
             return tokenIssuer.Issue(
@@ -339,6 +408,10 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
                 clock.GetUtcNow(), Guid.Parse("3700f80a-311f-4844-b1c8-96cf737ef9cb")).Value;
         }
 
+        /// <summary>
+        /// Issues a fresh signed customer token without an employee session binding.
+        /// </summary>
+        /// <returns>The signed customer access token.</returns>
         public string IssueCustomer()
         {
             return tokenIssuer.Issue(
@@ -346,11 +419,20 @@ public sealed class CustomerIdentityAuthorizationTests : IClassFixture<CustomerI
                 clock.GetUtcNow(), null).Value;
         }
 
+        /// <summary>
+        /// Issues a fresh signed intranet service token carrying the specified grants.
+        /// </summary>
+        /// <param name="permissions">The exact grants to include in the signed service token.</param>
+        /// <returns>The signed intranet service access token.</returns>
         public string IssueService(IReadOnlyList<string> permissions)
         {
             return tokenIssuer.IssueService("legacy-intranet", permissions, clock.GetUtcNow()).Value;
         }
 
+        /// <summary>
+        /// Releases the factory-owned token issuer when managed resources are disposed.
+        /// </summary>
+        /// <param name="disposing">Whether managed resources, including the owned issuer, should be released.</param>
         protected override void Dispose(bool disposing)
         {
             if (disposing)

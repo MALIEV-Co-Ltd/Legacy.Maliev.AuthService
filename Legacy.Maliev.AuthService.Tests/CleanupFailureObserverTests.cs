@@ -2,8 +2,14 @@ using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies bounded cleanup diagnostics, independent sinks, and private exclusive receipt creation.
+/// </summary>
 public sealed class CleanupFailureObserverTests
 {
+    /// <summary>
+    /// Verifies diagnostic formatting excludes exception messages, data, and paths while retaining bounded structure.
+    /// </summary>
     [Fact]
     public void Format_ExcludesMessagesDataAndPaths_ReportsOnlyBoundedStructure()
     {
@@ -25,6 +31,9 @@ public sealed class CleanupFailureObserverTests
         Assert.InRange(report.Length, 1, 2048);
     }
 
+    /// <summary>
+    /// Verifies nested failures remain bounded and do not disclose exception messages.
+    /// </summary>
     [Fact]
     public void Format_InnerFailureChain_IsBoundedAndMessageFree()
     {
@@ -37,6 +46,9 @@ public sealed class CleanupFailureObserverTests
         Assert.InRange(report.Length, 1, 2048);
     }
 
+    /// <summary>
+    /// Verifies an exception without a throw site does not acquire a fabricated stack.
+    /// </summary>
     [Fact]
     public void Format_UnthrownException_HasNoInventedStack()
     {
@@ -45,6 +57,11 @@ public sealed class CleanupFailureObserverTests
         Assert.DoesNotContain("synthetic-secret", report);
     }
 
+    /// <summary>
+    /// Verifies observer failure preserves the original exception instance and throw site through a bare rethrow.
+    /// </summary>
+    /// <param name="stateFails">Whether failure is injected into cleanup-state observation rather than the diagnostic sink.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -66,6 +83,9 @@ public sealed class CleanupFailureObserverTests
         Assert.Contains(nameof(ThrowOriginalAsync), caught.StackTrace);
     }
 
+    /// <summary>
+    /// Verifies observation writes one bounded report without changing the original exception.
+    /// </summary>
     [Fact]
     public void Observe_WritesOneBoundedReportWithoutMutatingException()
     {
@@ -85,6 +105,9 @@ public sealed class CleanupFailureObserverTests
         Assert.DoesNotContain(canary, captured);
     }
 
+    /// <summary>
+    /// Verifies a failed console sink does not prevent the independent receipt attempt.
+    /// </summary>
     [Fact]
     public void Observe_ConsoleFailure_StillAttemptsReceiptWithSameBoundedReport()
     {
@@ -96,6 +119,10 @@ public sealed class CleanupFailureObserverTests
         Assert.InRange(persisted!.Length, 1, 2048);
     }
 
+    /// <summary>
+    /// Verifies receipt failure preserves the original failure and the independent console report.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Observe_ReceiptFailure_PreservesOriginalFailureAndConsoleReport()
     {
@@ -117,6 +144,9 @@ public sealed class CleanupFailureObserverTests
         Assert.DoesNotContain("synthetic-secret", console);
     }
 
+    /// <summary>
+    /// Verifies cleanup receipts are bounded, private, correlated, and created exclusively.
+    /// </summary>
     [Fact]
     public void Receipt_IsBoundedPrivateCorrelatedAndExclusive()
     {
@@ -148,6 +178,11 @@ public sealed class CleanupFailureObserverTests
         });
     }
 
+    /// <summary>
+    /// Verifies invalid hosted-run identity cannot create receipt artifacts.
+    /// </summary>
+    /// <param name="key">The hosted identity environment-variable name being invalidated.</param>
+    /// <param name="value">The invalid hosted identity value supplied to the receipt writer.</param>
     [Theory]
     [InlineData("GITHUB_REPOSITORY", "foreign")]
     [InlineData("RUNNER_ENVIRONMENT", "self-hosted")]
@@ -165,6 +200,11 @@ public sealed class CleanupFailureObserverTests
         });
     }
 
+    /// <summary>
+    /// Verifies an invalid container identity or report cannot create receipt artifacts.
+    /// </summary>
+    /// <param name="identifier">The candidate container identifier supplied to receipt validation.</param>
+    /// <param name="report">The candidate bounded diagnostic report supplied to receipt validation.</param>
     [Theory]
     [InlineData("../private", "postgres_cleanup_failure type=TaskCanceledException")]
     [InlineData("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "private")]
@@ -180,6 +220,9 @@ public sealed class CleanupFailureObserverTests
         });
     }
 
+    /// <summary>
+    /// Verifies a linked artifact directory is rejected without writing through it.
+    /// </summary>
     [Fact]
     public void Receipt_LinkedArtifactDirectory_IsRejectedWithoutWritingTarget()
     {

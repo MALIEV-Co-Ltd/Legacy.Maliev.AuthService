@@ -16,9 +16,18 @@ using System.Security.Claims;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises customer registration and credential-recovery state transitions against isolated PostgreSQL stores.
+/// </summary>
+/// <param name="postgres">The collection-owned fixture that creates isolated PostgreSQL stores for each case.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
 {
+    /// <summary>
+    /// Checks that recovery binds raw CEG1 email generations without rewriting new or historical lookup keys.
+    /// </summary>
+    /// <param name="historicalKey">Whether to retain the historical uppercase key instead of the newly canonicalized key.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -47,6 +56,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Equal(key, (await fixture.Customers.Users.AsNoTracking().SingleAsync()).NormalizedEmail);
     }
 
+    /// <summary>
+    /// Checks that canonical email collisions reject registration and pending email changes without consuming the challenge.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task CanonicalHistoricalCollision_RegistrationAndPendingEmailChangeDenyWithoutConsuming()
     {
@@ -72,6 +85,9 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Equal(2, await fixture.Customers.Users.CountAsync());
     }
 
+    /// <summary>
+    /// Checks JSON POST, principal, rate-limit, and permission contracts without placing credentials in routes.
+    /// </summary>
     [Fact]
     public void Controller_UsesAuthenticatedJsonPostsAndNeverPlacesPasswordOrTokenInRoutes()
     {
@@ -118,6 +134,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             "password/create",
             controller.GetMethod(nameof(CustomerSelfServiceController.CreatePassword))?.GetCustomAttribute<HttpPostAttribute>()?.Template);
     }
+    /// <summary>
+    /// Checks compatible password hashing and a non-sensitive registration result for a new customer.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Register_NewCustomer_PersistsCompatiblePasswordHashWithoutReturningSecurityMaterial()
     {
@@ -135,6 +155,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.DoesNotContain("Password", typeof(CustomerSelfServiceResult).GetProperties().Select(property => property.Name));
     }
 
+    /// <summary>
+    /// Checks that verified registration resolution selects the existing identity linked to the same customer.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ResolveRegistration_DeterministicallySelectsExistingIdentityWithVerifiedCredential()
     {
@@ -157,6 +181,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             .SingleAsync(value => value.Id == "email-linked")).DatabaseID);
     }
 
+    /// <summary>
+    /// Checks that an incorrect password cannot resolve or disclose an already linked identity.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ResolveRegistration_SameCustomerAndWrongPassword_ReturnsNonDisclosingFailure()
     {
@@ -173,6 +201,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Null(result.Email);
     }
 
+    /// <summary>
+    /// Checks that a missing password hash cannot resolve or disclose an already linked identity.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ResolveRegistration_SameCustomerAndMissingPasswordHash_ReturnsNonDisclosingFailure()
     {
@@ -189,6 +221,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Null(result.Email);
     }
 
+    /// <summary>
+    /// Checks that an unverified credential cannot relink an identity owned by another customer.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ResolveRegistration_DifferentCustomerAndUnverifiedPassword_FailsWithoutRelinking()
     {
@@ -209,6 +245,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             .SingleAsync(value => value.Id == "email-linked")).DatabaseID);
     }
 
+    /// <summary>
+    /// Checks that even a verified credential cannot mutate an identity linked to another customer.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ResolveRegistration_DifferentCustomerAndVerifiedPassword_PreservesEveryIdentityProperty()
     {
@@ -232,6 +272,11 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Empty(await fixture.State.IdentityActionTokens.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks that an unlinked identity is linked once while retaining its password hash and stable retry state.
+    /// </summary>
+    /// <param name="databaseId">The null or zero linkage treated as an unlinked identity.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData(null)]
     [InlineData(0)]
@@ -272,6 +317,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Empty(await fixture.State.IdentityActionTokens.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks that registration resolution without a candidate returns no identity details.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ResolveRegistration_NoCandidate_ReturnsNonDisclosingFailure()
     {
@@ -287,6 +336,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Null(result.Email);
     }
 
+    /// <summary>
+    /// Checks that resolution can recognize a committed registration after its create response is lost.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ResolveRegistration_LostCreateResponse_ReportsCommittedTemporaryPassword()
     {
@@ -306,6 +359,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Equal(42, resolved.DatabaseId);
     }
 
+    /// <summary>
+    /// Checks that concurrent registrations for one email leave exactly one identity.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Register_ConcurrentSameEmail_CreatesExactlyOneIdentity()
     {
@@ -332,6 +389,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Single(await fixture.Customers.Users.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks that confirmation issuance returns an opaque token but persists only its hash and purpose.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task RequestConfirmation_KnownIdentity_ReturnsOpaqueTokenButStoresOnlyHash()
     {
@@ -346,6 +407,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Equal("email-confirmation", stored.Purpose);
     }
 
+    /// <summary>
+    /// Checks that a reset challenge changes the stored password once and rejects replay.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task CompletePasswordReset_ValidToken_ChangesPasswordAndRejectsReplay()
     {
@@ -360,6 +425,11 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Equal(PasswordVerificationResult.Success, fixture.Hasher.VerifyHashedPassword(stored, stored.PasswordHash!, "new-password"));
     }
 
+    /// <summary>
+    /// Checks that changed security bindings reject reset completion without consuming the challenge.
+    /// </summary>
+    /// <param name="change">The security binding component altered after the reset challenge is issued.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("stamp")]
     [InlineData("email")]
@@ -400,6 +470,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             fixture.Hasher.VerifyHashedPassword(stored, stored.PasswordHash!, "old-password"));
     }
 
+    /// <summary>
+    /// Checks that a successful reset rotates the security stamp, clears bootstrap state, and revokes refresh sessions.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task PasswordReset_Success_RevokesRefreshSessionsAndRotatesStamp()
     {
@@ -420,6 +494,11 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.NotNull((await fixture.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
+    /// <summary>
+    /// Checks that wrong-purpose, wrong-email, and expired reset challenges leave the password and consumption state unchanged.
+    /// </summary>
+    /// <param name="invalid">The purpose, email, or expiry mismatch applied to the reset challenge.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("purpose")]
     [InlineData("email")]
@@ -449,6 +528,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             fixture.Hasher.VerifyHashedPassword(row, row.PasswordHash!, "old-password"));
     }
 
+    /// <summary>
+    /// Checks that a persistence failure consumes the old reset link while a fresh challenge can complete.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task PasswordReset_PersistenceFailure_ConsumesOldLinkAndAllowsFreshRequest()
     {
@@ -486,6 +569,11 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             throw new DbUpdateException("Injected customer persistence failure.");
     }
 
+    /// <summary>
+    /// Checks that migrated identities with missing stamps receive a stamp and can complete password reset.
+    /// </summary>
+    /// <param name="stamp">The missing or blank security stamp retained by the migrated identity.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData(null)]
     [InlineData("")]
@@ -507,6 +595,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             new("customer@example.com", challenge.Token!, "new-password"), default));
     }
 
+    /// <summary>
+    /// Checks that an unknown reset account receives acceptance without a token or stored action.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task PasswordReset_MissingIdentity_ReturnsAcceptedWithoutTokenOrState()
     {
@@ -517,6 +609,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Empty(await fixture.State.IdentityActionTokens.ToListAsync());
     }
 
+    /// <summary>
+    /// Checks controller success and replay responses for password reset and rejects cross-purpose action reuse.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Controller_PasswordReset_MapsSuccessAndReplayToExistingResponseContracts()
     {
@@ -534,6 +630,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.IsType<BadRequestObjectResult>((await controller.RecoverEmailConfirmation(new("customer@example.com", challenge.Token!), default)).Result);
     }
 
+    /// <summary>
+    /// Checks that credential changes without a subject cannot select or alter a customer identity.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Controller_CredentialChanges_MissingSubjectCannotSelectAnIdentity()
     {
@@ -550,6 +650,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             fixture.Hasher.VerifyHashedPassword(row, row.PasswordHash!, "old-password"));
     }
 
+    /// <summary>
+    /// Checks subject-bound credential changes and their successful and invalid-response mappings.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Controller_CredentialChanges_UsesSubjectAndMapsInvalidAndSuccessfulChanges()
     {
@@ -567,6 +671,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             fixture.Hasher.VerifyHashedPassword(row, row.PasswordHash!, "new-password"));
     }
 
+    /// <summary>
+    /// Checks password creation responses for a new credential, an existing credential, and a missing identity.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Controller_CreatePassword_PreservesCreatedConflictAndMissingIdentityResponses()
     {
@@ -597,6 +705,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         },
     };
 
+    /// <summary>
+    /// Checks that initial password completion replaces the bootstrap credential, clears bootstrap state, and rejects replay.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task InitialPassword_ValidChallenge_ReplacesTemporaryPasswordAndRejectsReplay()
     {
@@ -641,6 +753,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.False(stored.PasswordSetupRequired);
     }
 
+    /// <summary>
+    /// Checks that initial password challenge issuance requires the explicit bootstrap flag.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task InitialPasswordSetupChallenge_RequiresExplicitBootstrapState()
     {
@@ -659,6 +775,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.NotNull(issued.Token);
     }
 
+    /// <summary>
+    /// Checks that a login recovery grant yields one fresh confirmation challenge and cannot be replayed.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task EmailConfirmationRecovery_ConsumesLoginGrantAndIssuesSingleFreshConfirmation()
     {
@@ -691,6 +811,13 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
                 && token.TokenHash != first.Token);
     }
 
+    /// <summary>
+    /// Checks current lockout eligibility before consuming recovery grants while preserving identity and session state.
+    /// </summary>
+    /// <param name="lockoutEnabled">Whether lockout eligibility is enabled on the current identity.</param>
+    /// <param name="lockoutMinutes">The current lockout end relative to the controlled clock, in minutes.</param>
+    /// <param name="accepted">Whether recovery should consume the grant and issue a confirmation challenge.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData(true, 5, false)]
     [InlineData(true, 0, false)]
@@ -741,6 +868,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         }
     }
 
+    /// <summary>
+    /// Checks that wrong-email or expired recovery grants issue no confirmation action.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task EmailConfirmationRecovery_ExpiredOrWrongEmailFailsWithoutIssuingConfirmation()
     {
@@ -769,6 +900,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             token => token.Purpose == "email-confirmation");
     }
 
+    /// <summary>
+    /// Checks that security-stamp rotation invalidates an outstanding initial-password challenge.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task InitialPassword_SecurityStampRotationInvalidatesOutstandingChallenge()
     {
@@ -802,6 +937,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
                 CustomerManagedCredential));
     }
 
+    /// <summary>
+    /// Checks that a newer reset challenge supersedes the earlier challenge.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task RequestPasswordReset_SecondChallengeSupersedesFirstChallenge()
     {
@@ -821,6 +960,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.True(currentResult);
     }
 
+    /// <summary>
+    /// Checks that expired confirmation challenges cannot confirm the customer's email.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ConfirmEmail_ExpiredToken_IsRejectedWithoutChangingIdentity()
     {
@@ -834,6 +977,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.False(confirmed); Assert.False((await fixture.Customers.Users.SingleAsync()).EmailConfirmed);
     }
 
+    /// <summary>
+    /// Checks the current password before changing it, rotating the stamp, and revoking sessions.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ChangePassword_VerifiesCurrentPasswordRotatesSecurityStampAndRevokesRefreshSessions()
     {
@@ -861,6 +1008,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.NotNull((await fixture.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
+    /// <summary>
+    /// Checks password creation for a passwordless customer, including stamp rotation and session revocation.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task CreatePassword_PasswordlessCustomerCreatesCredentialRotatesSecurityStampAndRevokesRefreshSessions()
     {
@@ -883,6 +1034,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.NotNull((await fixture.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
+    /// <summary>
+    /// Checks that an existing password produces conflict without changing the hash or security stamp.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task CreatePassword_ExistingCredentialReturnsConflictStateWithoutChangingSecurityState()
     {
@@ -901,6 +1056,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.Equal(before.PasswordHash, stored.PasswordHash);
     }
 
+    /// <summary>
+    /// Checks password-gated email changes, deferred identity mutation, confirmation, and replay rejection.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ChangeEmail_VerifiesPasswordLeavesIdentityPendingUntilConfirmationAndThenRejectsReplay()
     {
@@ -959,6 +1118,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
         Assert.NotNull((await fixture.State.RefreshSessions.AsNoTracking().SingleAsync()).RevokedAt);
     }
 
+    /// <summary>
+    /// Checks that a wrong reset email leaves the challenge usable for its correct identity.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task PasswordReset_EmailMismatchDoesNotConsumeChallenge()
     {
@@ -973,6 +1136,10 @@ public sealed class CustomerSelfServiceTests(PostgresFixture postgres)
             new CompletePasswordResetRequest("customer@example.com", challenge.Token!, "new-password"), default));
     }
 
+    /// <summary>
+    /// Checks that an expired email-change challenge leaves the original email available for a fresh attempt.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ChangeEmail_ExpiredChallengeLeavesIdentityAndProfileReadyForRetry()
     {
