@@ -33,6 +33,49 @@ public sealed class DockerBuildContextParityTests(ITestOutputHelper output)
     }
 
     /// <summary>
+    /// Admits only unambiguous default-builder Docker driver headers from supported buildx inspect output.
+    /// </summary>
+    /// <param name="inspection">The bounded synthetic inspect output, including header and node-section controls.</param>
+    /// <param name="allowed">Whether the top-level builder identity and driver are admitted.</param>
+    [Theory]
+    [InlineData("Name:    default\nDriver:  docker\n\nNodes:\nName: another-node\nEndpoint: unix:///var/run/docker.sock\n", true)]
+    [InlineData("Name:\tdefault\r\nDriver:\tdocker\r\nLast Activity: 2026-10-22 00:00:00 +0000 UTC\r\n\r\nNodes:\r\nName: default\r\n", true)]
+    [InlineData(null, false)]
+    [InlineData("", false)]
+    [InlineData("Name: other\nDriver: docker\nNodes:\n", false)]
+    [InlineData("Name: default\nDriver: docker-container\nNodes:\n", false)]
+    [InlineData("Name: default\nDriver: remote\nNodes:\n", false)]
+    [InlineData("Name: default\nDriver: Docker\nNodes:\n", false)]
+    [InlineData("Name: default *\nDriver: docker\nNodes:\n", false)]
+    [InlineData("Name: default\nName: default\nDriver: docker\nNodes:\n", false)]
+    [InlineData("Name: default\nDriver: docker\nDriver: docker\nNodes:\n", false)]
+    [InlineData("Driver: docker\nNodes:\nName: default\n", false)]
+    [InlineData("Name: default\nNodes:\nDriver: docker\n", false)]
+    [InlineData("Nodes:\nName: default\nDriver: docker\n", false)]
+    [InlineData("Name: default\nDriver: docker\n", false)]
+    [InlineData("Name: default\nDriver: docker\nError: synthetic status failure\n", false)]
+    [InlineData("Name: default\nDriver: docker\nError: synthetic status failure\nNodes:\n", false)]
+    [InlineData(" Name: default\n Driver: docker\nNodes:\n", false)]
+    [InlineData("Name: default\nDriver : docker\nNodes:\n", false)]
+    [InlineData("Name: default\nDriver: docker\nNodes: not-a-section\n", false)]
+    [InlineData("Name: default\nDriver: docker\u001b\nNodes:\n", false)]
+    [InlineData("Name: default\nDriver: docker\nUnexpected: value\nNodes:\n", false)]
+    public void BuildxInspection_RequiresUnambiguousTopLevelDefaultDocker(string? inspection, bool allowed)
+    {
+        Assert.Equal(allowed, IsDefaultDockerBuilderInspection(inspection));
+    }
+
+    /// <summary>
+    /// Refuses an oversized inspect result even when its prefix contains otherwise valid builder headers.
+    /// </summary>
+    [Fact]
+    public void BuildxInspection_RefusesOutputBeyondExistingCommandBudget()
+    {
+        var inspection = "Name: default\nDriver: docker\nNodes:\n" + new string('x', 16384);
+        Assert.False(IsDefaultDockerBuilderInspection(inspection));
+    }
+
+    /// <summary>
     /// Checks every retained exclusion category with real Docker COPY and compares admitted build inputs byte for byte.
     /// </summary>
     /// <returns>A task that completes after Docker context assertions and owned scratch cleanup.</returns>
@@ -54,8 +97,9 @@ public sealed class DockerBuildContextParityTests(ITestOutputHelper output)
             output.WriteLine("Buildx version: " + buildx);
             output.WriteLine("Docker executable SHA256: " + Convert.ToHexString(digest));
         }
-        var driver = await DockerAsync("--host", endpoint, "buildx", "inspect", "default", "--format", "{{.Driver}}");
-        Assert.Equal("docker", driver.Trim());
+        var inspection = await DockerAsync("--host", endpoint, "buildx", "inspect", "default");
+        Assert.True(IsDefaultDockerBuilderInspection(inspection),
+            "Only the unambiguous default Docker builder is admitted; raw inspection withheld.");
         var root = FindRepositoryRoot();
         var owned = Path.Combine(Path.GetTempPath(), "auth-docker-context-" + Guid.NewGuid().ToString("N"));
         var input = Path.Combine(owned, "input");
@@ -188,6 +232,37 @@ public sealed class DockerBuildContextParityTests(ITestOutputHelper output)
         var endpoint = document.RootElement[0].GetProperty("Endpoints").GetProperty("docker").GetProperty("Host").GetString();
         Assert.True(IsLocalEndpoint(endpoint), "Non-local Docker context refused before build.");
         return endpoint!;
+    }
+
+    private static bool IsDefaultDockerBuilderInspection(string? inspection)
+    {
+        if (string.IsNullOrEmpty(inspection) || inspection.Length > 16384
+            || inspection.Any(character => char.IsControl(character) && character is not ('\r' or '\n' or '\t')))
+            return false;
+
+        string? name = null;
+        string? driver = null;
+        foreach (var rawLine in inspection.Split('\n'))
+        {
+            var line = rawLine.EndsWith('\r') ? rawLine[..^1] : rawLine;
+            if (line == "Nodes:") return name == "default" && driver == "docker";
+            if (line.StartsWith("Name:", StringComparison.Ordinal))
+            {
+                if (name is not null) return false;
+                name = line["Name:".Length..].Trim(' ', '\t');
+            }
+            else if (line.StartsWith("Driver:", StringComparison.Ordinal))
+            {
+                if (driver is not null) return false;
+                driver = line["Driver:".Length..].Trim(' ', '\t');
+            }
+            else if (line.StartsWith("Error:", StringComparison.Ordinal)
+                || line.Length != 0 && !line.StartsWith("Last Activity:", StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+        return false;
     }
 
     private static bool IsLocalEndpoint(string? endpoint)
