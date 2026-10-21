@@ -76,12 +76,24 @@ public sealed record RefreshRotationResult(
 /// <summary>Issues and consumes opaque customer actions after credentials have been validated.</summary>
 public interface ICustomerLoginActionLifecycle
 {
+    /// <summary>Issues a security-stamp-bound challenge for first-login password replacement.</summary>
+    /// <param name="identityId">The credential-validated customer identity receiving the challenge.</param>
+    /// <param name="email">The customer's email address bound to the challenge.</param>
+    /// <param name="securityStamp">The current identity security stamp used to invalidate stale challenges.</param>
+    /// <param name="cancellationToken">Token to cancel the asynchronous operation.</param>
+    /// <returns>The opaque challenge token, or null when no challenge is issued.</returns>
     Task<string?> IssueInitialPasswordChallengeAsync(
         string identityId,
         string email,
         string securityStamp,
         CancellationToken cancellationToken);
 
+    /// <summary>Issues a security-stamp-bound grant for recovering customer email confirmation.</summary>
+    /// <param name="identityId">The credential-validated customer identity receiving the grant.</param>
+    /// <param name="email">The customer's email address bound to the grant.</param>
+    /// <param name="securityStamp">The current identity security stamp used to invalidate stale grants.</param>
+    /// <param name="cancellationToken">Token to cancel the asynchronous operation.</param>
+    /// <returns>The opaque recovery grant, or null when no grant is issued.</returns>
     Task<string?> IssueEmailConfirmationRecoveryAsync(
         string identityId,
         string email,

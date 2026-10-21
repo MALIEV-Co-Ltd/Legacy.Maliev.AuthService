@@ -26,11 +26,17 @@ public sealed record TokenResponse(
 /// <summary>Result returned without revealing which credential component failed.</summary>
 public sealed record AuthenticationResult(bool Succeeded, TokenResponse? Tokens)
 {
-    /// <summary>Creates a generic authentication failure.</summary>
+    /// <summary>The BFF-only action required before authentication can succeed, if any.</summary>
     public AuthenticationRequiredAction? RequiredAction { get; init; }
 
+    /// <summary>Creates a generic failure without tokens or an account-specific reason.</summary>
+    /// <returns>An unsuccessful result without a required action.</returns>
     public static AuthenticationResult Failed() => new(false, null);
 
+    /// <summary>Creates an unsuccessful result carrying an opaque action for the trusted BFF.</summary>
+    /// <param name="action">The action required before a session can be issued.</param>
+    /// <param name="token">The opaque, single-use token for that action.</param>
+    /// <returns>A result with the required action and no session tokens.</returns>
     public static AuthenticationResult ActionRequired(string action, string token) =>
         new(false, null) { RequiredAction = new(action, token) };
 

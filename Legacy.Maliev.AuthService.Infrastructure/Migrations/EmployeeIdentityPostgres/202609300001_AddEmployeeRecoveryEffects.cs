@@ -8,6 +8,7 @@ namespace Legacy.Maliev.AuthService.Infrastructure.Migrations.EmployeeIdentityPo
 [Migration("202609300001_AddEmployeeRecoveryEffects")]
 public sealed class AddEmployeeRecoveryEffects : Migration
 {
+    /// <inheritdoc />
     protected override void Up(MigrationBuilder migrationBuilder)
     {
         migrationBuilder.CreateTable("EmployeeRecoveryEffects", columns: table => new
@@ -35,5 +36,6 @@ public sealed class AddEmployeeRecoveryEffects : Migration
         migrationBuilder.CreateIndex("IX_EmployeeRecoveryEffects_FinalizedAcknowledgedAt_AppliedAt", "EmployeeRecoveryEffects", new[] { "FinalizedAcknowledgedAt", "AppliedAt" });
     }
 
+    /// <inheritdoc />
     protected override void Down(MigrationBuilder migrationBuilder) => migrationBuilder.DropTable("EmployeeRecoveryEffects");
 }

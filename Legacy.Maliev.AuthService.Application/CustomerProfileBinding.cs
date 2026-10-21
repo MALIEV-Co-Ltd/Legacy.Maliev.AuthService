@@ -4,7 +4,15 @@ namespace Legacy.Maliev.AuthService.Application;
 public sealed record CustomerProfileBinding(int Id, string Email, string? Telephone, string? Fax, string? Mobile);
 
 /// <summary>Result of the separately authorized fixed Customer read.</summary>
-public enum CustomerProfileBindingStatus { Verified, Missing, Unavailable }
+public enum CustomerProfileBindingStatus
+{
+    /// <summary>The selected customer profile was verified by its authority.</summary>
+    Verified,
+    /// <summary>The selected customer profile does not exist.</summary>
+    Missing,
+    /// <summary>The customer profile authority could not be verified.</summary>
+    Unavailable
+}
 
 /// <summary>Verified profile or an unavailable authority without private details.</summary>
 public sealed record CustomerProfileBindingResult(CustomerProfileBindingStatus Status, CustomerProfileBinding? Profile = null);
