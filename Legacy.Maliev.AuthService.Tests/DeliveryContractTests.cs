@@ -82,7 +82,7 @@ public sealed class DeliveryContractTests
             Path.Combine(FindRepositoryRoot(), ".github", "workflows", "publish-image.yml"));
 
         Assert.Contains("vars.LEGACY_DEPLOY_ENABLED == 'true'", workflow, StringComparison.Ordinal);
-        Assert.Contains("Legacy.Maliev.Workflows/.github/workflows/publish-image.yml@6017816", workflow, StringComparison.Ordinal);
+        Assert.Contains("Legacy.Maliev.Workflows/.github/workflows/publish-image.yml@d583f55473f47f72d33b51060fa5d14e0974daf5", workflow, StringComparison.Ordinal);
         Assert.Contains("legacy-production", workflow, StringComparison.Ordinal);
         Assert.DoesNotContain("kubectl apply", workflow, StringComparison.OrdinalIgnoreCase);
     }

@@ -44,6 +44,7 @@ public sealed class PublishWorkflowPermissionContractTests
         Assert.Contains("permissions:", workflowHeader, StringComparison.Ordinal);
         Assert.Contains("  contents: read", workflowHeader, StringComparison.Ordinal);
         Assert.DoesNotContain("id-token: write", workflowHeader, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("actions: read", workflowHeader, StringComparison.OrdinalIgnoreCase);
 
         var publishJobs = Regex.Matches(
             source,
@@ -54,6 +55,7 @@ public sealed class PublishWorkflowPermissionContractTests
             var job = publishJob.Groups["body"].Value;
             Assert.Contains("permissions:", job, StringComparison.Ordinal);
             Assert.Contains("contents: read", job, StringComparison.Ordinal);
+            Assert.Contains("actions: read", job, StringComparison.Ordinal);
             Assert.Contains("id-token: write", job, StringComparison.Ordinal);
         }
 
@@ -63,6 +65,7 @@ public sealed class PublishWorkflowPermissionContractTests
         if (deploymentGate.Success)
         {
             Assert.DoesNotContain("id-token: write", deploymentGate.Groups["body"].Value, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("actions: read", deploymentGate.Groups["body"].Value, StringComparison.OrdinalIgnoreCase);
         }
     }
 
