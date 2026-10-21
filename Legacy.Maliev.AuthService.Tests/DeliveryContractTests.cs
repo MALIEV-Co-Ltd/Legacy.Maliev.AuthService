@@ -120,7 +120,7 @@ public sealed class DeliveryContractTests
         Assert.Contains("dotnet/sdk:10.0-alpine", dockerfile, StringComparison.Ordinal);
         Assert.Contains("dotnet/aspnet:10.0-alpine", dockerfile, StringComparison.Ordinal);
         Assert.Contains("USER $APP_UID", dockerfile, StringComparison.Ordinal);
-        Assert.Contains("checkout 4517cf16f5f1159318e184969732d46eae4a8308", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("checkout c9f21151639f1911c780f2084dd2d757b4fb3e73", dockerfile, StringComparison.Ordinal);
         Assert.Contains("checkout 78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7", dockerfile, StringComparison.Ordinal);
 
     }
@@ -143,7 +143,7 @@ public sealed class DeliveryContractTests
 
         Assert.Contains("Legacy.Maliev.ServiceDefaults", apiProject, StringComparison.Ordinal);
         Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults", workflow, StringComparison.Ordinal);
-        Assert.Contains("ref: 4517cf16f5f1159318e184969732d46eae4a8308", workflow, StringComparison.Ordinal);
+        Assert.Contains("ref: c9f21151639f1911c780f2084dd2d757b4fb3e73", workflow, StringComparison.Ordinal);
         Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts", workflow, StringComparison.Ordinal);
         Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults.git", dockerfile, StringComparison.Ordinal);
         Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts.git", dockerfile, StringComparison.Ordinal);
