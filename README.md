@@ -143,3 +143,21 @@ Authenticated `POST /auth/v1/customer-self-service/email/change` and
 access token. The identity ID comes only from its signed `sub` claim; callers
 cannot select another account in the body or route. Successful changes rotate
 the security stamp and revoke all refresh sessions, requiring a fresh login.
+
+## Generated XML documentation migration
+
+Original `03dc9a1271c16e6535934445e9dd6e3f30e8fffe` moved compiler XML
+documentation out of project source folders and removed stale XML copy items.
+The API and the three production libraries still emit compiler XML in SDK build
+output. Their existing tests inspect the real emitted API/library XML, including
+the credential-validation request type and its username/password properties.
+
+The modern test harness is nonpackable and has no test-assembly XML consumer in
+this repository's delivery or API documentation paths. This migration therefore
+does not preserve the original test assembly's XML-generation setting. It retains
+the relevant isolation contract instead: no source-root test assembly XML, no
+explicit `DocumentationFile` override, and no stale XML `None Update` copy item.
+The regression does not prohibit future SDK-default test XML generation.
+
+This is a scoped adaptation for the nonpackable harness, not source retirement
+or a claim that the whole original commit has migration acceptance.

@@ -2,7 +2,7 @@ using System.Xml.Linq;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
-/// <summary>Protects compiled XML documentation artifacts for the three active Auth libraries.</summary>
+/// <summary>Protects compiled library XML and the test project's source-artifact boundary.</summary>
 public sealed class ActiveLibraryCompiledXmlContractTests
 {
     /// <summary>Requires each library's emitted XML manifest and a documented member in that assembly.</summary>
@@ -26,5 +26,31 @@ public sealed class ActiveLibraryCompiledXmlContractTests
             .Where(element => element.Attribute("name")?.Value == memberName) ?? []);
         Assert.False(string.IsNullOrWhiteSpace(member.Element("summary")?.Value),
             $"Compiled XML summary is missing for {memberName}.");
+    }
+
+    /// <summary>Keeps the nonpackable test project's compiler artifacts out of source and stale copy items.</summary>
+    [Fact]
+    public void TestProject_IsNonpackableAndKeepsGeneratedXmlOutOfSource()
+    {
+        const string assemblyName = "Legacy.Maliev.AuthService.Tests";
+        var projectDirectory = Path.Combine(FindRepositoryRoot(), assemblyName);
+        var project = XDocument.Load(Path.Combine(projectDirectory, assemblyName + ".csproj"));
+
+        Assert.Equal("false", Assert.Single(project.Descendants("IsPackable")).Value.Trim(), ignoreCase: true);
+        Assert.Empty(project.Descendants("DocumentationFile"));
+        Assert.DoesNotContain(project.Descendants("None"), element =>
+            ((string?)element.Attribute("Update"))?.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) == true);
+        Assert.False(File.Exists(Path.Combine(projectDirectory, assemblyName + ".xml")));
+    }
+
+    private static string FindRepositoryRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "Legacy.Maliev.AuthService.slnx")))
+        {
+            directory = directory.Parent;
+        }
+
+        return directory?.FullName ?? throw new DirectoryNotFoundException("Repository root was not found.");
     }
 }
