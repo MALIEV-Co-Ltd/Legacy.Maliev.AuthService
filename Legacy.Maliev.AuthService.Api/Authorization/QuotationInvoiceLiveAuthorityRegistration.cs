@@ -21,23 +21,28 @@ public static class QuotationInvoiceLiveAuthorityRegistration
         services.AddTransient<BoundedQuotationWorkloadExchangeHandler>();
 #pragma warning disable EXTEXP0001 // Intentional client-local isolation from inherited resilience; no shared policy changes.
         services.AddHttpClient(LegacyServiceAccessTokenProvider.HttpClientName)
+            .AddPrivateFailureObservation("AuthWorkload")
             .RemoveAllResilienceHandlers()
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
             .AddHttpMessageHandler<BoundedQuotationWorkloadExchangeHandler>()
             .RedactLoggedHeaders(["Authorization", "X-Maliev-IAM-Live-Check-Key"]);
         services.AddHttpClient(QuotationInvoiceLiveAuthorityClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10))
+            .AddPrivateFailureObservation("QuotationInvoiceAuthority")
             .RemoveAllResilienceHandlers()
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
             .RedactLoggedHeaders(["Authorization", "X-Maliev-IAM-Live-Check-Key"]);
         services.AddHttpClient(InvoiceFinancialOwnershipClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10))
+            .AddPrivateFailureObservation("InvoiceFinancialOwnership")
             .RemoveAllResilienceHandlers()
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
             .RedactLoggedHeaders(["Authorization"]);
         services.AddHttpClient(EmployeeProfileBindingClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10))
+            .AddPrivateFailureObservation("EmployeeProfileBinding")
             .RemoveAllResilienceHandlers()
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
             .RedactLoggedHeaders(["Authorization"]);
         services.AddHttpClient(CustomerProfileBindingClient.HttpClientName, client => client.Timeout = TimeSpan.FromSeconds(10))
+            .AddPrivateFailureObservation("CustomerProfileBinding")
             .RemoveAllResilienceHandlers()
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false })
             .RedactLoggedHeaders(["Authorization"]);
