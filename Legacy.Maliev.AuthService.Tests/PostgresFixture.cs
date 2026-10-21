@@ -39,7 +39,8 @@ public sealed class PostgresFixture : IAsyncLifetime
         catch (Exception exception)
         {
             CleanupFailureObserver.Observe(exception, Stopwatch.GetElapsedTime(started),
-                () => (int)postgres.State, Console.Error.WriteLine);
+                () => (int)postgres.State, Console.Error.WriteLine,
+                report => CleanupFailureObserver.WriteReceipt(report, postgres.Id, Environment.GetEnvironmentVariable));
             throw;
         }
     }

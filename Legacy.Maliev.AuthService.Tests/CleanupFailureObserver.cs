@@ -29,11 +29,71 @@ internal static class CleanupFailureObserver
         return report.ToString(0, Math.Min(report.Length, 2048));
     }
 
-    internal static void Observe(Exception exception, TimeSpan elapsed, Func<int> ownedState, Action<string> write)
+    internal static void Observe(Exception exception, TimeSpan elapsed, Func<int> ownedState,
+        Action<string> write, Action<string>? persist = null)
     {
-        try { write(Format(exception, elapsed, ownedState())); }
+        string report;
+        try { report = Format(exception, elapsed, ownedState()); }
+        catch { return; }
+        try { write(report); }
+        catch { /* Each diagnostic sink is independent of the original failure. */ }
+        try { persist?.Invoke(report); }
         catch { /* Diagnostics must never replace the original cleanup exception. */ }
     }
+
+    internal static void WriteReceipt(string report, string containerId, Func<string, string?> environment)
+    {
+        // The test step deliberately sets GITHUB_ACTIONS=false for local project
+        // references; use the unchanged hosted identity rather than that switch.
+        if (environment("GITHUB_REPOSITORY") != "MALIEV-Co-Ltd/Legacy.Maliev.AuthService" ||
+            environment("RUNNER_ENVIRONMENT") != "github-hosted")
+            return;
+        var run = environment("GITHUB_RUN_ID");
+        var attempt = environment("GITHUB_RUN_ATTEMPT");
+        var sha = environment("GITHUB_SHA");
+        var workspace = environment("GITHUB_WORKSPACE");
+        if (!IsRunIdentity(run) || !IsRunIdentity(attempt) || !IsLowerHex(sha, 40) ||
+            !IsLowerHex(containerId, 64) || string.IsNullOrEmpty(workspace) ||
+            !Path.IsPathFullyQualified(workspace) || !Directory.Exists(workspace))
+            return;
+        if (report.Length > 2048 || !report.StartsWith("postgres_cleanup_failure ", StringComparison.Ordinal) ||
+            report.Any(character => character < ' ' || character > '~'))
+            return;
+
+        var directory = Path.Combine(Path.GetFullPath(workspace), "artifacts", "ordinary-postgres-cleanup");
+        RejectLinkedAncestors(directory);
+        Directory.CreateDirectory(directory);
+        RejectLinkedAncestors(directory);
+        var raw = Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1,
+            run,
+            attempt,
+            sha,
+            containerId,
+            report
+        }) + "\n");
+        if (raw.Length > 8192) return;
+        using var stream = new FileStream(Path.Combine(directory, $"cleanup-failure-{containerId}.json"),
+            FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        stream.Write(raw);
+    }
+
+    private static void RejectLinkedAncestors(string directory)
+    {
+        for (DirectoryInfo? current = new(directory); current is not null; current = current.Parent)
+        {
+            if (current.LinkTarget is not null ||
+                (current.Exists && (current.Attributes & FileAttributes.ReparsePoint) != 0))
+                throw new IOException("Linked receipt destination rejected.");
+        }
+    }
+
+    private static bool IsRunIdentity(string? value) =>
+        value is { Length: > 0 and <= 20 } && value.All(char.IsAsciiDigit);
+
+    private static bool IsLowerHex(string? value, int length) =>
+        value is not null && value.Length == length && value.All(character => char.IsAsciiDigit(character) || character is >= 'a' and <= 'f');
 
     private static string SafeName(string value) =>
         new(value.Take(48).Select(character => char.IsAsciiLetterOrDigit(character) || character is '_' or '.' ? character : '_').ToArray());

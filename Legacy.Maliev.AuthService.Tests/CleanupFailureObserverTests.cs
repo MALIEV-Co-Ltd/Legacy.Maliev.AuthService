@@ -85,6 +85,142 @@ public sealed class CleanupFailureObserverTests
         Assert.DoesNotContain(canary, captured);
     }
 
+    [Fact]
+    public void Observe_ConsoleFailure_StillAttemptsReceiptWithSameBoundedReport()
+    {
+        string? persisted = null;
+        CleanupFailureObserver.Observe(Capture("synthetic-secret"), TimeSpan.Zero, () => 2,
+            _ => throw new IOException("console-secret"), report => persisted = report);
+        Assert.Contains("TaskCanceledException", persisted);
+        Assert.DoesNotContain("synthetic-secret", persisted);
+        Assert.InRange(persisted!.Length, 1, 2048);
+    }
+
+    [Fact]
+    public async Task Observe_ReceiptFailure_PreservesOriginalFailureAndConsoleReport()
+    {
+        var original = new TaskCanceledException("synthetic-secret");
+        string? console = null;
+        var caught = await Assert.ThrowsAsync<TaskCanceledException>(async () =>
+        {
+            try { await ThrowOriginalAsync(original); }
+            catch (Exception exception)
+            {
+                CleanupFailureObserver.Observe(exception, TimeSpan.Zero, () => 2,
+                    report => console = report, _ => throw new IOException("receipt-secret"));
+                throw;
+            }
+        });
+        Assert.Same(original, caught);
+        Assert.Contains(nameof(ThrowOriginalAsync), caught.StackTrace);
+        Assert.Contains("TaskCanceledException", console);
+        Assert.DoesNotContain("synthetic-secret", console);
+    }
+
+    [Fact]
+    public void Receipt_IsBoundedPrivateCorrelatedAndExclusive()
+    {
+        WithReceiptDirectory((workspace, environment) =>
+        {
+            var identifier = new string('b', 64);
+            var canary = Guid.NewGuid().ToString("N");
+            var report = CleanupFailureObserver.Format(Capture(CreateConnectionString(canary)), TimeSpan.Zero, 2);
+            CleanupFailureObserver.WriteReceipt(report, identifier, environment);
+            var path = Path.Combine(workspace, "artifacts", "ordinary-postgres-cleanup", $"cleanup-failure-{identifier}.json");
+            var original = File.ReadAllText(path);
+            using var receipt = System.Text.Json.JsonDocument.Parse(original);
+            var root = receipt.RootElement;
+            Assert.Equal(6, root.EnumerateObject().Count());
+            Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
+            Assert.Equal("123", root.GetProperty("run").GetString());
+            Assert.Equal("1", root.GetProperty("attempt").GetString());
+            Assert.Equal(new string('a', 40), root.GetProperty("sha").GetString());
+            Assert.Equal(identifier, root.GetProperty("containerId").GetString());
+            Assert.Equal(report, root.GetProperty("report").GetString());
+            Assert.InRange(new FileInfo(path).Length, 1, 8192);
+            Assert.DoesNotContain(canary, original);
+            Assert.DoesNotContain(workspace, original);
+            Assert.DoesNotContain("Host=", original);
+            Assert.DoesNotContain("Password", original);
+            Assert.Throws<IOException>(() => CleanupFailureObserver.WriteReceipt(report, identifier, environment));
+            Assert.Equal(original, File.ReadAllText(path));
+            Assert.Single(Directory.GetFiles(Path.GetDirectoryName(path)!));
+        });
+    }
+
+    [Theory]
+    [InlineData("GITHUB_REPOSITORY", "foreign")]
+    [InlineData("RUNNER_ENVIRONMENT", "self-hosted")]
+    [InlineData("GITHUB_RUN_ID", "../private")]
+    [InlineData("GITHUB_RUN_ATTEMPT", "0/1")]
+    [InlineData("GITHUB_SHA", "private")]
+    [InlineData("GITHUB_WORKSPACE", "relative")]
+    public void Receipt_InvalidHostedIdentity_DoesNotCreateArtifacts(string key, string value)
+    {
+        WithReceiptDirectory((workspace, environment) =>
+        {
+            CleanupFailureObserver.WriteReceipt("postgres_cleanup_failure type=TaskCanceledException",
+                new string('b', 64), name => name == key ? value : environment(name));
+            Assert.False(Directory.Exists(Path.Combine(workspace, "artifacts")));
+        });
+    }
+
+    [Theory]
+    [InlineData("../private", "postgres_cleanup_failure type=TaskCanceledException")]
+    [InlineData("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "private")]
+    [InlineData("bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "postgres_cleanup_failure \nprivate")]
+    public void Receipt_InvalidContainerOrReport_DoesNotCreateArtifacts(string identifier, string report)
+    {
+        WithReceiptDirectory((workspace, environment) =>
+        {
+            CleanupFailureObserver.WriteReceipt(report, identifier, environment);
+            CleanupFailureObserver.WriteReceipt("postgres_cleanup_failure " + new string('a', 2048),
+                new string('b', 64), environment);
+            Assert.False(Directory.Exists(Path.Combine(workspace, "artifacts")));
+        });
+    }
+
+    [Fact]
+    public void Receipt_LinkedArtifactDirectory_IsRejectedWithoutWritingTarget()
+    {
+        WithReceiptDirectory((workspace, environment) =>
+        {
+            var target = Path.Combine(workspace, "outside");
+            Directory.CreateDirectory(target);
+            var link = Path.Combine(workspace, "artifacts");
+            Directory.CreateSymbolicLink(link, target);
+            try
+            {
+                Assert.Throws<IOException>(() => CleanupFailureObserver.WriteReceipt(
+                    "postgres_cleanup_failure type=TaskCanceledException", new string('b', 64), environment));
+                Assert.Empty(Directory.GetFileSystemEntries(target));
+            }
+            finally { Directory.Delete(link); }
+        });
+    }
+
+    private static void WithReceiptDirectory(Action<string, Func<string, string?>> action)
+    {
+        var workspace = Path.Combine(Path.GetTempPath(), $"auth-cleanup-receipt-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(workspace);
+        try
+        {
+            string? EnvironmentValue(string name) => name switch
+            {
+                "GITHUB_REPOSITORY" => "MALIEV-Co-Ltd/Legacy.Maliev.AuthService",
+                "RUNNER_ENVIRONMENT" => "github-hosted",
+                "GITHUB_RUN_ID" => "123",
+                "GITHUB_RUN_ATTEMPT" => "1",
+                "GITHUB_SHA" => new string('a', 40),
+                "GITHUB_WORKSPACE" => workspace,
+                "GITHUB_ACTIONS" => "false",
+                _ => null
+            };
+            action(workspace, EnvironmentValue);
+        }
+        finally { Directory.Delete(workspace, true); }
+    }
+
     private static string CreateConnectionString(string password) =>
         new NpgsqlConnectionStringBuilder { Host = "synthetic", Password = password }.ConnectionString;
 
