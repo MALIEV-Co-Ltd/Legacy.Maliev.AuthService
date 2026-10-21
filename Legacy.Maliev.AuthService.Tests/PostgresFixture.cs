@@ -35,9 +35,23 @@ public sealed class PostgresFixture : IAsyncLifetime
     public async Task DisposeAsync()
     {
         var started = Stopwatch.GetTimestamp();
-        try { await postgres.DisposeAsync(); }
+        var identity = CleanupFailureObserver.CaptureIdentity(() => (postgres.Id, postgres.StartedTime));
+        var directory = CleanupFailureObserver.HostedDirectory(
+            Environment.GetEnvironmentVariable("GITHUB_REPOSITORY"),
+            Environment.GetEnvironmentVariable("RUNNER_ENVIRONMENT"),
+            Environment.GetEnvironmentVariable("GITHUB_WORKSPACE"));
+        CleanupFailureObserver.ObservePhase(identity, "dispose-entered", Stopwatch.GetElapsedTime(started),
+            () => (int)postgres.State, null, directory);
+        try
+        {
+            await postgres.DisposeAsync();
+            CleanupFailureObserver.ObservePhase(identity, "dispose-completed", Stopwatch.GetElapsedTime(started),
+                () => (int)postgres.State, null, directory);
+        }
         catch (Exception exception)
         {
+            CleanupFailureObserver.ObservePhase(identity, "dispose-faulted", Stopwatch.GetElapsedTime(started),
+                () => (int)postgres.State, exception, directory);
             CleanupFailureObserver.Observe(exception, Stopwatch.GetElapsedTime(started),
                 () => (int)postgres.State, Console.Error.WriteLine);
             throw;
