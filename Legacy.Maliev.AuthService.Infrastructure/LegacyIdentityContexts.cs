@@ -140,8 +140,10 @@ public sealed class CustomerIdentityCreateOperation
 public sealed class EmployeeIdentityDbContext(DbContextOptions<EmployeeIdentityDbContext> options)
     : LegacyIdentityDbContext(options)
 {
+    /// <summary>Immutable employee recovery receipts awaiting or acknowledging Auth finalization.</summary>
     public DbSet<EmployeeRecoveryEffect> RecoveryEffects => Set<EmployeeRecoveryEffect>();
 
+    /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);

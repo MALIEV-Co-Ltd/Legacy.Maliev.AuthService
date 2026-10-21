@@ -47,7 +47,19 @@ public sealed record CustomerIdentityResponse(
 public sealed record CustomerIdentityCreateReceipt(int DatabaseId, string Status);
 
 /// <summary>Outcome of an operation-keyed create attempt.</summary>
-public enum CustomerIdentityCreateOutcome { Created, Replayed, Conflict, InvalidPassword, InvalidIdentity }
+public enum CustomerIdentityCreateOutcome
+{
+    /// <summary>The customer identity and its ownership receipt were created atomically.</summary>
+    Created,
+    /// <summary>The same operation already owns the requested customer identity.</summary>
+    Replayed,
+    /// <summary>The operation, profile, or identity ownership conflicts with the requested creation.</summary>
+    Conflict,
+    /// <summary>The requested password does not satisfy the identity password policy.</summary>
+    InvalidPassword,
+    /// <summary>The requested identity does not satisfy the accepted username and email policy.</summary>
+    InvalidIdentity
+}
 
 /// <summary>Result of an operation-keyed create attempt.</summary>
 public sealed record CustomerIdentityCreateResult(CustomerIdentityCreateOutcome Outcome, int DatabaseId);

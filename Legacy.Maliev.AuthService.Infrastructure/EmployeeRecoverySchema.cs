@@ -9,6 +9,12 @@ namespace Legacy.Maliev.AuthService.Infrastructure;
 /// <summary>Read-only physical schema checks; migration history alone is not a safety gate.</summary>
 public static class EmployeeRecoverySchema
 {
+    /// <summary>Verifies the physical employee receipt and Auth action schemas without changing them.</summary>
+    /// <param name="employees">The employee identity context containing recovery receipts.</param>
+    /// <param name="state">The Auth context containing bound recovery actions.</param>
+    /// <param name="cancellationToken">Token to cancel the asynchronous operation.</param>
+    /// <returns>A task that completes when both schemas match the reviewed model.</returns>
+    /// <exception cref="EmployeeRecoveryUnavailableException">A required schema object is unavailable or differs from the reviewed model.</exception>
     public static async Task EnsureAsync(EmployeeIdentityDbContext employees, RefreshSessionDbContext state, CancellationToken cancellationToken)
     {
         try
@@ -20,6 +26,11 @@ public static class EmployeeRecoverySchema
         catch { throw new EmployeeRecoveryUnavailableException(); }
     }
 
+    /// <summary>Verifies the physical employee recovery receipt schema without applying migrations.</summary>
+    /// <param name="employees">The employee identity context containing recovery receipts.</param>
+    /// <param name="cancellationToken">Token to cancel the asynchronous operation.</param>
+    /// <returns>A task that completes when the receipt schema matches the reviewed model.</returns>
+    /// <exception cref="EmployeeRecoveryUnavailableException">A required schema object is unavailable or differs from the reviewed model.</exception>
     public static async Task EnsureEmployeeAsync(EmployeeIdentityDbContext employees, CancellationToken cancellationToken)
     {
         try { await VerifyEntityAsync(employees, typeof(EmployeeRecoveryEffect), cancellationToken); }
@@ -92,8 +103,13 @@ public static class EmployeeRecoverySchema
     }
 }
 
+/// <summary>Reports whether recovery is enabled and both physical recovery schemas are ready.</summary>
+/// <param name="employees">The employee identity context containing recovery receipts.</param>
+/// <param name="state">The Auth context containing bound recovery actions.</param>
+/// <param name="options">The coordinated-rollout opt-in for employee recovery.</param>
 public sealed class EmployeeRecoveryHealthCheck(EmployeeIdentityDbContext employees, RefreshSessionDbContext state, EmployeeRecoveryOptions options) : IHealthCheck
 {
+    /// <inheritdoc />
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         if (!options.Enabled) return HealthCheckResult.Unhealthy("Employee recovery requires coordinated rollout opt-in.");
