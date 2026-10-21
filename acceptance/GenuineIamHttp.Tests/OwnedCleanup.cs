@@ -237,9 +237,36 @@ internal static class OwnedCleanup
         if (failures.Count != 0) throw new AggregateException("Owned fixture cleanup failed; retained ownership requires attention.", failures);
     }
 
+    internal static async Task ReleaseWithObservationAsync(Func<Task> observe, Func<Task> release)
+    {
+        Exception? observationFailure = null;
+        try { await observe(); }
+        catch (Exception failure) { observationFailure = failure; }
+        try { await release(); }
+        catch (Exception releaseFailure) when (observationFailure is not null)
+        {
+            throw new AggregateException("Owned release and observation failed.", releaseFailure, observationFailure);
+        }
+        if (observationFailure is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(observationFailure).Throw();
+    }
+
     internal static bool IsExactContainerAbsence(string id, int exitCode, string error)
-        => exitCode != 0 && (string.Equals(error.Trim(), "Error: No such object: " + id, StringComparison.Ordinal)
-            || string.Equals(error.Trim(), "Error response from daemon: No such container: " + id, StringComparison.Ordinal));
+        => ContainerAbsenceCategory(id, exitCode, error) is "exact-object-absence"
+            or "exact-object-absence-lowercase" or "exact-container-absence";
+
+    internal static string ContainerAbsenceCategory(string id, int exitCode, string error)
+    {
+        if (exitCode == 0) return "inspect-succeeded";
+        var normalized = error.Trim();
+        if (string.Equals(normalized, "Error: No such object: " + id, StringComparison.Ordinal))
+            return "exact-object-absence";
+        if (string.Equals(normalized, "error: no such object: " + id, StringComparison.Ordinal))
+            return "exact-object-absence-lowercase";
+        if (string.Equals(normalized, "Error response from daemon: No such container: " + id, StringComparison.Ordinal))
+            return "exact-container-absence";
+        return "unverified-inspect-failure";
+    }
 }
 
 public sealed class OwnedCleanupTests
@@ -511,6 +538,64 @@ public sealed class OwnedCleanupTests
             (_, _, _) => Task.CompletedTask, TimeSpan.FromMilliseconds(25)));
         await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(1));
         Assert.True(later);
+    }
+
+    [Fact]
+    public void OwnedCleanup_LowercaseDockerAbsencePreservesExactIdentityAndFailureGuards()
+    {
+        const string id = "owned-id";
+        Assert.True(OwnedCleanup.IsExactContainerAbsence(id, 1, "error: no such object: " + id));
+        Assert.Equal("exact-object-absence-lowercase", OwnedCleanup.ContainerAbsenceCategory(id, 1, "error: no such object: " + id));
+        Assert.Equal("exact-object-absence", OwnedCleanup.ContainerAbsenceCategory(id, 1, "Error: No such object: " + id));
+        Assert.Equal("exact-container-absence", OwnedCleanup.ContainerAbsenceCategory(id, 1, "Error response from daemon: No such container: " + id));
+        Assert.Equal("inspect-succeeded", OwnedCleanup.ContainerAbsenceCategory(id, 0, "error: no such object: " + id));
+        foreach (var error in new[]
+        {
+            "error: no such object: another-id", "error: no such object: owned-ID",
+            "warning\nerror: no such object: " + id, "error: no such object: " + id + "\nwarning",
+            "Cannot connect to the Docker daemon", "docker: command not found",
+            "untrusted-diagnostic-marker"
+        })
+        {
+            Assert.False(OwnedCleanup.IsExactContainerAbsence(id, 1, error));
+            Assert.Equal("unverified-inspect-failure", OwnedCleanup.ContainerAbsenceCategory(id, 1, error));
+        }
+        Assert.False(OwnedCleanup.IsExactContainerAbsence(id, 0, "error: no such object: " + id));
+        Assert.False(OwnedCleanup.IsExactContainerAbsence(id, 127, "docker: command not found"));
+    }
+
+    [Fact]
+    public async Task OwnedCleanup_ObservationFaultNeverSkipsReleaseOrErasesEitherFailure()
+    {
+        foreach (var scenario in new[] { "success", "receipt", "cancelled-receipt", "release", "both" })
+        {
+            var observationFailure = scenario == "cancelled-receipt"
+                ? (Exception)new OperationCanceledException("Injected receipt cancellation.")
+                : new InvalidOperationException("Injected receipt failure.");
+            var releaseFailure = new InvalidOperationException("Injected release failure.");
+            List<string> attempted = [];
+            var failure = await Record.ExceptionAsync(() => OwnedCleanup.ReleaseWithObservationAsync(
+                () =>
+                {
+                    attempted.Add("observation");
+                    return scenario is "success" or "release" ? Task.CompletedTask : Task.FromException(observationFailure);
+                },
+                () =>
+                {
+                    attempted.Add("release");
+                    return scenario is "release" or "both" ? Task.FromException(releaseFailure) : Task.CompletedTask;
+                }));
+            Assert.Equal(new[] { "observation", "release" }, attempted);
+            if (scenario == "success") Assert.Null(failure);
+            else if (scenario == "both")
+            {
+                var aggregate = Assert.IsType<AggregateException>(failure);
+                Assert.Equal(2, aggregate.InnerExceptions.Count);
+                Assert.Same(releaseFailure, aggregate.InnerExceptions[0]);
+                Assert.Same(observationFailure, aggregate.InnerExceptions[1]);
+            }
+            else Assert.Same(scenario == "release" ? releaseFailure : observationFailure, failure);
+        }
     }
 
     [Theory]
