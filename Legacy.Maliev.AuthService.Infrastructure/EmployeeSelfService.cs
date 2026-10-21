@@ -10,6 +10,11 @@ using System.Text;
 namespace Legacy.Maliev.AuthService.Infrastructure;
 
 /// <summary>Coordinates employee recovery using an atomic identity receipt and retryable Auth finalization.</summary>
+/// <param name="employees">The employee identity context used to open isolated recovery contexts.</param>
+/// <param name="state">The Auth context used to open isolated finalization contexts.</param>
+/// <param name="passwordHasher">The Identity password hasher for applying and verifying password resets.</param>
+/// <param name="timeProvider">The clock used for action expiry and receipt timestamps.</param>
+/// <param name="options">The recovery rollout opt-in; recovery remains disabled when omitted.</param>
 public sealed class EmployeeSelfService(EmployeeIdentityDbContext employees, RefreshSessionDbContext state,
     IPasswordHasher<LegacyIdentityRow> passwordHasher, TimeProvider timeProvider, EmployeeRecoveryOptions? options = null)
 {
@@ -18,12 +23,32 @@ public sealed class EmployeeSelfService(EmployeeIdentityDbContext employees, Ref
     private EmployeeIdentityDbContext NewEmployees() => new((DbContextOptions<EmployeeIdentityDbContext>)employees.GetService<IDbContextOptions>());
     private RefreshSessionDbContext NewState() => new((DbContextOptions<RefreshSessionDbContext>)state.GetService<IDbContextOptions>());
 
+    /// <summary>Creates an email-confirmation challenge bound to the employee and trusted service subject.</summary>
+    /// <param name="request">The employee email address to confirm.</param>
+    /// <param name="ownerSubject">The authenticated service subject that owns the action.</param>
+    /// <param name="cancellationToken">Token to cancel the asynchronous operation.</param>
+    /// <returns>An accepted challenge, with a token only when the employee is eligible.</returns>
     public Task<EmployeeActionChallenge> RequestEmailConfirmationAsync(EmployeeActionRequest request, string ownerSubject, CancellationToken cancellationToken) =>
         CreateChallengeAsync(request.Email, ownerSubject, EmailConfirmation, true, cancellationToken);
+    /// <summary>Creates a password-reset challenge bound to the employee and trusted service subject.</summary>
+    /// <param name="request">The employee email address requesting a password reset.</param>
+    /// <param name="ownerSubject">The authenticated service subject that owns the action.</param>
+    /// <param name="cancellationToken">Token to cancel the asynchronous operation.</param>
+    /// <returns>An accepted challenge, with a token only when the employee is eligible.</returns>
     public Task<EmployeeActionChallenge> RequestPasswordResetAsync(EmployeeActionRequest request, string ownerSubject, CancellationToken cancellationToken) =>
         CreateChallengeAsync(request.Email, ownerSubject, PasswordReset, false, cancellationToken);
+    /// <summary>Applies and finalizes an employee email confirmation after validating the bound action.</summary>
+    /// <param name="request">The employee email and single-use confirmation token.</param>
+    /// <param name="ownerSubject">The authenticated service subject that owns the action.</param>
+    /// <param name="cancellationToken">Token to cancel the asynchronous operation.</param>
+    /// <returns>True when confirmation is applied or its committed receipt is reconciled; otherwise, false.</returns>
     public Task<bool> ConfirmEmailAsync(CompleteEmployeeActionRequest request, string ownerSubject, CancellationToken cancellationToken) =>
         CompleteAsync(request.Email, request.Token, null, ownerSubject, EmailConfirmation, cancellationToken);
+    /// <summary>Applies and finalizes an employee password reset after validating the bound action.</summary>
+    /// <param name="request">The employee email, single-use reset token, and replacement password.</param>
+    /// <param name="ownerSubject">The authenticated service subject that owns the action.</param>
+    /// <param name="cancellationToken">Token to cancel the asynchronous operation.</param>
+    /// <returns>True when the password reset is applied or its committed receipt is reconciled; otherwise, false.</returns>
     public Task<bool> CompletePasswordResetAsync(CompleteEmployeePasswordResetRequest request, string ownerSubject, CancellationToken cancellationToken) =>
         CompleteAsync(request.Email, request.Token, request.Password, ownerSubject, PasswordReset, cancellationToken);
 
@@ -242,6 +267,9 @@ public sealed class EmployeeSelfService(EmployeeIdentityDbContext employees, Ref
             .ExecuteUpdateAsync(s => s.SetProperty(x => x.ConsumedAt, now).SetProperty(x => x.FinalizedAt, now).SetProperty(x => x.EffectActionId, receipt.ActionId), cancellationToken);
     }
 
+    /// <summary>Retries Auth finalization for at most 32 unacknowledged employee recovery receipts.</summary>
+    /// <param name="cancellationToken">Token to cancel the asynchronous operation.</param>
+    /// <returns>The number of receipts finalized and acknowledged in this batch.</returns>
     public async Task<int> ReconcileOutstandingAsync(CancellationToken cancellationToken)
     {
         await EnsureReadyAsync(cancellationToken);
