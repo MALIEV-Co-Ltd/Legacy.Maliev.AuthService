@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.ExceptionServices;
 using Legacy.Maliev.AuthService.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -26,6 +27,41 @@ public sealed class PostgresFixture : IAsyncLifetime
         })
         .Build();
 
+    private readonly Lazy<Task> cleanup;
+
+    public PostgresFixture()
+    {
+        cleanup = CreateContainerCleanup(postgres.StopAsync, postgres.DisposeAsync);
+    }
+
+    internal static Lazy<Task> CreateContainerCleanup(Func<CancellationToken, Task> stop,
+        Func<ValueTask> remove, TimeProvider? clock = null) =>
+        new(() => StopThenRemoveAsync(stop, remove, clock ?? TimeProvider.System),
+            LazyThreadSafetyMode.ExecutionAndPublication);
+
+    private static async Task StopThenRemoveAsync(Func<CancellationToken, Task> stop,
+        Func<ValueTask> remove, TimeProvider clock)
+    {
+        Exception? stopFailure = null;
+        try
+        {
+            using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30), clock);
+            await stop(deadline.Token);
+        }
+        catch (Exception exception) { stopFailure = exception; }
+        finally
+        {
+            // Removal has its own existing client bound, not the cancelled stop token.
+            try { await remove(); }
+            catch (Exception removalFailure) when (stopFailure is not null)
+            {
+                throw new AggregateException("Owned PostgreSQL stop and removal failed.",
+                    stopFailure, removalFailure);
+            }
+        }
+        if (stopFailure is not null) ExceptionDispatchInfo.Capture(stopFailure).Throw();
+    }
+
     public async Task InitializeAsync()
     {
         using var startup = new CancellationTokenSource(TimeSpan.FromSeconds(60));
@@ -35,7 +71,7 @@ public sealed class PostgresFixture : IAsyncLifetime
     public async Task DisposeAsync()
     {
         var started = Stopwatch.GetTimestamp();
-        try { await postgres.DisposeAsync(); }
+        try { await cleanup.Value; }
         catch (Exception exception)
         {
             CleanupFailureObserver.Observe(exception, Stopwatch.GetElapsedTime(started),
