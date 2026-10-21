@@ -88,9 +88,13 @@ class RouteControls(unittest.TestCase):
         names=[n.get('testName') for n in self.raw('RAW696').iter('{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}UnitTestResult')]
         self.assertEqual(set(worker.DUPLICATE_ROSTER),{name for name in names if names.count(name)>1})
     def test_closed_collision_source_witness(self):
-        worker.duplicate_source(BACKEND)
+        source=subprocess.run(['git','-C',str(BACKEND),'cat-file','blob',route.BASE+':'+worker.DUPLICATE_SOURCE_PATH],check=True,capture_output=True,timeout=30).stdout
         with tempfile.TemporaryDirectory() as tmp:
-            auth=Path(tmp);p=auth/worker.DUPLICATE_SOURCE_PATH;p.parent.mkdir(parents=True);p.write_text('changed')
+            auth=Path(tmp);p=auth/worker.DUPLICATE_SOURCE_PATH;p.parent.mkdir(parents=True);p.write_bytes(source)
+            worker.duplicate_source(auth)
+            p.write_text('changed')
+            with self.assertRaises(ValueError):worker.duplicate_source(auth)
+            p.write_bytes(source+b'\n// comment-only mutation\n')
             with self.assertRaises(ValueError):worker.duplicate_source(auth)
     def test_trx_full696_mutations_closed_collision_and_joins(self):
         ns='{http://microsoft.com/schemas/VisualStudio/TeamTest/2010}'
