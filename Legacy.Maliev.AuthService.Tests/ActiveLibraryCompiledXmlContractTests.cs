@@ -10,6 +10,9 @@ public sealed class ActiveLibraryCompiledXmlContractTests
     /// <param name="memberName">The compiler documentation identifier of a representative public member.</param>
     [Theory]
     [InlineData("Legacy.Maliev.AuthService.Application", "M:Legacy.Maliev.AuthService.Application.AuthenticationResult.Failed")]
+    [InlineData("Legacy.Maliev.AuthService.Application", "T:Legacy.Maliev.AuthService.Application.LegacyCredentialValidationRequest")]
+    [InlineData("Legacy.Maliev.AuthService.Application", "P:Legacy.Maliev.AuthService.Application.LegacyCredentialValidationRequest.Username")]
+    [InlineData("Legacy.Maliev.AuthService.Application", "P:Legacy.Maliev.AuthService.Application.LegacyCredentialValidationRequest.Password")]
     [InlineData("Legacy.Maliev.AuthService.Domain", "P:Legacy.Maliev.AuthService.Domain.IdentityActionToken.RecoveryVersion")]
     [InlineData("Legacy.Maliev.AuthService.Infrastructure", "P:Legacy.Maliev.AuthService.Infrastructure.EmployeeRecoveryEffect.ActionId")]
     public void ActiveLibrary_EmitsCompiledXmlWithDocumentedMember(string assemblyName, string memberName)
