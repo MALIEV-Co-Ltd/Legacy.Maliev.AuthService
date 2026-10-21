@@ -1,6 +1,6 @@
 # Genuine Auth to IAM HTTP acceptance
 
-This separate suite contains eleven HTTP cases plus 17 cleanup/output fault controls,
+This separate suite contains eleven HTTP cases plus 22 cleanup/output fault controls,
 and preserves the existing 935-case Auth suite and
 761-case Defaults suite. It exercises actual Auth HTTP issuance, the dedicated
 Defaults exchange/handler, and the original IAM production Program, JWT bearer,
@@ -84,7 +84,7 @@ resource receipts contain container IDs/state only, never connection strings,
 credentials, JWTs or customer data. A finite runner/test timeout is also required.
 
 The standard Ubuntu hosted workflow builds each graph with warnings as errors,
-runs the eleven HTTP focus cases and 31 dedicated-suite cases, and verifies
+runs the eleven HTTP focus cases and 33 dedicated-suite cases, and verifies
 scoped formatting. The original normal Auth coverage/security gates remain.
 Expected counts describe discovery only; hosted results are required before
 acceptance. Keys/credentials/connection strings/JWTs never enter process receipts.
