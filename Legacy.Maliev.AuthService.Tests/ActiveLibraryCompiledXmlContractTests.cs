@@ -37,10 +37,28 @@ public sealed class ActiveLibraryCompiledXmlContractTests
         var project = XDocument.Load(Path.Combine(projectDirectory, assemblyName + ".csproj"));
 
         Assert.Equal("false", Assert.Single(project.Descendants("IsPackable")).Value.Trim(), ignoreCase: true);
+        Assert.Equal("true", Assert.Single(project.Descendants("GenerateDocumentationFile")).Value.Trim(), ignoreCase: true);
         Assert.Empty(project.Descendants("DocumentationFile"));
         Assert.DoesNotContain(project.Descendants("None"), element =>
             ((string?)element.Attribute("Update"))?.EndsWith(".xml", StringComparison.OrdinalIgnoreCase) == true);
         Assert.False(File.Exists(Path.Combine(projectDirectory, assemblyName + ".xml")));
+    }
+
+    /// <summary>Requires the test assembly's real emitted XML and its documented public contract guard.</summary>
+    [Fact]
+    public void TestAssembly_EmitsCompiledXmlWithDocumentedMember()
+    {
+        var assembly = typeof(ActiveLibraryCompiledXmlContractTests).Assembly;
+        var documentPath = Path.ChangeExtension(assembly.Location, ".xml");
+        Assert.True(File.Exists(documentPath), $"Compiled XML documentation is missing: {documentPath}");
+
+        var document = XDocument.Load(documentPath);
+        Assert.Equal(assembly.GetName().Name, document.Root?.Element("assembly")?.Element("name")?.Value);
+        const string memberName = "T:Legacy.Maliev.AuthService.Tests.ActiveLibraryCompiledXmlContractTests";
+        var member = Assert.Single(document.Root?.Element("members")?.Elements("member") ?? [],
+            element => element.Attribute("name")?.Value == memberName);
+        Assert.False(string.IsNullOrWhiteSpace(member.Element("summary")?.Value),
+            $"Compiled XML summary is missing for {memberName}.");
     }
 
     private static string FindRepositoryRoot()
