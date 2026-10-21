@@ -141,7 +141,7 @@ public sealed class DockerBuildContextParityTests(ITestOutputHelper output)
                 var copied = await File.ReadAllBytesAsync(Path.Combine(exportDirectory, "context", file.Relative));
                 Assert.True(expected.SequenceEqual(copied), $"Required build input changed at COPY: {file.Relative}");
             }
-            Assert.Empty(excluded.Where(path => File.Exists(Path.Combine(exportDirectory, "context", path))));
+            Assert.DoesNotContain(excluded, path => File.Exists(Path.Combine(exportDirectory, "context", path)));
         }
         catch (Exception exception)
         {
