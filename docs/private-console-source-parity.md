@@ -33,9 +33,9 @@ retained. It does not add retries, change timeouts, redirect/authentication hand
 credentials, grants, endpoints, bodies, responses or exception identity.
 
 Normal build and container inputs consume accepted ServiceDefaults
-`c9f21151639f1911c780f2084dd2d757b4fb3e73` (tree
-`499d777880b096097ff1ea70eae4ec2f36b2688b`). The corresponding exact-main push
-run `39626541814`, required job `119313160690`, was observed successful.
+`1fec4ef5c8c24fd57806b952182ae6bdb2d6a7fa` (tree
+`fb8d6be44949831eaa8bf2fc8bb4be20863d48b7`). The corresponding exact-main push
+run `39695344761`, required job `119551237366`, was observed successful.
 This advances the existing consumer pin, not the producer or packages. The separate
 Genuine IAM graph and all frozen source carriers/pins remain unchanged.
 

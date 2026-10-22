@@ -14,7 +14,7 @@ namespace Legacy.Maliev.AuthService.Tests;
 /// </summary>
 public sealed class NativeLoggingConsumerContractTests
 {
-    private const string SharedLoggingCommit = "c9f21151639f1911c780f2084dd2d757b4fb3e73";
+    private const string SharedLoggingCommit = "1fec4ef5c8c24fd57806b952182ae6bdb2d6a7fa";
 
     /// <summary>
     /// Checks Auth host, delivery, container, and build inputs consume the pinned shared defaults without native logging.
