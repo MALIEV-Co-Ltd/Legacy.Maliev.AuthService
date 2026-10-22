@@ -69,6 +69,9 @@ public sealed class AuthPrivateConsoleConsumerTests
             ["Email"] = Canary,
             ["Path"] = "/" + Canary,
             ["Authorization"] = Canary,
+            ["exceptionType"] = Canary,
+            ["innerExceptionType"] = Canary,
+            ["sourceLocation"] = Canary,
             ["service"] = Canary,
             ["deploymentVersion"] = Canary,
             ["traceId"] = Canary,
@@ -150,13 +153,29 @@ public sealed class AuthPrivateConsoleConsumerTests
             Assert.Equal(dependency, json.RootElement.GetProperty("Dependency").GetString());
             Assert.Equal("HttpRequest", json.RootElement.GetProperty("Operation").GetString());
             Assert.Equal(503, json.RootElement.GetProperty("StatusCode").GetInt32());
+            Assert.Equal(JsonValueKind.Null, json.RootElement.GetProperty("exceptionType").ValueKind);
+            Assert.Equal(JsonValueKind.Null, json.RootElement.GetProperty("innerExceptionType").ValueKind);
+            Assert.Equal(JsonValueKind.Null, json.RootElement.GetProperty("sourceLocation").ValueKind);
         }
         Assert.DoesNotContain(Canary, line, StringComparison.Ordinal);
-        var failure = new HttpRequestException(Canary);
+        var failure = new HttpRequestException(Canary, new InvalidOperationException(Canary));
         host.Transport.Failure = failure;
         var returned = await Assert.ThrowsAsync<HttpRequestException>(() => client.GetAsync("https://fixture.invalid/" + Canary));
         Assert.Same(failure, returned);
         Assert.Equal(2, host.Records.Lines("DependencyRequestFailure").Count);
+        var transportLine = host.Records.Lines("DependencyRequestFailure")[1];
+        using (var transport = JsonDocument.Parse(transportLine))
+        {
+            Assert.Equal(typeof(HttpRequestException).FullName, transport.RootElement.GetProperty("exceptionType").GetString());
+            Assert.Equal(typeof(InvalidOperationException).FullName, transport.RootElement.GetProperty("innerExceptionType").GetString());
+            var actual = returned.TargetSite!;
+            Assert.Equal(actual.DeclaringType!.FullName + "." + actual.Name,
+                transport.RootElement.GetProperty("sourceLocation").GetString());
+            Assert.Equal(dependency, transport.RootElement.GetProperty("Dependency").GetString());
+            Assert.Equal("HttpRequest", transport.RootElement.GetProperty("Operation").GetString());
+        }
+        Assert.DoesNotContain(Canary, transportLine, StringComparison.Ordinal);
+        Assert.Equal(0, host.Records.UnsafeFailureInputs);
         host.Transport.Failure = null;
         using var canceled = new CancellationTokenSource();
         canceled.Cancel();
@@ -196,6 +215,45 @@ public sealed class AuthPrivateConsoleConsumerTests
         Assert.Equal(HttpStatusCode.ServiceUnavailable, failedAgain.StatusCode);
         Assert.Equal(2, host.Records.Lines("HealthProbeFailure").Count);
         foreach (var line in host.Records.AllLines) Assert.DoesNotContain(Canary, line, StringComparison.Ordinal);
+        Assert.False(host.Records.Overflowed);
+    }
+
+    /// <summary>Checks the actual request catch carries bounded throw-site metadata without forwarding an exception to logging providers.</summary>
+    /// <param name="asynchronous">Whether the fixture throws from an async state machine instead of an ordinary action.</param>
+    /// <returns>A task completing after response, single-event, runtime provenance and formatted privacy assertions.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task ActualProgram_RequestCatchCarriesOnlyTrustedFailureProvenance(bool asynchronous)
+    {
+        await using var host = new ConsoleHost();
+        using var client = host.CreateClient();
+        using var response = await client.GetAsync("/__fixture/auth-private-console/" +
+            (asynchronous ? "throw-async" : "throw") + "?payload=" + Canary);
+        Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
+        Assert.DoesNotContain(Canary, await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        var line = Assert.Single(host.Records.Lines("UnhandledRequestFailure"));
+        using var json = JsonDocument.Parse(line);
+        Assert.Equal("CRITICAL", json.RootElement.GetProperty("severity").GetString());
+        Assert.Equal(500, json.RootElement.GetProperty("StatusCode").GetInt32());
+        Assert.Equal(typeof(Exception).FullName, json.RootElement.GetProperty("exceptionType").GetString());
+        var location = json.RootElement.GetProperty("sourceLocation").GetString()!;
+        if (asynchronous)
+        {
+            Assert.Equal(typeof(InvalidOperationException).FullName,
+                json.RootElement.GetProperty("innerExceptionType").GetString());
+            Assert.StartsWith(typeof(AuthPrivateConsoleFixtureController).FullName + "+<ThrowAsync>d__", location);
+            Assert.EndsWith(".MoveNext", location, StringComparison.Ordinal);
+        }
+        else
+        {
+            Assert.Equal(typeof(AuthPrivateConsoleFixtureController).FullName + ".Throw", location);
+            Assert.Equal(JsonValueKind.Null, json.RootElement.GetProperty("innerExceptionType").ValueKind);
+        }
+        Assert.DoesNotContain(Canary, line, StringComparison.Ordinal);
+        Assert.False(json.RootElement.TryGetProperty("Path", out _));
+        Assert.Equal(0, host.Records.UnsafeFailureInputs);
+        Assert.Empty(host.Records.Lines("HandledOperationFailure"));
         Assert.False(host.Records.Overflowed);
     }
 
@@ -282,6 +340,8 @@ public sealed class AuthPrivateConsoleConsumerTests
         private readonly ConcurrentQueue<(string Event, string Line)> records = new();
         private int count;
         private int probeInputs;
+        private int unsafeFailureInputs;
+        internal int UnsafeFailureInputs => Volatile.Read(ref unsafeFailureInputs);
         internal int ProbeInputs => Volatile.Read(ref probeInputs);
         internal bool Overflowed => Volatile.Read(ref count) > 128;
         internal IReadOnlyList<string> AllLines => records.Select(record => record.Line).ToArray();
@@ -299,6 +359,8 @@ public sealed class AuthPrivateConsoleConsumerTests
                 var name = (state as IEnumerable<KeyValuePair<string, object?>>)?
                     .Take(64).FirstOrDefault(pair => pair.Key == "EventName").Value as string;
                 if (name is not ("AuthPrivateConsoleProbe" or "DependencyRequestFailure" or "HandledOperationFailure" or "UnhandledRequestFailure" or "HealthProbeFailure")) return;
+                if (exception is not null && name is ("DependencyRequestFailure" or "UnhandledRequestFailure"))
+                    Interlocked.Increment(ref owner.unsafeFailureInputs);
                 using var writer = new StringWriter();
                 var entry = new LogEntry<TState>(level, category, id, state, exception, message);
                 if (name == "AuthPrivateConsoleProbe") Interlocked.Increment(ref owner.probeInputs);
@@ -367,4 +429,14 @@ public sealed class AuthPrivateConsoleFixtureController : ControllerBase
     /// <returns>No result because the controlled exception reaches the existing exception boundary.</returns>
     [HttpGet("throw")]
     public IActionResult Throw() => throw new Exception(AuthPrivateConsoleConsumerTests.Canary);
+
+    /// <summary>Throws after an actual asynchronous continuation to verify bounded compiler-generated request provenance.</summary>
+    /// <returns>No result because the controlled exception reaches the existing exception boundary.</returns>
+    [HttpGet("throw-async")]
+    public async Task<IActionResult> ThrowAsync()
+    {
+        await Task.Yield();
+        throw new Exception(AuthPrivateConsoleConsumerTests.Canary,
+            new InvalidOperationException(AuthPrivateConsoleConsumerTests.Canary));
+    }
 }

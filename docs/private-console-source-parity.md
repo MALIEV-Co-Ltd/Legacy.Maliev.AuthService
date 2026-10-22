@@ -33,9 +33,9 @@ retained. It does not add retries, change timeouts, redirect/authentication hand
 credentials, grants, endpoints, bodies, responses or exception identity.
 
 Normal build and container inputs consume accepted ServiceDefaults
-`c9f21151639f1911c780f2084dd2d757b4fb3e73` (tree
-`499d777880b096097ff1ea70eae4ec2f36b2688b`). The corresponding exact-main push
-run `39626541814`, required job `119313160690`, was observed successful.
+`1fec4ef5c8c24fd57806b952182ae6bdb2d6a7fa` (tree
+`fb8d6be44949831eaa8bf2fc8bb4be20863d48b7`). The corresponding exact-main push
+run `39695344761`, required job `119551237366`, was observed successful.
 This advances the existing consumer pin, not the producer or packages. The separate
 Genuine IAM graph and all frozen source carriers/pins remain unchanged.
 
@@ -49,20 +49,31 @@ financial authority, provider transport, PostgreSQL readiness or full retry proo
 Health checks are synthetic and host-owned. No genuine credentials or tokens are
 minted or sent.
 
-**Open source facet:** ordinary request exceptions still reach the accepted shared
-ExceptionHandlingMiddleware as an event with a null exception argument and a
-sanitized structured exception type. Its existing privacy contract is retained.
-Consequently ordinary Auth HTTP incidents do not yet carry actual MethodBase
-sourceLocation. The new formatter regressions preserve async/closure provenance
-when the event genuinely carries an exception; that is not proof of ordinary HTTP
-throw-site delivery. A separately reviewed provenance adaptation remains required
-before whole a591 Auth fidelity can be claimed; do not add a duplicate incident or
-forward raw exceptions to an unsafe sink. The selected generic dependency observer
-also withholds exception arguments/type provenance. This preserves its accepted
-safe event contract and the original terminal-status predicate, but does not claim
-the original dependency exception throw-site metadata is delivered. Selecting the
-existing source-observation mode instead would introduce additional 4xx events, so
-that is not a silent substitute. Dependency provenance also remains a follow-up.
+The ordinary request catch explicitly enables the accepted shared
+IncludePrivateFailureProvenance option through AddStandardMiddleware. Each of the
+same six generic dependency observers explicitly selects includePrivateProvenance.
+The existing catch and terminal handler capture validated runtime CLR type,
+immediate inner type and throw-site strings into the shared sealed state. They
+still pass a null Exception argument to every logging provider; no Exception,
+message, Data, MethodBase reference or stack is retained in that state. This does
+not select the source-observation mode or add 4xx dependency incidents.
+
+The real Program regressions retain the original provider-specific Trace override
+and all six severity rows. Forged provenance-shaped state remains excluded. The
+six actual named-client rows assert real transport exception identity and its
+formatted type/inner/throw-site, quiet 200/404 and caller cancellation, and no
+Exception argument reaching the failure providers. New ordinary HTTP cases check
+the existing plain throw and an actual async throw, a single unchanged critical
+500 incident, no duplicate handled incident, and bounded formatted provenance.
+These tests isolate upstream transports and synthetic readiness exactly as before;
+they do not exercise financial providers or grant any authority.
+
+The earlier console-only slice used accepted c9f2115/tree499d777, exact-main
+39626541814/job119313160690. This follow-on selects only the already accepted
+Shared95 successor; it does not alter the shared producer. Runtime provenance is
+implemented in this source candidate, but its consumer acceptance remains pending
+exact-head and protected-main checks. The deployment-script facet and other owners
+of original a591 remain separate; no whole-source closure is claimed.
 
 All new build, test, formatter, actual HTTP, observer and full-suite checks are
 **NOT RUN** by this source-only author. Exact-head Release zero warnings/errors,
