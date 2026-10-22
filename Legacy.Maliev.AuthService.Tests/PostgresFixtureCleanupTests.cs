@@ -250,6 +250,90 @@ public sealed class PostgresFixtureCleanupTests
         Assert.Contains(nameof(ThrowOriginalAsync), actual!.StackTrace);
     }
 
+    /// <summary>Checks actual cleanup catch sites report the failing phase after both cleanup attempts without changing the propagated failure.</summary>
+    /// <param name="stopFails">Whether graceful stop throws the controlled primary failure.</param>
+    /// <param name="removeFails">Whether disposal throws the controlled removal failure.</param>
+    /// <param name="expectedPhase">The closed phase label required in the bounded failure report.</param>
+    /// <returns>A task completing after actual cleanup orchestration and receipt-observation assertions.</returns>
+    [Theory]
+    [InlineData(false, false, "unknown")]
+    [InlineData(true, false, "stop")]
+    [InlineData(false, true, "remove")]
+    [InlineData(true, true, "stop_and_remove")]
+    public async Task FailurePhase_UsesActualCleanupCatchSitesAndRetainsBothAttempts(
+        bool stopFails, bool removeFails, string expectedPhase)
+    {
+        var stop = new TaskCanceledException("private-stop");
+        var removal = new InvalidOperationException("private-removal");
+        var order = new List<string>();
+        var phase = CleanupFailurePhase.Unknown;
+        var cleanup = PostgresFixture.CreateContainerCleanup(_ =>
+        {
+            order.Add("stop");
+            return stopFails ? Task.FromException(stop) : Task.CompletedTask;
+        }, () =>
+        {
+            order.Add("remove");
+            return removeFails ? ValueTask.FromException(removal) : ValueTask.CompletedTask;
+        }, observeFailure: value => phase = value);
+        string? report = null;
+        var actual = await Record.ExceptionAsync(() => PostgresFixture.AwaitContainerCleanupAsync(cleanup,
+            () => string.Empty, (failure, elapsed, _) =>
+                CleanupFailureObserver.Observe(failure, elapsed, () => 32, value => report = value,
+                    phase: phase)));
+        Assert.Equal(new[] { "stop", "remove" }, order);
+        if (stopFails && removeFails)
+        {
+            var combined = Assert.IsType<AggregateException>(actual);
+            Assert.Collection(combined.InnerExceptions,
+                failure => Assert.Same(stop, failure),
+                failure => Assert.Same(removal, failure));
+        }
+        else if (stopFails) Assert.Same(stop, actual);
+        else if (removeFails) Assert.Same(removal, actual);
+        else Assert.Null(actual);
+        Assert.Same(actual, await Record.ExceptionAsync(() => cleanup.Value));
+        if (actual is null) Assert.Null(report);
+        else
+        {
+            Assert.Contains("cleanup_phase=" + expectedPhase, report, StringComparison.Ordinal);
+            Assert.DoesNotContain("private-", report, StringComparison.Ordinal);
+            Assert.InRange(report!.Length, 1, 2048);
+        }
+    }
+
+    /// <summary>Checks a failed phase observer cannot prevent removal or replace either cleanup failure.</summary>
+    /// <param name="stopFails">Whether the preserved failure belongs to stop instead of removal.</param>
+    /// <returns>A task completing after callback isolation, single-attempt and failure-identity assertions.</returns>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task FailurePhaseObserverFailure_DoesNotChangeCleanupOrFailureIdentity(bool stopFails)
+    {
+        var original = new TaskCanceledException("private-cleanup");
+        var removals = 0;
+        var observations = 0;
+        var cleanup = PostgresFixture.CreateContainerCleanup(
+            _ => stopFails ? ThrowOriginalAsync(original) : Task.CompletedTask,
+            async () =>
+            {
+                removals++;
+                if (!stopFails) await ThrowOriginalAsync(original);
+            }, observeFailure: _ =>
+            {
+                observations++;
+                throw new IOException("private-phase-observer");
+            });
+        var actual = await Record.ExceptionAsync(() => cleanup.Value);
+        Assert.Same(original, actual);
+        Assert.Contains(nameof(ThrowOriginalAsync), actual!.StackTrace);
+        Assert.Equal(1, removals);
+        Assert.Equal(1, observations);
+        Assert.Same(actual, await Record.ExceptionAsync(() => cleanup.Value));
+        Assert.Equal(1, removals);
+        Assert.Equal(1, observations);
+    }
+
     private static async Task ThrowOriginalAsync(Exception exception)
     {
         await Task.Yield();
