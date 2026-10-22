@@ -18,6 +18,72 @@ public sealed class DeliveryContractTests
         Assert.Contains("**/obj", dockerIgnore, StringComparison.Ordinal);
         Assert.Contains("**/TestResults", dockerIgnore, StringComparison.Ordinal);
         Assert.Contains("artifacts/", dockerIgnore, StringComparison.Ordinal);
+
+        var rules = dockerIgnore.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(line => !line.StartsWith('#')).ToArray();
+        string[] expectedRules =
+        [
+            ".git",
+            ".github",
+            "**/bin",
+            "**/obj",
+            "**/TestResults",
+            "artifacts/",
+            "*.user",
+            "*.suo",
+            ".vs",
+            ".idea",
+            "**/*.env",
+            "**/.env",
+            "**/.env.*",
+            "**/*.log",
+            "**/*.tmp",
+            "**/*.nupkg",
+            "deploy/",
+            "**/.git",
+            "**/.gitignore",
+            "**/.github",
+            "**/.vscode",
+            "**/.vs",
+            "**/.idea",
+            "**/out",
+            "**/node_modules",
+            "**/dist",
+            "**/coverage",
+            "**/*.suo",
+            "**/*.user",
+            "**/*.csproj.user",
+            "**/*.cache",
+            "**/*.swp",
+            "**/*.swo",
+            "**/*.ps1",
+            "**/*.cmd",
+            "**/*.sh",
+            "**/*.yml",
+            "**/*.yaml",
+            "**/Dockerfile.dockerignore",
+        ];
+        Assert.Equal(expectedRules.Order(StringComparer.Ordinal), rules.Order(StringComparer.Ordinal));
+
+        var root = FindRepositoryRoot();
+        var dockerfile = File.ReadAllText(Path.Combine(root, "Legacy.Maliev.AuthService.Api", "Dockerfile"));
+        Assert.Contains("COPY . .", dockerfile.Split('\n', StringSplitOptions.TrimEntries));
+        string[] requiredInputs =
+        [
+            "Directory.Build.props",
+            "Legacy.Maliev.AuthService.Api/Legacy.Maliev.AuthService.Api.csproj",
+            "Legacy.Maliev.AuthService.Application/Legacy.Maliev.AuthService.Application.csproj",
+            "Legacy.Maliev.AuthService.Domain/Legacy.Maliev.AuthService.Domain.csproj",
+            "Legacy.Maliev.AuthService.Infrastructure/Legacy.Maliev.AuthService.Infrastructure.csproj",
+            "Legacy.Maliev.AuthService.Api/Program.cs",
+            "Legacy.Maliev.AuthService.Api/appsettings.json",
+            "Legacy.Maliev.AuthService.Api/appsettings.Development.json",
+            "Legacy.Maliev.AuthService.Application/AuthContracts.cs",
+            "Legacy.Maliev.AuthService.Domain/LegacyIdentity.cs",
+            "Legacy.Maliev.AuthService.Infrastructure/LegacyIdentityContexts.cs",
+        ];
+        Assert.All(requiredInputs, relativePath => Assert.True(
+            File.Exists(Path.Combine(root, relativePath)), $"Required Docker build input is missing: {relativePath}"));
     }
 
     /// <summary>
