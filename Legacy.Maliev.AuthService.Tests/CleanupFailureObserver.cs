@@ -1,21 +1,39 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Reflection;
 using System.Text;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+internal enum CleanupFailurePhase
+{
+    Unknown,
+    Stop,
+    Remove,
+    StopAndRemove,
+}
+
 internal static class CleanupFailureObserver
 {
-    internal static string Format(Exception exception, TimeSpan elapsed, int ownedState)
+    internal static string Format(Exception exception, TimeSpan elapsed, int ownedState,
+        CleanupFailurePhase phase = CleanupFailurePhase.Unknown)
     {
         var report = new StringBuilder("postgres_cleanup_failure elapsed_ms=");
         report.Append(Math.Clamp(elapsed.TotalMilliseconds, 0, int.MaxValue).ToString("0", CultureInfo.InvariantCulture));
         report.Append(" owned_state=").Append(ownedState.ToString(CultureInfo.InvariantCulture));
+        report.Append(" cleanup_phase=").Append(phase switch
+        {
+            CleanupFailurePhase.Stop => "stop",
+            CleanupFailurePhase.Remove => "remove",
+            CleanupFailurePhase.StopAndRemove => "stop_and_remove",
+            _ => "unknown",
+        });
         var current = exception;
         for (var depth = 0; current is not null && depth < 8; depth++, current = current.InnerException)
         {
             report.Append(" type=").Append(SafeName(current.GetType().Name));
             var trace = new StackTrace(current, false);
+            report.Append(" docker_api_frame=").Append(DockerApiFrame(trace));
             report.Append(" frames=");
             if (trace.FrameCount == 0) report.Append("none");
             for (var frame = 0; frame < Math.Min(trace.FrameCount, 4); frame++)
@@ -30,15 +48,49 @@ internal static class CleanupFailureObserver
     }
 
     internal static void Observe(Exception exception, TimeSpan elapsed, Func<int> ownedState,
-        Action<string> write, Action<string>? persist = null)
+        Action<string> write, Action<string>? persist = null,
+        CleanupFailurePhase phase = CleanupFailurePhase.Unknown)
     {
         string report;
-        try { report = Format(exception, elapsed, ownedState()); }
+        try { report = Format(exception, elapsed, ownedState(), phase); }
         catch { return; }
         try { write(report); }
         catch { /* Each diagnostic sink is independent of the original failure. */ }
         try { persist?.Invoke(report); }
         catch { /* Diagnostics must never replace the original cleanup exception. */ }
+    }
+
+    // Positive metadata witness only: a missing frame never proves which request failed.
+    private static string DockerApiFrame(StackTrace trace)
+    {
+        for (var index = 0; index < Math.Min(trace.FrameCount, 64); index++)
+        {
+            var operation = ClassifyDockerApiFrame(trace.GetFrame(index)?.GetMethod());
+            if (operation != "unavailable") return operation;
+        }
+        return "unavailable";
+    }
+
+    internal static string ClassifyDockerApiFrame(MethodBase? method)
+    {
+        var type = method?.DeclaringType;
+        if (type is null || type.Assembly != typeof(Docker.DotNet.DockerClient).Assembly) return "unavailable";
+        string? name;
+        if (type.FullName == "Docker.DotNet.ContainerOperations") name = method!.Name;
+        else if (type.DeclaringType?.FullName == "Docker.DotNet.ContainerOperations" && method!.Name == "MoveNext")
+        {
+            name = type.Name.StartsWith("<InspectContainerAsync>d__", StringComparison.Ordinal) ? "InspectContainerAsync"
+                : type.Name.StartsWith("<StopContainerAsync>d__", StringComparison.Ordinal) ? "StopContainerAsync"
+                : type.Name.StartsWith("<RemoveContainerAsync>d__", StringComparison.Ordinal) ? "RemoveContainerAsync" : null;
+        }
+        else return "unavailable";
+        return name switch
+        {
+            "InspectContainerAsync" => "inspect",
+            "StopContainerAsync" => "stop",
+            "RemoveContainerAsync" => "remove",
+            _ => "unavailable",
+        };
     }
 
     internal static void WriteReceipt(string report, string containerId, Func<string, string?> environment)
