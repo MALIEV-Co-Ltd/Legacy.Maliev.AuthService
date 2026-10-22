@@ -24,7 +24,7 @@ await PrivateStartupBoundary.RunAsync(async () =>
     builder.AddStandardCors();
     // RequestLoggingMiddleware emits raw URL paths, which can contain auth secrets.
     // Keep the shared correlated exception boundary without that optional request log.
-    builder.AddStandardMiddleware();
+    builder.AddStandardMiddleware(options => options.IncludePrivateFailureProvenance = true);
     builder.AddStandardOpenApi(
         title: "Legacy MALIEV Auth Service API",
         description: "Secure temporary authentication boundary for unchanged legacy customer and employee identities.");

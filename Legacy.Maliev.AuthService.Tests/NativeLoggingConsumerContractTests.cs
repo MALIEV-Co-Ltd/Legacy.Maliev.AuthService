@@ -30,7 +30,8 @@ public sealed class NativeLoggingConsumerContractTests
 
         Assert.Contains("builder.AddServiceDefaults();", program, StringComparison.Ordinal);
         Assert.Contains("app.UseStandardMiddleware();", program, StringComparison.Ordinal);
-        Assert.Contains("builder.AddStandardMiddleware();", program, StringComparison.Ordinal);
+        Assert.Contains("builder.AddStandardMiddleware(options => options.IncludePrivateFailureProvenance = true);", program, StringComparison.Ordinal);
+        Assert.False(new MiddlewareOptions().IncludePrivateFailureProvenance);
         Assert.DoesNotContain("EnableRequestLogging = true", program, StringComparison.Ordinal);
         Assert.False(new MiddlewareOptions().EnableRequestLogging);
         Assert.DoesNotContain("Maliev.NativeLogging", program, StringComparison.Ordinal);

@@ -27,7 +27,7 @@ internal static class AuthIamComposition
         .RedactLoggedHeaders(["Authorization", "X-Maliev-IAM-Live-Check-Key"])
         .AddServiceDiscovery()
         .AddLegacyServiceAuthentication()
-        .AddPrivateFailureObservation("IAMService");
+        .AddPrivateFailureObservation("IAMService", includePrivateProvenance: true);
     }
 
     private static Uri ResolveOrigin(string? configured, IHostEnvironment environment)
