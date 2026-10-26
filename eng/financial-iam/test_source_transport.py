@@ -27,6 +27,19 @@ class TransportControls(unittest.TestCase):
         with patch('verify_source_transport.bounded_file', side_effect=read), self.assertRaises(ValueError):
             transport.verify(self.root)
 
+        reviewed = json.loads((self.root / 'eng/financial-iam/source-transport-seal.json').read_bytes())
+        lineage = reviewed.pop('artifactTransportSuccessor')
+        for delta in lineage['changedPostimages']:
+            row = next(row for row in reviewed['files'] if row['path'] == delta['path'])
+            row.update(delta['before'])
+        predecessor = (json.dumps(reviewed, indent=2)+'\n').encode()
+        self.assertEqual(hashlib.sha256(predecessor).hexdigest(),
+                         '775571b1a4c88a9d155bc2a2d4e0f07f44f1b21eb7c23c1215a308fb029f3974')
+        def previous_read(path, maximum):
+            return predecessor if path.name == 'source-transport-seal.json' else self.original_read(path, maximum)
+        with patch('verify_source_transport.bounded_file', side_effect=previous_read), self.assertRaisesRegex(ValueError, 'Immutable source transport seal'):
+            transport.verify(self.root)
+
         original = json.loads((self.root / 'eng/financial-iam/source-transport-seal.json').read_text())
         variants = []
         for key in transport.EXPECTED_COUNTS:

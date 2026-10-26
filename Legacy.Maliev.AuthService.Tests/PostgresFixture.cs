@@ -37,22 +37,25 @@ public sealed class PostgresFixture : IAsyncLifetime
         .Build();
 
     private readonly Lazy<Task> cleanup;
+    private int cleanupFailurePhase;
 
     /// <summary>
     /// Creates the single shared cleanup task that stops and removes this fixture's owned container.
     /// </summary>
     public PostgresFixture()
     {
-        cleanup = CreateContainerCleanup(postgres.StopAsync, postgres.DisposeAsync);
+        cleanup = CreateContainerCleanup(postgres.StopAsync, postgres.DisposeAsync,
+            observeFailure: phase => Volatile.Write(ref cleanupFailurePhase, (int)phase));
     }
 
     internal static Lazy<Task> CreateContainerCleanup(Func<CancellationToken, Task> stop,
-        Func<ValueTask> remove, TimeProvider? clock = null) =>
-        new(() => StopThenRemoveAsync(stop, remove, clock ?? TimeProvider.System),
+        Func<ValueTask> remove, TimeProvider? clock = null,
+        Action<CleanupFailurePhase>? observeFailure = null) =>
+        new(() => StopThenRemoveAsync(stop, remove, clock ?? TimeProvider.System, observeFailure),
             LazyThreadSafetyMode.ExecutionAndPublication);
 
     private static async Task StopThenRemoveAsync(Func<CancellationToken, Task> stop,
-        Func<ValueTask> remove, TimeProvider clock)
+        Func<ValueTask> remove, TimeProvider clock, Action<CleanupFailurePhase>? observeFailure)
     {
         Exception? stopFailure = null;
         try
@@ -60,18 +63,32 @@ public sealed class PostgresFixture : IAsyncLifetime
             using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30), clock);
             await stop(deadline.Token);
         }
-        catch (Exception exception) { stopFailure = exception; }
+        catch (Exception exception)
+        {
+            stopFailure = exception;
+            ObserveFailurePhase(observeFailure, CleanupFailurePhase.Stop);
+        }
         finally
         {
             // Removal has its own existing client bound, not the cancelled stop token.
             try { await remove(); }
-            catch (Exception removalFailure) when (stopFailure is not null)
+            catch (Exception removalFailure)
             {
-                throw new AggregateException("Owned PostgreSQL stop and removal failed.",
-                    stopFailure, removalFailure);
+                ObserveFailurePhase(observeFailure, stopFailure is null
+                    ? CleanupFailurePhase.Remove : CleanupFailurePhase.StopAndRemove);
+                if (stopFailure is not null)
+                    throw new AggregateException("Owned PostgreSQL stop and removal failed.",
+                        stopFailure, removalFailure);
+                throw;
             }
         }
         if (stopFailure is not null) ExceptionDispatchInfo.Capture(stopFailure).Throw();
+    }
+
+    private static void ObserveFailurePhase(Action<CleanupFailurePhase>? observe, CleanupFailurePhase phase)
+    {
+        try { observe?.Invoke(phase); }
+        catch { /* Phase diagnostics must never replace either cleanup failure. */ }
     }
 
     /// <summary>
@@ -92,7 +109,8 @@ public sealed class PostgresFixture : IAsyncLifetime
         AwaitContainerCleanupAsync(cleanup, () => postgres.Id, (exception, elapsed, containerId) =>
             CleanupFailureObserver.Observe(exception, elapsed,
                 () => (int)postgres.State, Console.Error.WriteLine,
-                report => CleanupFailureObserver.WriteReceipt(report, containerId, Environment.GetEnvironmentVariable)));
+                report => CleanupFailureObserver.WriteReceipt(report, containerId, Environment.GetEnvironmentVariable),
+                (CleanupFailurePhase)Volatile.Read(ref cleanupFailurePhase)));
 
     internal static async Task AwaitContainerCleanupAsync(Lazy<Task> cleanup, Func<string> containerId,
         Action<Exception, TimeSpan, string> observe)

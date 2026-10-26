@@ -6,7 +6,7 @@
   "files": [
     {
       "path": ".github/workflows/financial-iam-qualification.yml",
-      "sha256": "97adfb507284ba143c0dd0939287f054b81fb96ea05f04c0607c32d8dd6a634c",
+      "sha256": "dfbf58c6753e528da63981b987e702f9028bc354f7159800e05d44ad396db21b",
       "bytes": 5107
     },
     {
@@ -127,7 +127,7 @@
     {
       "path": ".github/workflows/financial-no-sdk-lifecycle-proof.yml",
       "bytes": 2092,
-      "sha256": "2b97b76b87fbe2927004f98a361250594912a09eb79f63de98b9eb58d326c488"
+      "sha256": "9519c835c694e6762adb3f08610e019312cc1d102e775cbe1f5b07e4eff68011"
     },
     {
       "path": "eng/financial-iam/finite_stub_proof.py",
@@ -200,5 +200,51 @@
   "coordinatorPropertyShapePredecessorSealSha256": "45c5861b72be593ee17ec13fb887be2085e5ac337717424b28f882ebd5793c3b",
   "terminalResetPredecessorSealSha256": "d9cccb8d4cbfea521c50df74294460220111f5d810fd2c9912dbf4cf88ab355e",
   "countMetadataPredecessorSealSha256": "5ef751e43ee5497acb783935400f9c3cf36ff8e28804a00d2e4a27f87ad37268",
-  "nonloadingEnumerationPredecessorSealSha256": "7d14c32c96f973f4149b507d0a6bf4f1361bc33b695559c20e2df58ff7e441da"
+  "nonloadingEnumerationPredecessorSealSha256": "7d14c32c96f973f4149b507d0a6bf4f1361bc33b695559c20e2df58ff7e441da",
+  "artifactTransportSuccessor": {
+    "profile": "upload-artifact-v7.0.2-20261026",
+    "sourceOnly": true,
+    "predecessor": {
+      "commit": "d05c1ed990303beb2fba630b49c78adca9d0b610",
+      "path": "eng/financial-iam/source-transport-seal.json",
+      "gitBlob": "8442ab8d8c87dddb296434fe4a6169f65980ff1c",
+      "bytes": 8181,
+      "sha256": "775571b1a4c88a9d155bc2a2d4e0f07f44f1b21eb7c23c1215a308fb029f3974",
+      "lineEnding": "LF"
+    },
+    "independentReviewScopeSha256": "63c05ecd48f8c09d6a8f72d12e03bb25b8e3e74ded67fc3eab1bd41e0fd6b9f9",
+    "changedPostimages": [
+      {
+        "path": ".github/workflows/financial-iam-qualification.yml",
+        "before": {
+          "path": ".github/workflows/financial-iam-qualification.yml",
+          "sha256": "97adfb507284ba143c0dd0939287f054b81fb96ea05f04c0607c32d8dd6a634c",
+          "bytes": 5107
+        },
+        "after": {
+          "path": ".github/workflows/financial-iam-qualification.yml",
+          "sha256": "dfbf58c6753e528da63981b987e702f9028bc354f7159800e05d44ad396db21b",
+          "bytes": 5107
+        }
+      },
+      {
+        "path": ".github/workflows/financial-no-sdk-lifecycle-proof.yml",
+        "before": {
+          "path": ".github/workflows/financial-no-sdk-lifecycle-proof.yml",
+          "bytes": 2092,
+          "sha256": "2b97b76b87fbe2927004f98a361250594912a09eb79f63de98b9eb58d326c488"
+        },
+        "after": {
+          "path": ".github/workflows/financial-no-sdk-lifecycle-proof.yml",
+          "bytes": 2092,
+          "sha256": "9519c835c694e6762adb3f08610e019312cc1d102e775cbe1f5b07e4eff68011"
+        }
+      }
+    ],
+    "originalProducerInputsAndOwnershipUnchanged": true,
+    "nativeExecutionGranted": false,
+    "sdkGranted": false,
+    "financialDispatchGranted": false,
+    "note": "Exact transport-only successor. Original producer and source witnesses remain canonical; ordinary and native acceptance remain separate."
+  }
 }

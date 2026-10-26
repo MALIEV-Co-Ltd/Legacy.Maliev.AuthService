@@ -8,7 +8,7 @@
     {
       "path": ".github/workflows/customer-self-identity-validation.yml",
       "bytes": 6111,
-      "sha256": "1d410e11aa275528e4f9aa2c9913338d67195fd3f2d9bb6d6c27f32a22d026a9"
+      "sha256": "5d7a65f3c499935e10460e672e0ffca619f9a624469084f6e10d67d93b1c5540"
     },
     {
       "path": "eng/customer-self-identity-intake/auth-composed-source-v1-20261010/complete.patch",
@@ -392,5 +392,38 @@
     "publishedProducerSealSha256": "2295975ab680ed2ed463d72b3898a12c63ca3fe619efb1f5e1c4bea9db13e377",
     "closed43PacketSealSha256": "4c0a696315089af2faaa844223f13619d48991962d047ac20fb48555f5e54f68",
     "closed43ManifestSha256": "b872953f3b3bfea1e7d8f2830fff95d2a3dc6bbbf31e9fbbad4969e7024adefc"
+  },
+  "artifactTransportSuccessor": {
+    "profile": "upload-artifact-v7.0.2-20261026",
+    "sourceOnly": true,
+    "predecessor": {
+      "commit": "d05c1ed990303beb2fba630b49c78adca9d0b610",
+      "path": "eng/auth-composed-carrier/carrier-seal.json",
+      "gitBlob": "1095d7c255d7790d416a2761b31b78b859641813",
+      "bytes": 20159,
+      "sha256": "62911b909a9d70e013e852457d4d05c00ee8f4f12601ec6683c5bc076140cdcb",
+      "lineEnding": "CRLF"
+    },
+    "independentReviewScopeSha256": "63c05ecd48f8c09d6a8f72d12e03bb25b8e3e74ded67fc3eab1bd41e0fd6b9f9",
+    "changedPostimages": [
+      {
+        "path": ".github/workflows/customer-self-identity-validation.yml",
+        "before": {
+          "path": ".github/workflows/customer-self-identity-validation.yml",
+          "bytes": 6111,
+          "sha256": "1d410e11aa275528e4f9aa2c9913338d67195fd3f2d9bb6d6c27f32a22d026a9"
+        },
+        "after": {
+          "path": ".github/workflows/customer-self-identity-validation.yml",
+          "bytes": 6111,
+          "sha256": "5d7a65f3c499935e10460e672e0ffca619f9a624469084f6e10d67d93b1c5540"
+        }
+      }
+    ],
+    "originalProducerInputsAndOwnershipUnchanged": true,
+    "nativeExecutionGranted": false,
+    "sdkGranted": false,
+    "financialDispatchGranted": false,
+    "note": "Exact transport-only successor. Original producer and source witnesses remain canonical; ordinary and native acceptance remain separate."
   }
 }

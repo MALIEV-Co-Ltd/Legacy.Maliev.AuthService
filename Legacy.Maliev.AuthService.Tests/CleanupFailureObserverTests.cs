@@ -242,6 +242,62 @@ public sealed class CleanupFailureObserverTests
         });
     }
 
+    /// <summary>Checks phase labels remain closed, private and bounded even when an unknown numeric phase is supplied.</summary>
+    [Fact]
+    public void Format_FailurePhaseUsesClosedLabelsWithoutExportingExceptionPayload()
+    {
+        foreach (var (phase, label) in new[]
+        {
+            (CleanupFailurePhase.Unknown, "unknown"),
+            (CleanupFailurePhase.Stop, "stop"),
+            (CleanupFailurePhase.Remove, "remove"),
+            (CleanupFailurePhase.StopAndRemove, "stop_and_remove"),
+            ((CleanupFailurePhase)99, "unknown"),
+        })
+        {
+            var report = CleanupFailureObserver.Format(Capture("private-phase-canary"),
+                TimeSpan.Zero, 32, phase);
+            Assert.Contains("cleanup_phase=" + label, report, StringComparison.Ordinal);
+            Assert.Contains("docker_api_frame=unavailable", report, StringComparison.Ordinal);
+            Assert.DoesNotContain("private-phase-canary", report, StringComparison.Ordinal);
+            Assert.InRange(report.Length, 1, 2048);
+        }
+    }
+
+    /// <summary>Checks operation witnesses accept only real methods from the pinned Docker assembly without issuing any Docker request.</summary>
+    [Fact]
+    public void DockerApiFrameWitness_RecognizesPinnedRuntimeMetadataAndRejectsForeignFrames()
+    {
+        var operations = typeof(Docker.DotNet.DockerClient).Assembly.GetType("Docker.DotNet.ContainerOperations", true)!;
+        foreach (var (name, expected) in new[]
+        {
+            ("InspectContainerAsync", "inspect"),
+            ("StopContainerAsync", "stop"),
+            ("RemoveContainerAsync", "remove"),
+            ("StartContainerAsync", "unavailable"),
+        })
+        {
+            var methods = operations.GetMethods().Where(method => method.Name == name).ToArray();
+            Assert.NotEmpty(methods);
+            Assert.All(methods, method => Assert.Equal(expected,
+                CleanupFailureObserver.ClassifyDockerApiFrame(method)));
+        }
+        var stateMachines = operations.GetNestedTypes(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic)
+            .Where(type => type.Name.StartsWith("<InspectContainerAsync>d__", StringComparison.Ordinal)).ToArray();
+        Assert.NotEmpty(stateMachines);
+        foreach (var stateMachine in stateMachines)
+        {
+            var moveNext = stateMachine.GetMethod("MoveNext", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.NotNull(moveNext);
+            Assert.Equal("inspect", CleanupFailureObserver.ClassifyDockerApiFrame(moveNext));
+        }
+        Assert.Equal("unavailable", CleanupFailureObserver.ClassifyDockerApiFrame(null));
+        Assert.Equal("unavailable", CleanupFailureObserver.ClassifyDockerApiFrame(
+            typeof(Docker.DotNet.DockerClient).GetMethod(nameof(IDisposable.Dispose))));
+        Assert.Equal("unavailable", CleanupFailureObserver.ClassifyDockerApiFrame(
+            typeof(CleanupFailureObserverTests).GetMethod(nameof(DockerApiFrameWitness_RecognizesPinnedRuntimeMetadataAndRejectsForeignFrames))));
+    }
+
     private static void WithReceiptDirectory(Action<string, Func<string, string?>> action)
     {
         var workspace = Path.Combine(Path.GetTempPath(), $"auth-cleanup-receipt-{Guid.NewGuid():N}");
