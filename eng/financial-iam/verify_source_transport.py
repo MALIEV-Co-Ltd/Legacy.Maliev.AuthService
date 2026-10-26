@@ -8,7 +8,7 @@ from pathlib import Path
 import sys
 import unittest
 
-SEAL_SHA256 = '775571b1a4c88a9d155bc2a2d4e0f07f44f1b21eb7c23c1215a308fb029f3974'
+SEAL_SHA256 = 'c60219994732c398c965f4f2565466cb004c952710fedf04385a072c11cbc40f'
 PYTHON = ('private_docker_proxy.py', 'hosted_owner.py', 'recover_owner.py',
           'expiry_guard.py', 'verify_results.py', 'test_controls.py',
           'commerce_build_route.py', 'test_commerce_build_route.py',

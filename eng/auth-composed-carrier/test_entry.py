@@ -111,6 +111,18 @@ class PublicationGuards(unittest.TestCase):
             with self.assertRaises(FileNotFoundError):
                 self.verify(root=clone)
             path.write_bytes(original)
+            reviewed = json.loads((ROOT/'eng/auth-composed-carrier/carrier-seal.json').read_bytes())
+            lineage = reviewed.pop('artifactTransportSuccessor')
+            for delta in lineage['changedPostimages']:
+                row = next(row for row in reviewed['packetFiles'] if row['path'] == delta['path'])
+                row.update(delta['before'])
+            predecessor = (json.dumps(reviewed, indent=2)+'\n').replace('\n', '\r\n').encode()
+            self.assertEqual(hashlib.sha256(predecessor).hexdigest(),
+                             '62911b909a9d70e013e852457d4d05c00ee8f4f12601ec6683c5bc076140cdcb')
+            previous_path = clone/'eng/auth-composed-carrier/carrier-seal.json'
+            previous_path.write_bytes(predecessor)
+            with self.assertRaisesRegex(ValueError, 'outer seal'):
+                self.verify(root=clone)
             seal = clone/'eng/auth-composed-carrier/carrier-seal.json'
             seal.write_bytes(b'{"packetFiles":[{},{}]}')
             with self.assertRaisesRegex(ValueError, 'outer seal'):
