@@ -9,6 +9,9 @@ using System.Security.Cryptography;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises configured machine login, exact service grants, and signed token contents without issuing refresh credentials.
+/// </summary>
 public sealed class ServiceAuthenticationTests
 {
     private static readonly string[] LegacyAccountingPermissions =
@@ -22,6 +25,10 @@ public sealed class ServiceAuthenticationTests
         "legacy-employee.signatures.read",
     ];
 
+    /// <summary>
+    /// Checks configured service login and the source-owned web grant through the recording issuer.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Login_ValidConfiguredSecret_IssuesShortLivedServiceToken()
     {
@@ -49,6 +56,12 @@ public sealed class ServiceAuthenticationTests
         Assert.Equal(["legacy-contact.messages.create", "legacy-quotation.quotations.create", LegacyAccessTokenPermissions.CatalogCurrenciesRead], issuer.Permissions);
     }
 
+    /// <summary>
+    /// Checks that unknown clients and incorrect secrets share a generic failure without token issuance.
+    /// </summary>
+    /// <param name="clientId">The configured or attempted machine client identity under test.</param>
+    /// <param name="secret">The correct or incorrect secret supplied for the selected machine identity.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("missing", "correct-secret")]
     [InlineData("legacy-web", "wrong-secret")]
@@ -68,6 +81,10 @@ public sealed class ServiceAuthenticationTests
         Assert.Null(issuer.ClientId);
     }
 
+    /// <summary>
+    /// Checks that accounting login receives exactly its seven approved non-wildcard grants.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Login_LegacyAccounting_IssuesExactlyTheApprovedSevenPermissions()
     {
@@ -98,6 +115,10 @@ public sealed class ServiceAuthenticationTests
         Assert.DoesNotContain(permissions, permission => permission.Contains('*', StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// Checks that intranet login receives exactly the configured quotation-update grant.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Login_ConfiguredLegacyIntranet_IssuesExactQuotationUpdatePermission()
     {
@@ -125,6 +146,10 @@ public sealed class ServiceAuthenticationTests
         Assert.Equal(["legacy.quotations.update"], issuer.Permissions);
     }
 
+    /// <summary>
+    /// Checks that a configured wildcard prevents token issuance.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Login_ConfiguredWildcardPermission_FailsClosedWithoutIssuingToken()
     {
@@ -152,6 +177,10 @@ public sealed class ServiceAuthenticationTests
         Assert.Null(issuer.ClientId);
     }
 
+    /// <summary>
+    /// Checks that invalid service credentials produce a non-enumerating controller problem.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Controller_InvalidServiceCredentials_ReturnsNonEnumeratingProblem()
     {
@@ -166,6 +195,9 @@ public sealed class ServiceAuthenticationTests
         Assert.DoesNotContain("unknown", problem.Detail, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Checks signed service claims contain configured grants but no secret or refresh material.
+    /// </summary>
     [Fact]
     public void RsaIssuer_ServiceTokenCarriesOnlyConfiguredPermissionsAndNoRefreshMaterial()
     {
@@ -188,6 +220,11 @@ public sealed class ServiceAuthenticationTests
         Assert.DoesNotContain(token.Claims, claim => claim.Type.Contains("secret", StringComparison.OrdinalIgnoreCase) || claim.Type.Contains("refresh", StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// Checks that other client identities do not inherit the web-only currency grant.
+    /// </summary>
+    /// <param name="clientId">The configured or attempted machine client identity under test.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("legacy-other")]
     [InlineData("LEGACY-WEB")]
@@ -208,6 +245,10 @@ public sealed class ServiceAuthenticationTests
         Assert.Equal(["legacy-contact.messages.create"], issuer.Permissions);
     }
 
+    /// <summary>
+    /// Checks web grant deduplication without mutating the configured permission list.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Login_WebGrantRegistration_DeduplicatesWithoutMutatingConfiguredGrants()
     {
@@ -229,6 +270,10 @@ public sealed class ServiceAuthenticationTests
         Assert.Single(issuer.Permissions!, permission => permission == LegacyAccessTokenPermissions.CatalogCurrenciesRead);
     }
 
+    /// <summary>
+    /// Checks that a web wildcard is rejected before adding the source-owned grant.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Login_ConfiguredWildcardForWeb_RejectsBeforeRegisteredGrant()
     {

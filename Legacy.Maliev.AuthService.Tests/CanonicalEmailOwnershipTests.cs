@@ -4,6 +4,10 @@ using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies canonical email ownership and transaction locking against retained historical identity values.
+/// </summary>
+/// <param name="postgres">The shared fixture that owns the disposable PostgreSQL container.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class CanonicalEmailOwnershipTests(PostgresFixture postgres) : IAsyncLifetime
 {
@@ -11,8 +15,16 @@ public sealed class CanonicalEmailOwnershipTests(PostgresFixture postgres) : IAs
     // method's await-using contexts and concurrent operations have completed.
     private readonly List<NpgsqlConnection> ownedPools = [];
 
+    /// <summary>
+    /// Completes initialization without starting resources beyond the shared fixture.
+    /// </summary>
+    /// <returns>A task that completes when fixture initialization is finished.</returns>
     public Task InitializeAsync() => Task.CompletedTask;
 
+    /// <summary>
+    /// Clears only the database pools registered by these ownership regressions.
+    /// </summary>
+    /// <returns>A task that completes after fixture-owned resources are released.</returns>
     public Task DisposeAsync()
     {
         foreach (var connection in ownedPools) NpgsqlConnection.ClearPool(connection);
@@ -22,6 +34,13 @@ public sealed class CanonicalEmailOwnershipTests(PostgresFixture postgres) : IAs
 
     private void RegisterPool(NpgsqlConnection connection) => ownedPools.Add(connection);
 
+    /// <summary>
+    /// Verifies a historical email representation cannot claim another canonical owner's identity.
+    /// </summary>
+    /// <param name="employee">Whether the case exercises employee rather than customer identity storage.</param>
+    /// <param name="suppliedEmail">The submitted email representation used to challenge canonical ownership.</param>
+    /// <param name="historicalEmail">The persisted historical email representation owned by another identity.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false, "caf\u00e9@identity.test", "cafe\u0301@identity.test")]
     [InlineData(true, "caf\u00e9@identity.test", "cafe\u0301@identity.test")]
@@ -76,6 +95,11 @@ public sealed class CanonicalEmailOwnershipTests(PostgresFixture postgres) : IAs
         Assert.Null((await context.Users.AsNoTracking().SingleAsync()).NormalizedEmail);
     }
 
+    /// <summary>
+    /// Verifies historical user names cannot bypass canonical ownership through compatibility folding.
+    /// </summary>
+    /// <param name="employee">Whether the case exercises employee rather than customer identity storage.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -105,6 +129,10 @@ public sealed class CanonicalEmailOwnershipTests(PostgresFixture postgres) : IAs
         Assert.Equal("retained-concurrency", retained.ConcurrencyStamp);
     }
 
+    /// <summary>
+    /// Verifies canonical aliases share one transaction lock and rollback releases that lock.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task CanonicalAliases_ContendOnOneTransactionLockAndReleaseAfterRollback()
     {

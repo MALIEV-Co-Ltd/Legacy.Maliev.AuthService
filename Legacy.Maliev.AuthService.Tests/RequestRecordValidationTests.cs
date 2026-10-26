@@ -3,8 +3,14 @@ using Legacy.Maliev.AuthService.Application;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies request-record validation metadata is attached to constructor parameters.
+/// </summary>
 public sealed class RequestRecordValidationTests
 {
+    /// <summary>
+    /// Verifies request records retain validation attributes on their primary constructor parameters.
+    /// </summary>
     [Fact]
     public void RequestRecords_PlaceValidationMetadataOnPrimaryConstructorParameters()
     {

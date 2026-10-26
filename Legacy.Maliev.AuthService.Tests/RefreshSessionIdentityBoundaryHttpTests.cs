@@ -17,6 +17,10 @@ using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises credential and refresh-family isolation when customer and employee identities share the same ID.
+/// </summary>
+/// <param name="postgres">The collection-owned fixture that creates isolated PostgreSQL stores for each case.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class RefreshSessionIdentityBoundaryHttpTests(PostgresFixture postgres)
 {
@@ -25,6 +29,11 @@ public sealed class RefreshSessionIdentityBoundaryHttpTests(PostgresFixture post
     private const string Password = "session-boundary-original-password";
     private const string ReplacementPassword = "session-boundary-replacement-password";
 
+    /// <summary>
+    /// Checks that customer credential mutations revoke only customer sessions while employee refresh remains usable.
+    /// </summary>
+    /// <param name="operation">The customer credential operation whose session revocation scope is exercised.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("initial-password")]
     [InlineData("password-reset")]
@@ -70,6 +79,10 @@ public sealed class RefreshSessionIdentityBoundaryHttpTests(PostgresFixture post
         Assert.All(employeeRows, row => Assert.Equal("employee-generation", row.SecurityStamp));
     }
 
+    /// <summary>
+    /// Checks that employee reset revokes only the employee generation while customer refresh remains usable.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task EmployeeReset_RevokesEmployeeGenerationOnly_CustomerWithSameIdStillRefreshes()
     {
@@ -95,6 +108,11 @@ public sealed class RefreshSessionIdentityBoundaryHttpTests(PostgresFixture post
         Assert.Single(await stores.Employees.RecoveryEffects.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Checks family revocation isolation from both the other identity kind and another family of the same kind.
+    /// </summary>
+    /// <param name="revokedKind">The identity kind whose selected refresh family is revoked.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData(IdentityKind.Customer)]
     [InlineData(IdentityKind.Employee)]
@@ -119,6 +137,12 @@ public sealed class RefreshSessionIdentityBoundaryHttpTests(PostgresFixture post
         Assert.Single(await stores.State.RefreshSessions.AsNoTracking().ToListAsync(), row => row.RevokedAt is not null);
     }
 
+    /// <summary>
+    /// Checks that invalid callers cannot alter either identity kind or its sessions.
+    /// </summary>
+    /// <param name="caller">The invalid caller or signature variant sent to the customer credential route.</param>
+    /// <param name="expected">The HTTP rejection status expected for the invalid caller.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("anonymous", HttpStatusCode.Unauthorized)]
     [InlineData("employee", HttpStatusCode.Forbidden)]
@@ -143,6 +167,11 @@ public sealed class RefreshSessionIdentityBoundaryHttpTests(PostgresFixture post
         Assert.Equal(before, await SnapshotAsync(stores));
     }
 
+    /// <summary>
+    /// Checks that an incorrect current password preserves both identities and their sessions.
+    /// </summary>
+    /// <param name="emailChange">Whether to exercise email change instead of password change.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -161,6 +190,10 @@ public sealed class RefreshSessionIdentityBoundaryHttpTests(PostgresFixture post
         Assert.Equal(before, await SnapshotAsync(stores));
     }
 
+    /// <summary>
+    /// Checks pre-cancelled registered-service mutations propagate cancellation without changing either identity kind.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task RegisteredService_PrecancelledMutation_PreservesBothKindsAndPropagatesCancellation()
     {

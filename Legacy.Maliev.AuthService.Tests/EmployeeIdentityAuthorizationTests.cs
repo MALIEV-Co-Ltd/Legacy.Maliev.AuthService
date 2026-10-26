@@ -8,6 +8,10 @@ using System.Reflection;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises employee identity permissions and employee-only administration through signed HTTP principals.
+/// </summary>
+/// <param name="factory">The shared application factory that issues signed principals for authorization cases.</param>
 public sealed class EmployeeIdentityAuthorizationTests(
     CustomerIdentityAuthorizationTests.AuthApiFactory factory)
     : IClassFixture<CustomerIdentityAuthorizationTests.AuthApiFactory>
@@ -17,6 +21,9 @@ public sealed class EmployeeIdentityAuthorizationTests(
     private const string EmployeeIdentitiesUpdate = "legacy-auth.employee-identities.update";
     private const string EmployeeIdentitiesDelete = "legacy-auth.employee-identities.delete";
 
+    /// <summary>
+    /// Checks that employee creation uses its dedicated grant while other actions retain the employee policy.
+    /// </summary>
     [Fact]
     public void Controller_PostUsesCreatePermission_WhileOtherOperationsRemainEmployeeOnly()
     {
@@ -42,6 +49,9 @@ public sealed class EmployeeIdentityAuthorizationTests(
         }
     }
 
+    /// <summary>
+    /// Checks exact employee read, update, and delete grants alongside the employee policy.
+    /// </summary>
     [Fact]
     public void Controller_AdminOperationsRequireGranularPermissionsAndRetainEmployeePolicy()
     {
@@ -67,6 +77,10 @@ public sealed class EmployeeIdentityAuthorizationTests(
         }
     }
 
+    /// <summary>
+    /// Checks that an intranet service with the create grant receives a created employee response.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Post_ConfiguredIntranetServiceToken_ReturnsCreated()
     {
@@ -78,6 +92,10 @@ public sealed class EmployeeIdentityAuthorizationTests(
         Assert.Equal(42, (await response.Content.ReadFromJsonAsync<EmployeeIdentityResponse>())?.DatabaseID);
     }
 
+    /// <summary>
+    /// Checks that an interactive employee can create an employee identity.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Post_EmployeeInteractiveToken_ReturnsCreated()
     {
@@ -88,6 +106,11 @@ public sealed class EmployeeIdentityAuthorizationTests(
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
+    /// <summary>
+    /// Checks that a customer or unprivileged service cannot create an employee identity.
+    /// </summary>
+    /// <param name="tokenKind">The customer or service principal that lacks the create grant.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("customer")]
     [InlineData("service-without-permission")]
@@ -101,6 +124,11 @@ public sealed class EmployeeIdentityAuthorizationTests(
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    /// <summary>
+    /// Checks that a create-only service cannot read, update, or delete employee identities.
+    /// </summary>
+    /// <param name="method">The HTTP administration verb under test.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("GET")]
     [InlineData("PUT")]
@@ -127,6 +155,12 @@ public sealed class EmployeeIdentityAuthorizationTests(
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    /// <summary>
+    /// Checks that matching operation grants do not let a service bypass the employee policy.
+    /// </summary>
+    /// <param name="method">The HTTP administration verb under test.</param>
+    /// <param name="permission">The exact operation grant assigned to the test principal.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("GET", EmployeeIdentitiesRead)]
     [InlineData("PUT", EmployeeIdentitiesUpdate)]
@@ -155,6 +189,11 @@ public sealed class EmployeeIdentityAuthorizationTests(
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    /// <summary>
+    /// Checks that an employee passes both authorization layers and reaches the missing-record stub.
+    /// </summary>
+    /// <param name="method">The HTTP administration verb under test.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("GET")]
     [InlineData("PUT")]

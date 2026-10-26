@@ -4,9 +4,16 @@ using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises exact lockout transition completeness and disposable, key-bound backfill without changing runtime columns.
+/// </summary>
+/// <param name="postgres">The collection-owned fixture that creates isolated PostgreSQL stores for each case.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class LockoutEndExactTransitionTests(PostgresFixture postgres)
 {
+    /// <summary>
+    /// Checks source-null completeness, exact offset and tick retention, and rejection of conflicting or malformed state.
+    /// </summary>
     [Fact]
     public void Completeness_DistinguishesSourceNullFromNotBackfilledAndRejectsConflicts()
     {
@@ -26,6 +33,11 @@ public sealed class LockoutEndExactTransitionTests(PostgresFixture postgres)
         Assert.Throws<FormatException>(() => LockoutEndExactTransition.ReadCompleted(true, "invalid"));
     }
 
+    /// <summary>
+    /// Checks retry-safe exact-value backfill in customer and employee stores while retaining runtime lockout values.
+    /// </summary>
+    /// <param name="employee">Whether to backfill the employee store instead of the customer store.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

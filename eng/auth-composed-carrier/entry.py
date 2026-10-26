@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 BASE = '2bd6a61bfce1d19310209c0d00b56d92f0abea91'
-CARRIER = 'df834deb68488bc59f58ef2668bced3a61529c02a88d5bb0741ef1980058c4c5'
+CARRIER = '62911b909a9d70e013e852457d4d05c00ee8f4f12601ec6683c5bc076140cdcb'
 REPOSITORY = 'MALIEV-Co-Ltd/Legacy.Maliev.AuthService'
 WORKFLOW = '.github/workflows/auth-composed-carrier-validation.yml'
 ADDITIONS = {WORKFLOW, 'eng/auth-composed-carrier/entry.py',

@@ -4,10 +4,17 @@ using Microsoft.Extensions.Time.Testing;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises interactive login, refresh rotation, and revocation against recording identity and session boundaries.
+/// </summary>
 public sealed class AuthenticationServiceTests
 {
     private static readonly DateTimeOffset Now = new(2026, 7, 15, 0, 0, 0, TimeSpan.Zero);
 
+    /// <summary>
+    /// Checks access-token lifetime and refresh-session hashing for a valid legacy password.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Login_ValidLegacyPassword_IssuesShortLivedAccessAndHashedRefreshSession()
     {
@@ -31,6 +38,10 @@ public sealed class AuthenticationServiceTests
         Assert.DoesNotContain(result.Tokens.RefreshToken, store.Created.TokenHash, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Checks that rejected credentials create neither tokens nor refresh-session state.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Login_InvalidCredentials_ReturnsGenericFailureAndCreatesNoSession()
     {
@@ -45,6 +56,10 @@ public sealed class AuthenticationServiceTests
         Assert.Null(store.Created);
     }
 
+    /// <summary>
+    /// Checks that an unconfirmed employee receives no session or customer recovery action.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Login_UnconfirmedEmployee_ReturnsGenericFailureWithoutIssuingSessionOrCustomerAction()
     {
@@ -63,6 +78,10 @@ public sealed class AuthenticationServiceTests
         Assert.Null(actions.IdentityId);
     }
 
+    /// <summary>
+    /// Checks that a confirmed employee can establish a refresh session.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Login_ConfirmedEmployee_CanCreateSession()
     {
@@ -77,6 +96,13 @@ public sealed class AuthenticationServiceTests
         Assert.NotNull(store.Created);
     }
 
+    /// <summary>
+    /// Checks that customers needing confirmation or initial password setup receive only the corresponding opaque action.
+    /// </summary>
+    /// <param name="emailConfirmed">Whether the validated customer has confirmed their email.</param>
+    /// <param name="requiresInitialPassword">Whether the validated customer must replace a bootstrap password.</param>
+    /// <param name="expectedAction">The opaque recovery action expected instead of a session.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData(true, true, "set_initial_password")]
     [InlineData(false, false, "confirm_email")]
@@ -106,6 +132,10 @@ public sealed class AuthenticationServiceTests
         Assert.Equal(identity.Id, actions.IdentityId);
     }
 
+    /// <summary>
+    /// Checks that an active refresh token is replaced while only its hash crosses the storage boundary.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Refresh_ActiveToken_RotatesTokenAndNeverStoresRawValue()
     {
@@ -128,6 +158,11 @@ public sealed class AuthenticationServiceTests
         Assert.Equal(Now.AddDays(14), store.Replacement.ExpiresAt);
     }
 
+    /// <summary>
+    /// Checks that invalid and reused refresh tokens share the same public failure without replacement tokens.
+    /// </summary>
+    /// <param name="status">The session-store rotation outcome to expose as the same public failure.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData(RefreshRotationStatus.Invalid)]
     [InlineData(RefreshRotationStatus.Reused)]
@@ -142,6 +177,10 @@ public sealed class AuthenticationServiceTests
         Assert.Null(result.Tokens);
     }
 
+    /// <summary>
+    /// Checks that revocation passes a hash rather than the raw refresh token to the session store.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Revoke_HashesTokenBeforeStoreBoundary()
     {

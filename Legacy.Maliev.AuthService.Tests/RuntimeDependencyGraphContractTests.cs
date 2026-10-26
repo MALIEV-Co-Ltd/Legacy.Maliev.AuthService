@@ -2,6 +2,9 @@ using System.Xml.Linq;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Guards the Auth API package floors and compatibility with the checked-out shared service-defaults dependency graph.
+/// </summary>
 public sealed class RuntimeDependencyGraphContractTests
 {
     private static readonly IReadOnlyDictionary<string, string> ExpectedRuntimeFloors =
@@ -28,6 +31,9 @@ public sealed class RuntimeDependencyGraphContractTests
             ["System.IdentityModel.Tokens.Jwt"] = "8.23.0",
         };
 
+    /// <summary>
+    /// Checks the API project retains each pinned validated shared-runtime dependency version.
+    /// </summary>
     [Fact]
     public void ApiProject_PinsTheValidatedServiceDefaultsRuntimeFloors()
     {
@@ -41,6 +47,9 @@ public sealed class RuntimeDependencyGraphContractTests
             expected => Assert.Equal(expected.Value, packageVersions[expected.Key]));
     }
 
+    /// <summary>
+    /// Checks overlapping API and checked-out service-defaults package references use identical runtime versions.
+    /// </summary>
     [Fact]
     public void ApiProject_MatchesTheCheckedOutServiceDefaultsGraph()
     {

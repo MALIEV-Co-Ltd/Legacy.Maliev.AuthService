@@ -10,9 +10,17 @@ using System.Reflection;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies customer identity administration, idempotent creation, and credential invalidation.
+/// </summary>
+/// <param name="postgres">The shared fixture that owns the disposable PostgreSQL container.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
 {
+    /// <summary>
+    /// Verifies creation persists a compatible password hash without returning security material.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Create_PersistsCompatiblePasswordHashAndReturnsNoSecurityMaterial()
     {
@@ -48,6 +56,10 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
         Assert.DoesNotContain("ConcurrencyStamp", responseFields);
     }
 
+    /// <summary>
+    /// Verifies a lost creation response can replay only for the same owner, key, and payload.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task KeyedCreate_LostResponseReplaysOnlyForSameOwnerKeyAndPayload()
     {
@@ -73,6 +85,10 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
         Assert.Equal(16, receipt.PayloadSalt.Length);
     }
 
+    /// <summary>
+    /// Verifies a changed creation payload or database identity conflicts without identity mutation.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task KeyedCreate_ChangedPayloadOrDatabaseIdConflictsWithoutMutatingIdentity()
     {
@@ -92,6 +108,10 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
         Assert.Single(await context.CreateOperations.ToListAsync());
     }
 
+    /// <summary>
+    /// Verifies an unrelated existing identity cannot acquire an ownership receipt.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task KeyedCreate_UnrelatedExistingIdentityDoesNotGainOwnershipReceipt()
     {
@@ -108,6 +128,10 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
         Assert.Empty(await context.CreateOperations.ToListAsync());
     }
 
+    /// <summary>
+    /// Verifies a deleted or replaced identity cannot replay an earlier creation receipt.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task KeyedCreate_DeletedOrReplacedIdentityCannotBeReplayed()
     {
@@ -132,6 +156,10 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
         Assert.Single(await context.CreateOperations.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Verifies concurrent creation with one key commits one identity and one receipt.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task KeyedCreate_ConcurrentSameKeyCommitsOneIdentityAndOneReceipt()
     {
@@ -156,6 +184,10 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
         Assert.Single(await first.CreateOperations.AsNoTracking().ToListAsync());
     }
 
+    /// <summary>
+    /// Verifies a security-stamp update invalidates existing refresh families.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Update_ChangesSecurityStampSoExistingRefreshFamiliesBecomeInvalid()
     {
@@ -179,6 +211,9 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
         Assert.NotEqual(before, after);
     }
 
+    /// <summary>
+    /// Verifies the controller uses least-privilege creation permission and keeps passwords out of routes.
+    /// </summary>
     [Fact]
     public void Controller_UsesLeastPrivilegeCreatePermissionAndNeverCarriesPasswordInRoute()
     {
@@ -205,6 +240,9 @@ public sealed class CustomerIdentityAdminTests(PostgresFixture postgres)
             setup.GetCustomAttribute<HttpPostAttribute>()?.Template);
     }
 
+    /// <summary>
+    /// Verifies customer identity storage has its isolated PostgreSQL migration.
+    /// </summary>
     [Fact]
     public void CustomerIdentityContext_HasIsolatedPostgresMigration()
     {

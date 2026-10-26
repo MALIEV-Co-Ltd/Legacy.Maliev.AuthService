@@ -74,7 +74,7 @@ def container(document):
     if not ID.fullmatch(identifier) or document['Config']['Image'] != IMAGE:
         raise ValueError('Unexpected PostgreSQL identity')
     labels = document['Config'].get('Labels') or {}
-    session = labels.get('org.testcontainers.sessionId')
+    session = labels.get('org.testcontainers.session-id')
     if session is not None and not SESSION.fullmatch(session):
         raise ValueError('Unexpected session identity')
     state = document['State']

@@ -4,9 +4,16 @@ using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies canonical lockout text preserves source precision independently of the runtime column.
+/// </summary>
+/// <param name="postgres">The shared fixture that owns the disposable PostgreSQL container.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class LockoutEndExactTextTests(PostgresFixture postgres)
 {
+    /// <summary>
+    /// Verifies nullable values, extreme offsets, and the seventh fractional digit round-trip exactly.
+    /// </summary>
     [Fact]
     public void ExactText_RoundTripsNullableExtremeOffsetsAndSeventhFractionalDigit()
     {
@@ -33,6 +40,10 @@ public sealed class LockoutEndExactTextTests(PostgresFixture postgres)
         Assert.Equal("2026-09-28T12:34:56.0000007-14:00", LockoutEndExactText.Format(values[1]));
     }
 
+    /// <summary>
+    /// Verifies invalid or noncanonical lockout text is rejected.
+    /// </summary>
+    /// <param name="text">The noncanonical or invalid exact lockout text to reject.</param>
     [Theory]
     [InlineData("")]
     [InlineData("not-a-date")]
@@ -49,6 +60,11 @@ public sealed class LockoutEndExactTextTests(PostgresFixture postgres)
         }
     }
 
+    /// <summary>
+    /// Verifies the disposable sidecar preserves source text without changing the runtime lockout column.
+    /// </summary>
+    /// <param name="employee">Whether the case exercises employee rather than customer identity storage.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

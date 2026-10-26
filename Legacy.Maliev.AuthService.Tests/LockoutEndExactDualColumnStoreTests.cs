@@ -4,9 +4,18 @@ using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies exact lockout text and runtime instants remain consistent across transactional dual-column writes.
+/// </summary>
+/// <param name="postgres">The shared fixture that owns the disposable PostgreSQL container.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class LockoutEndExactDualColumnStoreTests(PostgresFixture postgres)
 {
+    /// <summary>
+    /// Verifies a reconciled write preserves offset and ticks while the runtime instant uses UTC.
+    /// </summary>
+    /// <param name="employee">Whether the case exercises employee rather than customer identity storage.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -38,6 +47,11 @@ public sealed class LockoutEndExactDualColumnStoreTests(PostgresFixture postgres
         Assert.Null(await store.ReadReconciledAsync("user"));
     }
 
+    /// <summary>
+    /// Verifies stale or malformed exact-text state cannot change the runtime lockout value.
+    /// </summary>
+    /// <param name="employee">Whether the case exercises employee rather than customer identity storage.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -64,6 +78,11 @@ public sealed class LockoutEndExactDualColumnStoreTests(PostgresFixture postgres
             (await context.Users.SingleAsync(row => row.Id == "user")).LockoutEnd?.ToUniversalTime().Ticks / 10);
     }
 
+    /// <summary>
+    /// Verifies the opted-in store rejects a missing or incomplete exact-text sidecar.
+    /// </summary>
+    /// <param name="employee">Whether the case exercises employee rather than customer identity storage.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -79,6 +98,11 @@ public sealed class LockoutEndExactDualColumnStoreTests(PostgresFixture postgres
         await Assert.ThrowsAsync<InvalidOperationException>(() => store.WriteReconciledAsync("user", null, null));
     }
 
+    /// <summary>
+    /// Verifies a database failure rolls back both lockout representations.
+    /// </summary>
+    /// <param name="employee">Whether the case exercises employee rather than customer identity storage.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -103,6 +127,11 @@ public sealed class LockoutEndExactDualColumnStoreTests(PostgresFixture postgres
         Assert.Null((await context.Users.SingleAsync(row => row.Id == "user")).LockoutEnd);
     }
 
+    /// <summary>
+    /// Verifies a completed sidecar with another runtime instant is rejected.
+    /// </summary>
+    /// <param name="employee">Whether the case exercises employee rather than customer identity storage.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

@@ -1,7 +1,13 @@
 namespace Legacy.Maliev.AuthService.Tests.Workflows;
 
+/// <summary>
+/// Checks dependency-update scope and coordinated database-package deferrals from repository configuration.
+/// </summary>
 public sealed class DependabotConfigurationContractTests
 {
+    /// <summary>
+    /// Checks NuGet updates target only the three independently resolvable library directories.
+    /// </summary>
     [Fact]
     public void NuGetUpdater_ScansOnlyIndependentlyResolvableProjectDirectories()
     {
@@ -21,6 +27,9 @@ public sealed class DependabotConfigurationContractTests
         Assert.Equal(3, source.Split("\n      - /Legacy.Maliev.AuthService.", StringSplitOptions.None).Length - 1);
     }
 
+    /// <summary>
+    /// Checks that EF Core and Npgsql graph updates remain deferred to their coordinated dependency owner.
+    /// </summary>
     [Fact]
     public void NuGetUpdater_DefersCoordinatedEfAndNpgsqlRuntimeGraph()
     {

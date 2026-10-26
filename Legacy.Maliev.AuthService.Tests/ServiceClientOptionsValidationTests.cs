@@ -3,8 +3,14 @@ using Microsoft.Extensions.Options;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises fail-closed machine-client configuration while preserving environments without machine identities.
+/// </summary>
 public sealed class ServiceClientOptionsValidationTests
 {
+    /// <summary>
+    /// Checks an empty machine-client configuration remains valid for environments without machine identities.
+    /// </summary>
     [Fact]
     public void Validate_AllowsEmptyClientSetForEnvironmentsWithoutMachineIdentities()
     {
@@ -15,6 +21,9 @@ public sealed class ServiceClientOptionsValidationTests
         Assert.True(result.Succeeded);
     }
 
+    /// <summary>
+    /// Checks a hashed machine credential with explicit nonwildcard permissions passes configuration validation.
+    /// </summary>
     [Fact]
     public void Validate_AcceptsConfiguredHashAndExplicitPermissions()
     {
@@ -35,6 +44,9 @@ public sealed class ServiceClientOptionsValidationTests
         Assert.True(result.Succeeded);
     }
 
+    /// <summary>
+    /// Checks invalid credential hashes fail validation without echoing their submitted value.
+    /// </summary>
     [Fact]
     public void Validate_RejectsMalformedHashWithoutEchoingTheSecretValue()
     {
@@ -59,6 +71,10 @@ public sealed class ServiceClientOptionsValidationTests
         Assert.DoesNotContain(malformed, message, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Checks blank and wildcard grants cannot enter machine-client configuration.
+    /// </summary>
+    /// <param name="permission">The invalid blank or wildcard grant to reject.</param>
     [Theory]
     [InlineData("")]
     [InlineData("*")]

@@ -6,8 +6,14 @@ using System.Reflection;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Guards the reflected Google employee-authentication routes and their dedicated least-privilege permission.
+/// </summary>
 public sealed class GoogleIdentityContractTests
 {
+    /// <summary>
+    /// Checks that the authentication controller exposes the nonce and exchange POST routes with the dedicated Google grant.
+    /// </summary>
     [Fact]
     public void AuthenticationBoundary_ExposesEmployeeGoogleNonceAndExchangeEndpoints()
     {
@@ -29,6 +35,9 @@ public sealed class GoogleIdentityContractTests
             exchange.GetCustomAttribute<RequirePermissionAttribute>()?.Permission);
     }
 
+    /// <summary>
+    /// Checks that the Google exchange permission retains its exact public least-privilege identifier.
+    /// </summary>
     [Fact]
     public void GoogleIdentityExchange_UsesDedicatedLeastPrivilegeServicePermission()
     {

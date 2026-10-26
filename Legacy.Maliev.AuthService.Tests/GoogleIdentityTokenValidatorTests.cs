@@ -5,8 +5,15 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies Google credential audience, hosted-domain, verification, and nonce boundaries.
+/// </summary>
 public sealed class GoogleIdentityTokenValidatorTests
 {
+    /// <summary>
+    /// Verifies validation requires both a configured audience and hosted domain.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Validate_RequiresConfiguredAudienceAndHostedDomain()
     {
@@ -19,6 +26,10 @@ public sealed class GoogleIdentityTokenValidatorTests
         Assert.Equal("service_unavailable", result.ErrorCode);
     }
 
+    /// <summary>
+    /// Verifies a verified employee identity with matching audience and nonce is accepted.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Validate_AcceptsVerifiedEmployeeWithMatchingAudienceAndNonce()
     {
@@ -32,6 +43,13 @@ public sealed class GoogleIdentityTokenValidatorTests
         Assert.Equal("subject", result.Identity?.Subject);
     }
 
+    /// <summary>
+    /// Verifies an unverified or non-allowlisted identity is rejected with the expected error.
+    /// </summary>
+    /// <param name="emailVerified">Whether the provider claims the email address has been verified.</param>
+    /// <param name="hostedDomain">The provider's hosted-domain claim tested against the allowlist.</param>
+    /// <param name="errorCode">The expected generic validation error code.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData(false, "maliev.com", "invalid_google_credential")]
     [InlineData(true, "other.example", "invalid_domain")]
@@ -50,6 +68,10 @@ public sealed class GoogleIdentityTokenValidatorTests
         Assert.Equal(errorCode, result.ErrorCode);
     }
 
+    /// <summary>
+    /// Verifies a nonce mismatch is rejected without disclosing credential claims.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Validate_RejectsNonceMismatchWithoutLeakingClaims()
     {
@@ -63,6 +85,10 @@ public sealed class GoogleIdentityTokenValidatorTests
         Assert.Null(result.Identity);
     }
 
+    /// <summary>
+    /// Verifies verifier format failures become a generic invalid-credential result.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Validate_MapsVerifierFormatFailuresToGenericInvalidCredential()
     {

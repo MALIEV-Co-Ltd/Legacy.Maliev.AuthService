@@ -3,6 +3,8 @@ using Legacy.Maliev.AuthService.Api.Authorization;
 using Legacy.Maliev.AuthService.Api.Security;
 using Maliev.Aspire.ServiceDefaults;
 using Maliev.Aspire.ServiceDefaults.Diagnostics;
+using Maliev.Aspire.ServiceDefaults.Logging;
+using Microsoft.Extensions.Logging.Console;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Extensions.Options;
 using System.Threading.RateLimiting;
@@ -12,12 +14,17 @@ await PrivateStartupBoundary.RunAsync(async () =>
     var builder = WebApplication.CreateBuilder(args);
 
     builder.AddServiceDefaults();
+    // Retain tracing/metrics services, but make this original private console contract the only log sink.
+    builder.Logging.ClearProviders();
+    builder.Logging.AddConsoleFormatter<PrivateFailureConsoleFormatter, ConsoleFormatterOptions>();
+    builder.Logging.AddConsole(options => options.FormatterName = PrivateFailureConsoleFormatter.FormatterName);
+    builder.Logging.AddFilter<ConsoleLoggerProvider>(null, LogLevel.Warning);
     builder.AddPrivateRequestObservation("auth");
     builder.AddDefaultApiVersioning();
     builder.AddStandardCors();
     // RequestLoggingMiddleware emits raw URL paths, which can contain auth secrets.
     // Keep the shared correlated exception boundary without that optional request log.
-    builder.AddStandardMiddleware();
+    builder.AddStandardMiddleware(options => options.IncludePrivateFailureProvenance = true);
     builder.AddStandardOpenApi(
         title: "Legacy MALIEV Auth Service API",
         description: "Secure temporary authentication boundary for unchanged legacy customer and employee identities.");

@@ -22,9 +22,14 @@ using Npgsql;
 namespace Legacy.Maliev.AuthService.Tests;
 
 /// <summary>Normal Program composition and real legacy service-login; external IAM is controlled HTTP only.</summary>
+/// <param name="postgres">The shared fixture that owns the disposable PostgreSQL container.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postgres)
 {
+    /// <summary>
+    /// Verifies normal workload login produces a signed service identity without IAM calls or refresh state.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task ExistingOwnWorkloadLogin_ProducesNormalSignedServiceIdentityWithoutIamOrRefresh()
     {
@@ -41,6 +46,12 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
         Assert.Equal(0, await stores.State.RefreshSessions.CountAsync());
     }
 
+    /// <summary>
+    /// Verifies the registered client uses its own login and the exact uncached employee-authority wire contract.
+    /// </summary>
+    /// <param name="body">The response or request JSON body used to exercise the boundary.</param>
+    /// <param name="expected">The expected authority result or HTTP outcome.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("{\"allowed\":true}", QuotationInvoiceLiveAuthorityResult.Allowed)]
     [InlineData("{\"allowed\":false}", QuotationInvoiceLiveAuthorityResult.Denied)]
@@ -58,6 +69,11 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
         Assert.Equal(0, await stores.State.RefreshSessions.CountAsync());
     }
 
+    /// <summary>
+    /// Verifies malformed live responses are unavailable rather than interpreted as default denial.
+    /// </summary>
+    /// <param name="body">The response or request JSON body used to exercise the boundary.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("{}")]
     [InlineData("{\"allowed\":null}")]
@@ -79,6 +95,11 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
         Assert.Equal(1, app.ExchangeRequests);
     }
 
+    /// <summary>
+    /// Verifies missing live configuration remains request-unavailable without breaking the old login path.
+    /// </summary>
+    /// <param name="missing">The missing authority or configuration condition tested by the case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("own-secret")]
     [InlineData("own-client")]
@@ -100,6 +121,11 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
         Assert.Equal(0, app.ExchangeRequests);
     }
 
+    /// <summary>
+    /// Verifies an untrusted login response cannot trigger a credential-bearing IAM request.
+    /// </summary>
+    /// <param name="mutation">The malformed binding, credential, or authority mutation tested by the case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("wrong-machine")]
     [InlineData("wrong-audience")]
@@ -131,6 +157,11 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
         Assert.Equal(0, app.IamRequests);
     }
 
+    /// <summary>
+    /// Verifies a streaming-body deadline is unavailable without poisoning the following request.
+    /// </summary>
+    /// <param name="phase">The exchange or live-authority transport phase where the failure is injected.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("exchange-hang")]
     [InlineData("iam-hang")]
@@ -151,6 +182,11 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
         Assert.Equal(QuotationInvoiceLiveAuthorityResult.Allowed, await authority.CheckAsync("literal-employee", 84));
     }
 
+    /// <summary>
+    /// Verifies caller cancellation propagates while shared exchange work remains bounded.
+    /// </summary>
+    /// <param name="phase">The exchange or live-authority transport phase where the failure is injected.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("exchange-hang")]
     [InlineData("iam-hang")]
@@ -174,6 +210,11 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
         await app.StreamCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
+    /// <summary>
+    /// Verifies an oversized response body is unavailable without an unbounded read.
+    /// </summary>
+    /// <param name="phase">The exchange or live-authority transport phase where the failure is injected.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("exchange-oversize")]
     [InlineData("iam-oversize")]
@@ -189,6 +230,11 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
         Assert.Equal(phase == "iam-oversize" ? 1 : 0, app.IamRequests);
     }
 
+    /// <summary>
+    /// Verifies a streamed body without declared length is rejected when it exceeds the bound.
+    /// </summary>
+    /// <param name="phase">The exchange or live-authority transport phase where the failure is injected.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("exchange-chunked-overflow")]
     [InlineData("iam-chunked-overflow")]
@@ -204,6 +250,11 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
         Assert.Equal(phase.StartsWith("iam-", StringComparison.Ordinal) ? 1 : 0, app.IamRequests);
     }
 
+    /// <summary>
+    /// Verifies the header deadline becomes unavailable before the response body arrives.
+    /// </summary>
+    /// <param name="phase">The exchange or live-authority transport phase where the failure is injected.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("exchange-headers-hang")]
     [InlineData("iam-headers-hang")]
@@ -221,6 +272,12 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
         await app.StreamCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5));
     }
 
+    /// <summary>
+    /// Verifies the actual primary handler does not follow a redirect carrying credentials.
+    /// </summary>
+    /// <param name="phase">The exchange or live-authority transport phase where the failure is injected.</param>
+    /// <param name="status">The response status used by this regression case.</param>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Theory]
     [InlineData("exchange", 307)]
     [InlineData("exchange", 308)]
@@ -242,6 +299,10 @@ public sealed class QuotationInvoiceLiveTransportHttpTests(PostgresFixture postg
         Assert.True(trap.SawBody);
     }
 
+    /// <summary>
+    /// Verifies an already cancelled caller causes no transport.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task CallerAlreadyCancelled_PropagatesWithoutAnyTransport()
     {

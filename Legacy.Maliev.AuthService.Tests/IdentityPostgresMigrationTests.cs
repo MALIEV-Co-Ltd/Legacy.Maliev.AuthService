@@ -4,6 +4,9 @@ using Testcontainers.PostgreSql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises customer and employee Identity migrations against separate owned PostgreSQL containers.
+/// </summary>
 public sealed class IdentityPostgresMigrationTests : IAsyncLifetime
 {
     private readonly PostgreSqlContainer customerPostgres =
@@ -11,6 +14,10 @@ public sealed class IdentityPostgresMigrationTests : IAsyncLifetime
     private readonly PostgreSqlContainer employeePostgres =
         new PostgreSqlBuilder("postgres:18-alpine").Build();
 
+    /// <summary>
+    /// Checks the customer migration creates legacy-compatible identity fields and customer-only columns.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task CustomerMigration_CreatesCompatibleIdentitySchema()
     {
@@ -31,6 +38,10 @@ public sealed class IdentityPostgresMigrationTests : IAsyncLifetime
         Assert.Contains("PasswordSetupRequired", columns);
     }
 
+    /// <summary>
+    /// Checks the employee migration retains shared identity columns without customer-only fields.
+    /// </summary>
+    /// <returns>A task that completes when the regression assertions have finished.</returns>
     [Fact]
     public async Task EmployeeMigration_ExcludesCustomerOnlyColumns()
     {
@@ -50,10 +61,18 @@ public sealed class IdentityPostgresMigrationTests : IAsyncLifetime
         Assert.DoesNotContain("PasswordSetupRequired", columns);
     }
 
+    /// <summary>
+    /// Starts both owned PostgreSQL containers before migration assertions run.
+    /// </summary>
+    /// <returns>A task that completes when both containers have started.</returns>
     public Task InitializeAsync() => Task.WhenAll(
         customerPostgres.StartAsync(),
         employeePostgres.StartAsync());
 
+    /// <summary>
+    /// Disposes the owned customer and employee PostgreSQL containers after migration tests.
+    /// </summary>
+    /// <returns>A task that completes after both container disposal operations.</returns>
     public async Task DisposeAsync()
     {
         await customerPostgres.DisposeAsync();

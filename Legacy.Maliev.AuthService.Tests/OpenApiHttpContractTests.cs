@@ -8,12 +8,23 @@ using System.Xml.Linq;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Verifies actual OpenAPI responses retain compiled XML summaries and public authentication contracts.
+/// </summary>
 public sealed class OpenApiHttpContractTests : IClassFixture<CustomerIdentityAuthorizationTests.AuthApiFactory>
 {
     private readonly CustomerIdentityAuthorizationTests.AuthApiFactory factory;
 
+    /// <summary>
+    /// Initializes the contract tests with the shared authentication API factory.
+    /// </summary>
+    /// <param name="factory">The shared authentication API factory used by the HTTP contract regressions.</param>
     public OpenApiHttpContractTests(CustomerIdentityAuthorizationTests.AuthApiFactory factory) => this.factory = factory;
 
+    /// <summary>
+    /// Verifies the document retains emitted Auth XML summaries and public response contracts.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Document_PreservesAuthXmlSummariesAndPublicResponseContracts()
     {
@@ -36,6 +47,10 @@ public sealed class OpenApiHttpContractTests : IClassFixture<CustomerIdentityAut
             Assert.True(serviceLogin.GetProperty("responses").TryGetProperty(status, out _), $"Service login documentation omits HTTP {status}.");
     }
 
+    /// <summary>
+    /// Verifies credential and token envelopes are documented without runtime secrets.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Document_DescribesJsonCredentialAndTokenEnvelopeWithoutRuntimeSecrets()
     {
@@ -61,6 +76,10 @@ public sealed class OpenApiHttpContractTests : IClassFixture<CustomerIdentityAut
         Assert.DoesNotContain("Host=localhost", json, StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Verifies production does not expose the documentation route.
+    /// </summary>
+    /// <returns>A task that completes after the regression assertions finish.</returns>
     [Fact]
     public async Task Production_DoesNotPublishDocumentationRoute()
     {

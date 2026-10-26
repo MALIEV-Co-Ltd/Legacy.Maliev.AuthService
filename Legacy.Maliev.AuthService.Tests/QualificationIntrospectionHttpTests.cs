@@ -32,11 +32,20 @@ using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises bounded quotation-qualification introspection using normal signed callers and current PostgreSQL authority.
+/// </summary>
+/// <param name="postgres">The collection-owned fixture that creates isolated PostgreSQL stores for each case.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres)
 {
     private const string Route = "/auth/v1/introspection/quotation-qualification";
 
+    /// <summary>
+    /// Checks unsupported permissions, purposes, and resources are denied before any authority read.
+    /// </summary>
+    /// <param name="invalid">The unsupported permission, purpose, or resource selected for the direct service request.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("permission")]
     [InlineData("purpose")]
@@ -57,6 +66,10 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         Assert.False(read.Injected);
     }
 
+    /// <summary>
+    /// Checks that direct service invocation with a null request raises an argument failure.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task DirectService_NullRequestIsExplicitArgumentFailure()
     {
@@ -67,6 +80,10 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         await Assert.ThrowsAsync<ArgumentNullException>(() => scope.ServiceProvider.GetRequiredService<IQualificationIntrospectionService>().EvaluateAsync(null!, default));
     }
 
+    /// <summary>
+    /// Checks that a validated principal alone cannot bypass local workload admission proof.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task DirectActionFilter_ValidatedPrincipalWithoutLocalAdmissionProof_IsDenied()
     {
@@ -86,6 +103,10 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         Assert.Equal(401, Assert.IsType<ObjectResult>(context.Result).StatusCode);
     }
 
+    /// <summary>
+    /// Checks that an additional ordinary configured grant does not invalidate the exact dedicated capability.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ExactDedicatedCapabilityWithOtherOrdinaryConfiguredGrant_PreservesAdmission()
     {
@@ -97,6 +118,11 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         await AssertDecisionAsync(response, true);
     }
 
+    /// <summary>
+    /// Checks that customers, other workloads, and invoice-only capabilities cannot enter qualification introspection.
+    /// </summary>
+    /// <param name="kind">The customer, other-workload, or invoice-only caller submitted to the bridge.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("customer")]
     [InlineData("other-service")]
@@ -125,6 +151,11 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    /// <summary>
+    /// Checks generic rejection of blank or overlong employee access tokens.
+    /// </summary>
+    /// <param name="overlong">Whether to supply an overlong token instead of whitespace.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -137,6 +168,13 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    /// <summary>
+    /// Checks strict token and session expiry before, at, and after the final post-read observation.
+    /// </summary>
+    /// <param name="sessionExpiry">Whether to test the persisted session expiry rather than the access-token expiry.</param>
+    /// <param name="offsetSeconds">The final observation's offset from the exact expiry boundary, in seconds.</param>
+    /// <param name="allowed">Whether the final authority observation should allow qualification.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData(false, -1, true)]
     [InlineData(false, 0, false)]
@@ -171,6 +209,10 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         Assert.True(pause.Injected);
     }
 
+    /// <summary>
+    /// Checks generic unavailable responses for authority-store failures without allow fields, tokens, or mutation.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task KnownAuthorityStoreFailure_IsGeneric503WithoutAllowOrMutation()
     {
@@ -191,6 +233,10 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
     }
 
+    /// <summary>
+    /// Checks caller cancellation during authority reads without emitting a decision or adding session state.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task CallerCancellation_DuringAuthorityReadPropagatesWithoutDecisionOrMutation()
     {
@@ -210,6 +256,11 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         Assert.Equal(1, await stores.State.RefreshSessions.CountAsync());
     }
 
+    /// <summary>
+    /// Checks point-in-time authority decisions and denial on the next uncached read after revocation or stamp change.
+    /// </summary>
+    /// <param name="revoke">Whether to revoke the session family instead of rotating the identity stamp.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -242,6 +293,10 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         await AssertDecisionAsync(next, false);
     }
 
+    /// <summary>
+    /// Checks explicit bridge expiry even when ordinary JWT validation still permits clock skew.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task NormalIssuedTokenInsideOrdinarySkew_IsStillDeniedAtExplicitBridgeExpiry()
     {
@@ -259,6 +314,12 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         await AssertDecisionAsync(response, false);
     }
 
+    /// <summary>
+    /// Checks that configuration reload re-evaluates previously issued workload tokens.
+    /// </summary>
+    /// <param name="change">The caller permission or client configuration changed by reload.</param>
+    /// <param name="status">The HTTP status expected after rechecking the reloaded configuration.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("permission", 403)]
     [InlineData("client", 403)]
@@ -277,6 +338,10 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         Assert.DoesNotContain("Secret", await after.Content.ReadAsStringAsync(), StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Checks authenticated limiter partitioning, rejection without queueing, and renewal after the window.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task DedicatedLimiter_WrongCallersDoNotConsumeAuthenticatedPartition_ZeroQueueResets()
     {
@@ -295,6 +360,11 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         await AssertDecisionAsync(reset, true);
     }
 
+    /// <summary>
+    /// Checks that signed workload aliases, duplicate subjects, wildcards, and duplicate capabilities fail closed.
+    /// </summary>
+    /// <param name="mutation">The signed binding or current authority mutation applied before the request.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("alias")]
     [InlineData("duplicate-sub")]
@@ -318,6 +388,11 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         Assert.Equal(mutation == "duplicate-sub" ? HttpStatusCode.Unauthorized : HttpStatusCode.Forbidden, response.StatusCode);
     }
 
+    /// <summary>
+    /// Checks that changed current authority cannot be rescued by another active family or a previous allow decision.
+    /// </summary>
+    /// <param name="mutation">The signed binding or current authority mutation applied before the request.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("revoked")]
     [InlineData("expired")]
@@ -370,6 +445,10 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         await AssertDecisionAsync(after, false);
     }
 
+    /// <summary>
+    /// Checks bound access before and after real refresh rotation and subsequent family revocation.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task RealRotation_PreservesOldBoundAccessUntilFamilyRevocation_DeniesBothAfterward()
     {
@@ -389,6 +468,11 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         { using var response = await SendAsync(client, caller, token); await AssertDecisionAsync(response, false); }
     }
 
+    /// <summary>
+    /// Checks that malformed or invalid signed employee bindings never establish qualification authority.
+    /// </summary>
+    /// <param name="mutation">The signed binding or current authority mutation applied before the request.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("no-sid")]
     [InlineData("duplicate-sid")]
@@ -425,6 +509,11 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         Assert.True(response.Headers.CacheControl?.NoStore);
     }
 
+    /// <summary>
+    /// Checks the exact five-field uncached allow response without changing identity or session state.
+    /// </summary>
+    /// <param name="permission">The supported quotation-request permission echoed in the qualification decision.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("legacy.quotation-requests.read")]
     [InlineData("legacy.quotation-requests.update")]
@@ -450,6 +539,10 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         Assert.Equal("issuance-stamp", (await stores.Employees.Users.AsNoTracking().SingleAsync()).SecurityStamp);
     }
 
+    /// <summary>
+    /// Checks that a disabled bridge returns not found before authentication or malformed-body binding.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task Disabled_PrecedesAuthenticationAndMalformedOversizedBody()
     {
@@ -462,6 +555,12 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         Assert.True(response.Headers.CacheControl?.NoStore);
     }
 
+    /// <summary>
+    /// Checks that missing and human callers are rejected before request-body binding.
+    /// </summary>
+    /// <param name="human">Whether to submit a human token instead of omitting authentication.</param>
+    /// <param name="status">The HTTP status expected for the missing or human caller.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData(false, 401)]
     [InlineData(true, 403)]
@@ -477,6 +576,11 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         Assert.True(response.Headers.CacheControl?.NoStore);
     }
 
+    /// <summary>
+    /// Checks generic bounded bad-request responses for malformed, additional, and unsupported request fields.
+    /// </summary>
+    /// <param name="json">The request JSON supplied to the boundary under test.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("{bad")]
     [InlineData("{\"employeeAccessToken\":\"a\",\"permission\":\"legacy.quotation-requests.update\",\"purpose\":\"quotation-request-qualification\",\"requestId\":84,\"actor\":\"override\"}")]
@@ -495,6 +599,10 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         Assert.DoesNotContain("employeeAccessToken", await response.Content.ReadAsStringAsync(), StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Checks oversized buffered and streaming bodies are rejected before model binding.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task OversizedKnownAndStreamingBody_Is400BeforeBinding()
     {
@@ -521,6 +629,10 @@ public sealed class QualificationIntrospectionHttpTests(PostgresFixture postgres
         protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) => stream.WriteAsync(Encoding.UTF8.GetBytes(text)).AsTask();
     }
 
+    /// <summary>
+    /// Checks that an unsupported request media type receives a generic bad-request response.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task UnsupportedContentType_IsGeneric400()
     {

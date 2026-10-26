@@ -15,3 +15,27 @@ artifacts/
 **/*.tmp
 **/*.nupkg
 deploy/
+
+# Retained source exclusions for the repository-root Docker build context.
+**/.git
+**/.gitignore
+**/.github
+**/.vscode
+**/.vs
+**/.idea
+**/out
+**/node_modules
+**/dist
+**/coverage
+**/*.suo
+**/*.user
+**/*.csproj.user
+**/*.cache
+**/*.swp
+**/*.swo
+**/*.ps1
+**/*.cmd
+**/*.sh
+**/*.yml
+**/*.yaml
+**/Dockerfile.dockerignore

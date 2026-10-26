@@ -6,6 +6,10 @@ using Npgsql;
 
 namespace Legacy.Maliev.AuthService.Tests;
 
+/// <summary>
+/// Exercises new employee email canonicalization while preserving historical keys and per-test pool ownership.
+/// </summary>
+/// <param name="postgres">The collection-owned fixture that creates isolated PostgreSQL stores for each case.</param>
 [Collection(PostgresCollection.Name)]
 public sealed class EmployeeCanonicalWriteTests(PostgresFixture postgres) : IAsyncLifetime
 {
@@ -13,8 +17,16 @@ public sealed class EmployeeCanonicalWriteTests(PostgresFixture postgres) : IAsy
     // method's await-using contexts and concurrent operations have completed.
     private readonly List<NpgsqlConnection> ownedPools = [];
 
+    /// <summary>
+    /// Completes fixture initialization without allocating additional resources.
+    /// </summary>
+    /// <returns>A completed initialization task.</returns>
     public Task InitializeAsync() => Task.CompletedTask;
 
+    /// <summary>
+    /// Clears only the connection pools registered by this test instance after its operations complete.
+    /// </summary>
+    /// <returns>A completed task after the owned connection pools have been cleared.</returns>
     public Task DisposeAsync()
     {
         foreach (var connection in ownedPools) NpgsqlConnection.ClearPool(connection);
@@ -24,6 +36,12 @@ public sealed class EmployeeCanonicalWriteTests(PostgresFixture postgres) : IAsy
 
     private void RegisterPool(NpgsqlConnection connection) => ownedPools.Add(connection);
 
+    /// <summary>
+    /// Checks canonicalization of a new lookup key without changing the submitted email.
+    /// </summary>
+    /// <param name="email">The raw email submitted for identity creation.</param>
+    /// <param name="canonical">The canonical normalized email expected for the new identity.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("cafe\u0301@identity.test", "CAF\u00c9@IDENTITY.TEST")]
     [InlineData("\u00c5\u0301@identity.test", "\u01fa@IDENTITY.TEST")]
@@ -38,6 +56,12 @@ public sealed class EmployeeCanonicalWriteTests(PostgresFixture postgres) : IAsy
         Assert.Equal("NEW-USER", stored.NormalizedUserName);
     }
 
+    /// <summary>
+    /// Checks that a historical canonical alias blocks creation without rewriting its retained key or stamps.
+    /// </summary>
+    /// <param name="historicalEmail">The retained email whose canonical alias must prevent another owner.</param>
+    /// <param name="email">The raw email submitted for identity creation.</param>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Theory]
     [InlineData("cafe\u0301@identity.test", "caf\u00e9@identity.test")]
     [InlineData("\u00c5\u0301@identity.test", "\u01fa@identity.test")]
@@ -65,6 +89,10 @@ public sealed class EmployeeCanonicalWriteTests(PostgresFixture postgres) : IAsy
         Assert.Equal("original-concurrency", stored.ConcurrencyStamp);
     }
 
+    /// <summary>
+    /// Checks that concurrent canonical aliases with distinct user names create only one owner.
+    /// </summary>
+    /// <returns>A task that completes when the asynchronous assertions finish.</returns>
     [Fact]
     public async Task ConcurrentCanonicalAliases_CreateOneOwnerAcrossDistinctUserNames()
     {
