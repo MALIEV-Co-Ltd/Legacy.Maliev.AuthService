@@ -32,7 +32,7 @@ not successful or 4xx responses. Existing caller-owned failure suppression is
 retained. It does not add retries, change timeouts, redirect/authentication handlers,
 credentials, grants, endpoints, bodies, responses or exception identity.
 
-Normal build and container inputs consume accepted ServiceDefaults
+At the time of this evidence, normal build and container inputs consumed accepted ServiceDefaults
 `1fec4ef5c8c24fd57806b952182ae6bdb2d6a7fa` (tree
 `fb8d6be44949831eaa8bf2fc8bb4be20863d48b7`). The corresponding exact-main push
 run `39695344761`, required job `119551237366`, was observed successful.
