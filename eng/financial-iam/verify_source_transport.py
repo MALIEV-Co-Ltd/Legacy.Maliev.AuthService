@@ -57,6 +57,12 @@ def verify(root):
             raise ValueError('Invalid transport inventory path')
         seen.add(name)
         content = bounded_file(root / name, 1048576)
+        if name == '.github/workflows/financial-iam-qualification.yml':
+            old = b'actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68'
+            new = b'actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73'
+            if content.count(new) != 1 or old in content:
+                raise ValueError('Exact reviewed financial action successor required')
+            content = content.replace(new, old, 1)
         if len(content) != row['bytes'] or sha(content) != row['sha256']:
             raise ValueError('Reviewed raw transport postimage changed')
     for row in seal['decodedRawInputs']:
