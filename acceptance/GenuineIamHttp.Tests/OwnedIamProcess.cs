@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 
@@ -57,7 +58,23 @@ public sealed class OwnedIamProcess
             RedirectStandardOutput = true,
             RedirectStandardError = true
         };
-        start.ArgumentList.Add(Path.Combine(repository, "acceptance", "GenuineIamHost", "bin", "Release", "net10.0", "GenuineIamHost.dll"));
+        var hostPath = Path.Combine(repository, "acceptance", "GenuineIamHost", "bin", "Release", "net10.0", "GenuineIamHost.dll");
+        string? hostHash = null;
+        string? depsHash = null;
+        var evidencePath = Environment.GetEnvironmentVariable("GENUINE_IAM_OVERLAY_EVIDENCE");
+        if (!string.IsNullOrEmpty(evidencePath))
+        {
+            using var evidence = JsonDocument.Parse(await File.ReadAllTextAsync(evidencePath, cancellationToken));
+            using var hostStream = File.OpenRead(hostPath);
+            hostHash = Convert.ToHexString(SHA256.HashData(hostStream)).ToLowerInvariant();
+            var depsPath = Path.ChangeExtension(hostPath, ".deps.json");
+            using var depsStream = File.OpenRead(depsPath);
+            depsHash = Convert.ToHexString(SHA256.HashData(depsStream)).ToLowerInvariant();
+            if (hostHash != evidence.RootElement.GetProperty("hostSha256").GetString()
+                || depsHash != evidence.RootElement.GetProperty("depsSha256").GetString())
+                throw new InvalidOperationException("Genuine IAM host or dependencies differ from verified build.");
+        }
+        start.ArgumentList.Add(hostPath);
         start.Environment["GENUINE_IAM_CONNECTION"] = connection;
         start.Environment["GENUINE_IAM_PRIVATE_PEM"] = privatePem;
         start.Environment["GENUINE_IAM_PRINCIPAL_ID"] = principal.ToString("D");
@@ -76,7 +93,7 @@ public sealed class OwnedIamProcess
         output = ReadProtocolAsync(outputReader, readers.Token);
         errorReader = process.StandardError;
         error = BoundedProcessOutput.ReadAsync(errorReader, 65536, readers.Token);
-        await receipt(new { processId, startedAtUtc, executable = "dotnet", state = "started", leaseMinutes = 10 }, cancellationToken);
+        await receipt(new { processId, startedAtUtc, executable = "dotnet", state = "started", leaseMinutes = 10, hostSha256 = hostHash, depsSha256 = depsHash }, cancellationToken);
         var exit = process.WaitForExitAsync(cancellationToken);
         var completed = await Task.WhenAny(ready.Task, output!, error!, exit).WaitAsync(cancellationToken);
         if (completed != ready.Task)
@@ -98,19 +115,26 @@ public sealed class OwnedIamProcess
             if (count == 0) return;
             total += count;
             if (total > 65536) throw new InvalidOperationException("Owned IAM output limit exceeded.");
-            foreach (var character in buffer.AsSpan(0, count))
+            for (var index = 0; index < count; index++)
             {
+                var character = buffer[index];
                 if (character != '\n') { line.Append(character); continue; }
                 var value = line.ToString().TrimEnd('\r');
                 line.Clear();
                 if (value.StartsWith("GENUINE_IAM_READY=", StringComparison.Ordinal))
                 {
                     using var json = JsonDocument.Parse(value[18..]);
-                    var address = new Uri(json.RootElement.GetProperty("baseAddress").GetString()!);
-                    if (address.Scheme != "http" || address.Host != "127.0.0.1" || address.Port <= 0
-                        || !json.RootElement.GetProperty("seeded").GetBoolean()
-                        || !json.RootElement.GetProperty("jwtValidationPreserved").GetBoolean())
-                        throw new InvalidOperationException("Owned IAM ready receipt is invalid.");
+                    var overlayEnabled = !string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GENUINE_IAM_OVERLAY_EVIDENCE"));
+                    var (address, version, hash) = ValidateReady(json.RootElement, overlayEnabled);
+                    if (overlayEnabled)
+                    {
+                        var evidencePath = Environment.GetEnvironmentVariable("GENUINE_IAM_OVERLAY_EVIDENCE")!;
+                        using var evidence = JsonDocument.Parse(await File.ReadAllTextAsync(evidencePath, cancellationToken));
+                        var packageHash = evidence.RootElement.GetProperty("packageSha256").GetString();
+                        await record!(new { state = "loaded-web-utilities", version, sha256 = hash,
+                            restoredPackageSha256 = packageHash,
+                            matchesRestoredPackage = packageHash is not null && hash == packageHash }, cancellationToken);
+                    }
                     ready.TrySetResult(address);
                 }
                 else if (value.StartsWith("GENUINE_IAM_STOPPED=", StringComparison.Ordinal))
@@ -120,6 +144,22 @@ public sealed class OwnedIamProcess
                 }
             }
         }
+    }
+
+    internal static (Uri Address, string? Version, string? Hash) ValidateReady(JsonElement root, bool overlayEnabled)
+    {
+        var address = new Uri(root.GetProperty("baseAddress").GetString()!);
+        if (address.Scheme != "http" || address.Host != "127.0.0.1" || address.Port <= 0
+            || !root.GetProperty("seeded").GetBoolean() || !root.GetProperty("jwtValidationPreserved").GetBoolean())
+            throw new InvalidOperationException("Owned IAM ready receipt is invalid.");
+        if (!overlayEnabled) return (address, null, null);
+        var version = root.GetProperty("webUtilitiesFileVersion").GetString();
+        var hash = root.GetProperty("webUtilitiesSha256").GetString();
+        if (!System.Version.TryParse(version, out var parsed) || parsed.Major != 10
+            || parsed < new System.Version(10, 0, 15, 0) || hash is null || hash.Length != 64
+            || hash.Any(character => !Uri.IsHexDigit(character)))
+            throw new InvalidOperationException("Loaded WebUtilities evidence is invalid.");
+        return (address, version, hash);
     }
 
     /// <summary>Requests finite graceful disposal and retains every unresolved process or stream handle.</summary>
