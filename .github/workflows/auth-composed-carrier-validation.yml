@@ -99,7 +99,7 @@ jobs:
           python3 -B -O eng/customer-self-identity-validation/test_route.py
       - name: Provision the SDK using the existing accepted action
         timeout-minutes: 5
-        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73
         with:
           dotnet-version: 10.0.401
       - name: Exact Legacy.Maliev.AuthService

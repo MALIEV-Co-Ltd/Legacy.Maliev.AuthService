@@ -4,6 +4,7 @@ extern alias IamApplication;
 extern alias IamDomain;
 
 using System.Security.Cryptography;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -94,9 +95,23 @@ try
     {
         throw new InvalidOperationException("IAM listener must be HTTP loopback.");
     }
+    string? loadedWebUtilitiesVersion = null;
+    string? loadedWebUtilitiesSha256 = null;
+    if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("GENUINE_IAM_OVERLAY_EVIDENCE")))
+    {
+        var assembly = typeof(Microsoft.AspNetCore.WebUtilities.QueryHelpers).Assembly;
+        var info = FileVersionInfo.GetVersionInfo(assembly.Location);
+        var actualVersion = new Version(info.FileMajorPart, info.FileMinorPart, info.FileBuildPart, info.FilePrivatePart);
+        if (actualVersion.Major != 10 || actualVersion < new Version(10, 0, 15, 0))
+            throw new InvalidOperationException("Loaded WebUtilities is older than the required patch.");
+        loadedWebUtilitiesVersion = actualVersion.ToString();
+        using var assemblyStream = File.OpenRead(assembly.Location);
+        loadedWebUtilitiesSha256 = Convert.ToHexString(SHA256.HashData(assemblyStream)).ToLowerInvariant();
+    }
     await protocol.WriteLineAsync("GENUINE_IAM_READY=" + JsonSerializer.Serialize(new
     {
-        baseAddress = address.AbsoluteUri.TrimEnd('/'), seeded = true, jwtValidationPreserved = true
+        baseAddress = address.AbsoluteUri.TrimEnd('/'), seeded = true, jwtValidationPreserved = true,
+        webUtilitiesFileVersion = loadedWebUtilitiesVersion, webUtilitiesSha256 = loadedWebUtilitiesSha256
     }));
     await protocol.FlushAsync();
     phase = "stop-protocol";

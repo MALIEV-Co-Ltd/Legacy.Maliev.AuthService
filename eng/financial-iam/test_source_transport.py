@@ -19,6 +19,19 @@ class TransportControls(unittest.TestCase):
         self.assertEqual(7, result['decodedRawInputs'])
         self.assertFalse(result['candidateNativeAccepted'])
         self.assertEqual(0, result['nativeResourcesCreated'])
+        workflow = 'financial-iam-qualification.yml'
+        old = b'actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68'
+        new = b'actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73'
+        for replacement in (old, b'actions/setup-dotnet@' + b'0' * 40):
+            def altered(path, maximum):
+                content = self.original_read(path, maximum)
+                if path.name == workflow:
+                    self.assertEqual(1, content.count(new))
+                    return content.replace(new, replacement, 1)
+                return content
+            with self.subTest(replacement=replacement), patch('verify_source_transport.bounded_file', side_effect=altered):
+                with self.assertRaisesRegex(ValueError, 'Exact reviewed financial action successor'):
+                    transport.verify(self.root)
 
     def test_altered_policy_seal_is_rejected_before_source_loading(self):
         def read(path, maximum):

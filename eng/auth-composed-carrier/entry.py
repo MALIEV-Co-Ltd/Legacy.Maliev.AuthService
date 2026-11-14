@@ -14,6 +14,12 @@ WORKFLOW = '.github/workflows/auth-composed-carrier-validation.yml'
 ADDITIONS = {WORKFLOW, 'eng/auth-composed-carrier/entry.py',
              'eng/auth-composed-carrier/test_entry.py', 'eng/auth-composed-carrier/carrier-seal.json', '.gitattributes',
              'eng/customer-self-identity-validation/test_native_toolchain.py'}
+FINANCIAL_SUCCESSOR = {
+    '.github/workflows/financial-iam-qualification.yml': 'd345450fa35510635885d55d55758d50c4b85ef876513c39e07775449c4184e6',
+    'eng/financial-iam/verify_source_transport.py': '1cec282b217d6a79a864b7a7efcca02558bb3d360621ec66ce5fed5c146fc27c',
+    'eng/financial-iam/test_source_transport.py': 'df7275f72c81f88182a8c718926368e88d0d846bcc9d4c35c269198a0bb83f75',
+}
+ADDITIONS.update(FINANCIAL_SUCCESSOR)
 
 
 def read(root, relative, maximum):
@@ -66,13 +72,22 @@ def verify(root, environment, git_object, changed_paths):
         raise ValueError('Only the closed carrier raw-byte attributes addition is allowed')
     for row in rows:
         current = read(root, row['path'], row['bytes'])
-        if (len(current) != row['bytes'] or hashlib.sha256(current).hexdigest() != row['sha256']
+        reviewed = current
+        if row['path'] == '.github/workflows/customer-self-identity-validation.yml':
+            old = b'actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68'
+            new = b'actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73'
+            if current.count(new) != 1 or old in current:
+                raise ValueError('Exact reviewed identity action successor required')
+            reviewed = current.replace(new, old, 1)
+        if (len(reviewed) != row['bytes'] or hashlib.sha256(reviewed).hexdigest() != row['sha256']
                 or git_object(head, row['path']) != current):
             raise ValueError('Auth43 published raw carrier differs: '+row['path'])
     for path in ADDITIONS:
         current = read(root, path, 1048576)
         if git_object(head, path) != current:
             raise ValueError('Infrastructure entry differs from published Git object')
+        if path in FINANCIAL_SUCCESSOR and hashlib.sha256(current).hexdigest() != FINANCIAL_SUCCESSOR[path]:
+            raise ValueError('Exact reviewed financial successor required: '+path)
     return {'base': BASE, 'sourceCommit': head, 'carrierSealSha256': CARRIER,
             'carrierFiles': 64, 'applicationFiles': 43, 'nativeExecuted': False}
 

@@ -42,8 +42,8 @@ def copy_carrier(source, destination):
         raise ValueError('Closed fixture carrier seal required')
     rows = json.loads(raw)['packetFiles']
     names = [row['path'] for row in rows]+sorted(entry.ADDITIONS)
-    if len(rows) != 64 or len(set(names)) != 70:
-        raise ValueError('Exactly 70 closed fixture inputs required')
+    if len(rows) != 64 or len(set(names)) != 73:
+        raise ValueError('Exactly 73 closed fixture inputs required')
     payloads = {}
     for name in names:
         path = PurePosixPath(name)
@@ -72,6 +72,33 @@ class PublicationGuards(unittest.TestCase):
         result = self.verify()
         self.assertEqual((result['carrierFiles'], result['applicationFiles']), (64, 43))
         self.assertFalse(result['nativeExecuted'])
+        workflow = '.github/workflows/customer-self-identity-validation.yml'
+        old = b'actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68'
+        new = b'actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73'
+        with tempfile.TemporaryDirectory(prefix='auth-action-successor-') as directory:
+            clone = Path(directory)/'source'; clone.mkdir(); copy_carrier(ROOT, clone)
+            path = clone/workflow; original = path.read_bytes()
+            self.assertEqual(1, original.count(new))
+            def reader(head, name):
+                return BASE_ATTRIBUTES if head == entry.BASE and name == '.gitattributes' else (clone/name).read_bytes()
+            for replacement in (old, b'actions/setup-dotnet@' + b'0' * 40):
+                with self.subTest(replacement=replacement):
+                    path.write_bytes(original.replace(new, replacement, 1))
+                    with self.assertRaisesRegex(ValueError, 'Exact reviewed identity action successor'):
+                        self.verify(root=clone, reader=reader)
+            path.write_bytes(original)
+            def forged_reader(head, name):
+                raw = reader(head, name)
+                return raw.replace(new, old, 1) if head == HEAD and name == workflow else raw
+            with self.assertRaisesRegex(ValueError, 'published raw carrier differs'):
+                self.verify(root=clone, reader=forged_reader)
+            for name in entry.FINANCIAL_SUCCESSOR:
+                with self.subTest(financial=name):
+                    path = clone/name; original_financial = path.read_bytes()
+                    path.write_bytes(original_financial+b'\n')
+                    with self.assertRaisesRegex(ValueError, 'Exact reviewed financial successor'):
+                        self.verify(root=clone, reader=reader)
+                    path.write_bytes(original_financial)
 
     def test_wrong_ref_retry_and_workflow(self):
         for key, values in {'GITHUB_REF': ['refs/heads/release', 'refs/pull/1/merge', ''],
@@ -155,7 +182,7 @@ class PublicationGuards(unittest.TestCase):
             self.assertEqual((root/'.git/config').read_bytes(), git_config)
             self.assertEqual(git('rev-parse', 'HEAD').decode().strip(), entry.BASE)
             git('-c', 'core.autocrlf=false', 'add', '--', '.gitattributes', '.github/workflows',
-                'eng/auth-composed-carrier', 'eng/customer-self-identity-validation',
+                'eng/auth-composed-carrier', 'eng/financial-iam', 'eng/customer-self-identity-validation',
                 'eng/customer-self-identity-intake/auth-composed-source-v1-20261010')
             git('-c', 'user.name=SourceControl', '-c', 'user.email=source-control@example.invalid',
                 'commit', '-m', 'Synthetic infrastructure publication source control')

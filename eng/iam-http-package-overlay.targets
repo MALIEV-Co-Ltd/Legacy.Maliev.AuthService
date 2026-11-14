@@ -1,0 +1,6 @@
+<Project>
+  <!-- Imported explicitly only for genuine IAM HTTP build; preflight verifies the exact project path, source and this file. -->
+  <ItemGroup Condition="'$(MSBuildProjectFullPath)' == '$(Auth201ExpectedIamApplicationProject)'">
+    <PackageReference Update="Microsoft.AspNetCore.WebUtilities" Version="10.0.15" />
+  </ItemGroup>
+</Project>

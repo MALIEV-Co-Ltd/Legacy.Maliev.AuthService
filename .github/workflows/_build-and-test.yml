@@ -150,26 +150,42 @@ jobs:
         shell: bash
         env:
           GENUINE_IAM_RESOURCE_LEDGER: ${{ github.workspace }}/artifacts/genuine-iam-resource-ledger
+          GENUINE_IAM_OVERLAY_EVIDENCE: ${{ github.workspace }}/artifacts/genuine-iam-overlay-evidence.json
         run: |
           # Original IAM and accepted Legacy Defaults require different MassTransit majors.
+          overlay="$GITHUB_WORKSPACE/eng/iam-http-package-overlay.targets"
+          iam_project="$GITHUB_WORKSPACE/.genuine-iam-source/Maliev.IAMService/Maliev.IAMService.Application/Maliev.IAMService.Application.csproj"
+          mkdir -p artifacts
+          python3 -B eng/test_verify_iam_overlay.py
+          python3 -B eng/verify_iam_overlay.py preflight
+          dotnet msbuild "$iam_project" -p:GITHUB_ACTIONS=false -p:UseLocalMalievDependencies=true \
+            -p:MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" \
+            -getItem:PackageReference > artifacts/genuine-iam-baseline-evaluation.json
           dotnet build acceptance/GenuineIamHost/GenuineIamHost.csproj \
             --configuration Release --warnaserror -p:GITHUB_ACTIONS=false -p:UseLocalMalievDependencies=true \
-            -p:MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source"
+            -p:MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" -p:CustomAfterMicrosoftCommonTargets="$overlay" -p:Auth201ExpectedIamApplicationProject="$iam_project"
           dotnet build acceptance/GenuineIamHttp.Tests/GenuineIamHttp.Tests.csproj \
             --configuration Release --warnaserror -p:GITHUB_ACTIONS=false -p:UseLocalMalievDependencies=true \
-            -p:MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source"
+            -p:MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" -p:CustomAfterMicrosoftCommonTargets="$overlay" -p:Auth201ExpectedIamApplicationProject="$iam_project"
+          dotnet msbuild "$iam_project" -p:GITHUB_ACTIONS=false -p:UseLocalMalievDependencies=true \
+            -p:MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" \
+            -p:CustomAfterMicrosoftCommonTargets="$overlay" -p:Auth201ExpectedIamApplicationProject="$iam_project" \
+            -getProperty:MSBuildProjectFullPath,Auth201ExpectedIamApplicationProject,CustomAfterMicrosoftCommonTargets \
+            -getItem:PackageReference > artifacts/genuine-iam-evaluation.json
+          python3 -B eng/verify_iam_overlay.py record
           dotnet test acceptance/GenuineIamHttp.Tests/GenuineIamHttp.Tests.csproj \
             --configuration Release --no-build --no-restore -p:GITHUB_ACTIONS=false -p:UseLocalMalievDependencies=true \
-            -p:MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" \
-            --filter "FullyQualifiedName~GenuineIamHttp_" \
+            -p:MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" -p:CustomAfterMicrosoftCommonTargets="$overlay" -p:Auth201ExpectedIamApplicationProject="$iam_project" \
+            --filter "FullyQualifiedName~GenuineIamHttp_|FullyQualifiedName~GenuineIamReadyEvidenceTests" \
             --logger "trx;LogFileName=genuine-iam-http-focus.trx" --results-directory artifacts/genuine-iam-http-focus
           dotnet test acceptance/GenuineIamHttp.Tests/GenuineIamHttp.Tests.csproj \
             --configuration Release --no-build --no-restore -p:GITHUB_ACTIONS=false -p:UseLocalMalievDependencies=true \
-            -p:MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" \
+            -p:MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" -p:CustomAfterMicrosoftCommonTargets="$overlay" -p:Auth201ExpectedIamApplicationProject="$iam_project" \
             --logger "trx;LogFileName=genuine-iam-http.trx" --results-directory artifacts/genuine-iam-http
-          GITHUB_ACTIONS=false UseLocalMalievDependencies=true MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" dotnet format acceptance/GenuineIamHttp.Tests/GenuineIamHttp.Tests.csproj \
+          python3 -B eng/verify_iam_overlay.py recheck
+          GITHUB_ACTIONS=false UseLocalMalievDependencies=true MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" CustomAfterMicrosoftCommonTargets="$overlay" Auth201ExpectedIamApplicationProject="$iam_project" dotnet format acceptance/GenuineIamHttp.Tests/GenuineIamHttp.Tests.csproj \
             --verify-no-changes --no-restore --include acceptance/GenuineIamHttp.Tests
-          GITHUB_ACTIONS=false UseLocalMalievDependencies=true MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" dotnet format acceptance/GenuineIamHost/GenuineIamHost.csproj \
+          GITHUB_ACTIONS=false UseLocalMalievDependencies=true MalievWorkspaceRoot="${{ github.workspace }}/.genuine-iam-source" CustomAfterMicrosoftCommonTargets="$overlay" Auth201ExpectedIamApplicationProject="$iam_project" dotnet format acceptance/GenuineIamHost/GenuineIamHost.csproj \
             --verify-no-changes --no-restore --include acceptance/GenuineIamHost
       - name: Verify normal IAM composition, workload, delegation and Web currency-grant boundaries
         shell: bash
@@ -408,6 +424,10 @@ jobs:
             artifacts/coverage-evidence
             artifacts/genuine-iam-http
             artifacts/genuine-iam-http-focus
+            artifacts/genuine-iam-baseline-evaluation.json
+            artifacts/genuine-iam-evaluation.json
+            artifacts/genuine-iam-overlay-evidence.json
+            artifacts/genuine-iam-overlay-graphs
             artifacts/genuine-iam-resource-ledger
             artifacts/ordinary-postgres-cleanup/*.json
             .genuine-iam-source/source-manifest.json
