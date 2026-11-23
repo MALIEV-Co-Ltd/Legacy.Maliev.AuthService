@@ -1,10 +1,10 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0-alpine AS build
 WORKDIR /src
 RUN apk add --no-cache git \
     && git clone --filter=blob:none --no-checkout https://github.com/MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults.git /dependencies/Legacy.Maliev.ServiceDefaults \
-    && git -C /dependencies/Legacy.Maliev.ServiceDefaults checkout 1fec4ef5c8c24fd57806b952182ae6bdb2d6a7fa \
+    && git -C /dependencies/Legacy.Maliev.ServiceDefaults checkout 173d63218d9142b34075bca87f5c6d933bcbdfb6 \
     && git clone --filter=blob:none --no-checkout https://github.com/MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts.git /dependencies/Legacy.Maliev.CompatibilityContracts \
-    && git -C /dependencies/Legacy.Maliev.CompatibilityContracts checkout 78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7
+    && git -C /dependencies/Legacy.Maliev.CompatibilityContracts checkout fe17b8cea8ace3eef5434f8b29c9038f5c975613
 COPY . .
 RUN dotnet publish Legacy.Maliev.AuthService.Api/Legacy.Maliev.AuthService.Api.csproj \
     --configuration Release \
@@ -13,7 +13,7 @@ RUN dotnet publish Legacy.Maliev.AuthService.Api/Legacy.Maliev.AuthService.Api.c
     -p:UseLocalMalievDependencies=true \
     -p:MalievWorkspaceRoot=/dependencies
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS runtime
+FROM mcr.microsoft.com/dotnet/aspnet:11.0-alpine AS runtime
 WORKDIR /app
 ENV ASPNETCORE_HTTP_PORTS=8080 \
     DOTNET_EnableDiagnostics=0

@@ -175,19 +175,19 @@ public sealed class DeliveryContractTests
     }
 
     /// <summary>
-    /// Checks .NET 10 image inputs, non-root execution, and pinned shared dependency checkouts.
+    /// Checks .NET 11 image inputs, non-root execution, and pinned shared dependency checkouts.
     /// </summary>
     [Fact]
-    public void Dockerfile_UsesDotNet10AndRunsAsNonRoot()
+    public void Dockerfile_UsesDotNet11AndRunsAsNonRoot()
     {
         var dockerfile = File.ReadAllText(
             Path.Combine(FindRepositoryRoot(), "Legacy.Maliev.AuthService.Api", "Dockerfile"));
 
-        Assert.Contains("dotnet/sdk:10.0-alpine", dockerfile, StringComparison.Ordinal);
-        Assert.Contains("dotnet/aspnet:10.0-alpine", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("dotnet/sdk:11.0-alpine", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("dotnet/aspnet:11.0-alpine", dockerfile, StringComparison.Ordinal);
         Assert.Contains("USER $APP_UID", dockerfile, StringComparison.Ordinal);
-        Assert.Contains("checkout 1fec4ef5c8c24fd57806b952182ae6bdb2d6a7fa", dockerfile, StringComparison.Ordinal);
-        Assert.Contains("checkout 78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("checkout 173d63218d9142b34075bca87f5c6d933bcbdfb6", dockerfile, StringComparison.Ordinal);
+        Assert.Contains("checkout fe17b8cea8ace3eef5434f8b29c9038f5c975613", dockerfile, StringComparison.Ordinal);
 
     }
 
@@ -209,7 +209,7 @@ public sealed class DeliveryContractTests
 
         Assert.Contains("Legacy.Maliev.ServiceDefaults", apiProject, StringComparison.Ordinal);
         Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults", workflow, StringComparison.Ordinal);
-        Assert.Contains("ref: 1fec4ef5c8c24fd57806b952182ae6bdb2d6a7fa", workflow, StringComparison.Ordinal);
+        Assert.Contains("ref: 173d63218d9142b34075bca87f5c6d933bcbdfb6", workflow, StringComparison.Ordinal);
         Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts", workflow, StringComparison.Ordinal);
         Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults.git", dockerfile, StringComparison.Ordinal);
         Assert.Contains("MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts.git", dockerfile, StringComparison.Ordinal);

@@ -50,14 +50,14 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: MALIEV-Co-Ltd/Legacy.Maliev.ServiceDefaults
-          ref: 1fec4ef5c8c24fd57806b952182ae6bdb2d6a7fa
+          ref: 173d63218d9142b34075bca87f5c6d933bcbdfb6
           path: .dependencies/Legacy.Maliev.ServiceDefaults
           persist-credentials: false
       - name: Check out Legacy.Maliev.CompatibilityContracts
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: MALIEV-Co-Ltd/Legacy.Maliev.CompatibilityContracts
-          ref: 78e48ffc4ee000df0510cba5e7c7a3c4c4d539d7
+          ref: fe17b8cea8ace3eef5434f8b29c9038f5c975613
           path: .dependencies/Legacy.Maliev.CompatibilityContracts
           persist-credentials: false
       - name: Check out exact Customer producer for the profile-binding tests
@@ -111,11 +111,16 @@ jobs:
             python3 -m unittest discover -s scripts -p test_observe_postgres_cleanup.py
             python3 scripts/observe_postgres_cleanup.py --role before --directory artifacts/ordinary-postgres-cleanup
           fi
+      - name: Install .NET 10 for the isolated genuine IAM host
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
+        with:
+          dotnet-version: 10.0.404
       - name: Validate .NET solution
         # The Customer API reference is test-only; no production project acquires it.
         uses: MALIEV-Co-Ltd/Legacy.Maliev.Workflows/actions/dotnet-validate@e3a6093324a24968876782153286f52db8b29fd8
         with:
           solution: Legacy.Maliev.AuthService.slnx
+          dotnet-version: 11.0.100
           use-local-maliev-dependencies: 'true'
       - name: Capture bounded PostgreSQL lifecycle readback
         if: always()
